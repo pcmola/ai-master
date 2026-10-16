@@ -1,0 +1,4 @@
+.env
+.wiki_search_cache.json
+__pycache__/
+*.pyc

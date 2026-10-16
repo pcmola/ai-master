@@ -1,0 +1,7 @@
+{
+  "explorer.decorations.colors": true,
+  "explorer.decorations.badges": true,
+  "git.decorations.enabled": true,
+  "git.openRepositoryInParentFolders": "always",
+  "git.detectSubmodules": true
+}
