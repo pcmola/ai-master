@@ -41,6 +41,10 @@ $Staged = @(& git "-c" "safe.directory=$Root" diff --cached --name-only)
 if ($LASTEXITCODE -ne 0) {
     throw "스테이징된 파일 목록을 확인하지 못했습니다."
 }
+$SensitiveStaged = @($Staged | Where-Object { $_ -eq ".env" -or ($_ -like ".env.*" -and $_ -ne ".env.sample") })
+if ($SensitiveStaged.Count -gt 0) {
+    throw "민감한 환경파일이 스테이징되었습니다: $($SensitiveStaged -join ', ')"
+}
 
 if ($Staged.Count -eq 0) {
     Write-Host "커밋할 변경사항이 없습니다. 현재 브랜치를 푸시합니다: $Branch"
