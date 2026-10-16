@@ -7,6 +7,7 @@ r"""Create low-cost Linux proxy VMs (Squid or HAProxy) on Azure with the Azure C
 - 프록시는 cloud-init 으로 설치한다. Squid: 포워드 프록시(3128), HAProxy: TCP 전달(기본 80 -> --backend).
   설치 방식은 docker 이미지(기본 ubuntu/squid, haproxy:lts 또는 --docker-image) 또는 apt 패키지 중 고른다.
 - NSG 는 SSH·프록시 포트를 이 PC 의 공인 IP(또는 --allow)에서만 연다.
+- 매일 01:00(한국 시간)에 자동 종료(deallocate)한다. --auto-shutdown HH:MM 으로 바꾸거나 off 로 끈다.
 
 사용 예:
     az login
@@ -267,6 +268,12 @@ def create_vm(name: str, args, size: str, allow: str, port: int):
            "--protocol", "Tcp", "--source-address-prefixes", allow, "--destination-port-ranges", str(rport),
            parse=False, mutate=True, label=f"NSG 규칙 {rule}({rport}) 추가")
 
+    if args.auto_shutdown != "off":
+        # az vm auto-shutdown 은 UTC 시각(HHMM)만 받으므로 한국 시간(UTC+9)에서 9시간을 뺀다.
+        hh, mm = map(int, args.auto_shutdown.split(":"))
+        az("vm", "auto-shutdown", "-g", args.resource_group, "-n", name, "--time", f"{(hh - 9) % 24:02d}{mm:02d}",
+           parse=False, mutate=True, label=f"매일 {args.auto_shutdown}(KST) 자동 종료 설정")
+
     if vm:
         ip = vm.get("publicIpAddress") or vm.get("privateIpAddress")
         print(f"  생성 완료: {ip}  (ssh {DEFAULTS['admin']}@{ip})")
@@ -295,6 +302,8 @@ def main():
     p.add_argument("--allow", help="SSH·프록시 접속을 허용할 CIDR (기본: 이 PC 공인 IP/32)")
     p.add_argument("--size", help=f"VM 크기 직접 지정 (기본: {SIZE_CANDIDATES} 중 사용 가능한 가장 싼 것)")
     p.add_argument("--no-public-ip", action="store_true", help="공용 IP 없이 생성 (비용 절감, 외부 접속 불가)")
+    p.add_argument("--auto-shutdown", default="01:00", metavar="HH:MM",
+                   help="매일 자동 종료(deallocate) 시각, 한국 시간 (기본 01:00). 'off' 면 설정 안 함")
     p.add_argument("--dry-run", action="store_true", help="az 생성 명령을 실행하지 않고 출력만 한다")
     for key in ("subscription", "resource_group", "location", "zone", "image", "vnet"):
         p.add_argument("--" + key.replace("_", "-"), default=DEFAULTS[key])
@@ -311,6 +320,8 @@ def main():
     if args.proxy == "haproxy" and not re.fullmatch(r"[\w.-]+:\d+", args.backend or ""):
         p.error("--backend 는 host:port 형식이어야 합니다.")
     port = args.port or PROXY_PORT[args.proxy]
+    if args.auto_shutdown != "off" and not re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", args.auto_shutdown):
+        p.error("--auto-shutdown 은 HH:MM(한국 시간) 또는 off 여야 합니다.")
     if not args.install:
         choice = input("설치 방식을 고르세요 [1] docker 이미지  [2] apt 패키지: ").strip().lower()
         args.install = {"1": "docker", "2": "apt"}.get(choice, choice)
