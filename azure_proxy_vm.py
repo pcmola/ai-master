@@ -138,14 +138,28 @@ def indent(text: str, n: int = 6) -> str:
     return "\n".join(" " * n + line if line else "" for line in text.splitlines())
 
 
-def squid_conf(allow: str, port: int) -> str:
+WHITELIST = "/etc/squid/lists/whitelist.txt"  # squid 가 읽는 경로 (docker 는 VM 의 /etc/proxy/lists 를 마운트)
+NO_WHITELIST = "# 목적지 제한 없음. 제한하려면 proxy.conf 에 whitelist acl 을 켜고 도메인을 적는다.\n"
+
+
+def squid_conf(allow: str, port: int, whitelist: bool) -> str:
+    # whitelist 가 있으면 목록의 도메인으로만 나갈 수 있다. 목록은 한 줄에 하나, '.도메인' 은 하위 도메인 포함.
+    dest = (f'acl whitelist dstdomain "{WHITELIST}"\n', "allowed_clients whitelist") if whitelist else ("", "allowed_clients")
     return f"""http_port {port}
 acl allowed_clients src {allow}
-http_access allow localhost
-http_access allow allowed_clients
+{dest[0]}acl SSL_ports port 443
+acl Safe_ports port 80 443
+acl CONNECT method CONNECT
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+http_access allow {dest[1]}
 http_access deny all
 coredump_dir /var/spool/squid
 """
+
+
+def whitelist_lines(domains: list[str]) -> str:
+    return "".join(f"{d if d.startswith('.') else '.' + d}\n" for d in domains)
 
 
 def haproxy_cfg(port: int, backend: str, log: str) -> str:
@@ -167,13 +181,15 @@ backend proxy_out
 
 
 def cloud_init(args, allow: str, port: int) -> str:
+    wl = whitelist_lines(args.whitelist) if args.proxy == "squid" and args.whitelist else ""
     if args.install == "apt":
         if args.proxy == "squid":
-            path, conf = "/etc/squid/squid.conf", squid_conf(allow, port)
+            path, conf = "/etc/squid/squid.conf", squid_conf(allow, port, bool(wl))
             check = "squid -k parse"
         else:
             path, conf = "/etc/haproxy/haproxy.cfg", haproxy_cfg(port, args.backend, "/dev/log local0")
             check = "haproxy -c -f /etc/haproxy/haproxy.cfg"
+        wl_file = f"  - path: {WHITELIST}\n    content: |\n{indent(wl)}\n" if wl else ""
         # 패키지 설치가 설정 파일을 덮어쓰지 않도록 따로 써 두고 설치 후에 복사한다.
         return f"""#cloud-config
 package_update: true
@@ -182,7 +198,7 @@ write_files:
   - path: /root/proxy.conf
     content: |
 {indent(conf)}
-runcmd:
+{wl_file}runcmd:
   - cp /root/proxy.conf {path}
   - {check}
   - systemctl restart {args.proxy}
@@ -190,14 +206,15 @@ runcmd:
 
     # docker: 설정 파일을 /etc/proxy 에 두고 컨테이너에 읽기 전용으로 마운트한다.
     if args.proxy == "squid":
-        conf, mount = squid_conf(allow, 3128), "/etc/squid/squid.conf"
-        inner = 3128
-        check = f"docker run --rm -v /etc/proxy/proxy.conf:{mount}:ro {args.docker_image} squid -k parse"
+        conf, inner = squid_conf(allow, 3128, bool(wl)), 3128
+        # 목록 파일은 디렉터리째 마운트해야 VM 에서 고친 내용이 'squid -k reconfigure' 로 바로 반영된다.
+        mounts = "-v /etc/proxy/proxy.conf:/etc/squid/squid.conf:ro -v /etc/proxy/lists:/etc/squid/lists:ro"
+        check = f"docker run --rm {mounts} {args.docker_image} squid -k parse"
     else:
         # 공식 haproxy 이미지는 root 가 아닌 haproxy 사용자로 돌아 1024 미만 포트를 못 열므로 8080 에서 받는다.
-        conf, mount = haproxy_cfg(8080, args.backend, "stdout format raw local0"), "/usr/local/etc/haproxy/haproxy.cfg"
-        inner = 8080
-        check = f"docker run --rm -v /etc/proxy/proxy.conf:{mount}:ro {args.docker_image} haproxy -c -f {mount}"
+        conf, inner = haproxy_cfg(8080, args.backend, "stdout format raw local0"), 8080
+        mounts = "-v /etc/proxy/proxy.conf:/usr/local/etc/haproxy/haproxy.cfg:ro"
+        check = f"docker run --rm {mounts} {args.docker_image} haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg"
     login = (f"  - echo '{args.registry_password}' | docker login {args.registry} "
              f"-u '{args.registry_user}' --password-stdin\n") if args.registry else ""
     return f"""#cloud-config
@@ -208,11 +225,15 @@ write_files:
     permissions: '0644'
     content: |
 {indent(conf)}
+  - path: /etc/proxy/lists/whitelist.txt
+    permissions: '0644'
+    content: |
+{indent(wl or NO_WHITELIST)}
 runcmd:
   - systemctl enable --now docker
 {login}  - docker pull {args.docker_image}
   - {check}
-  - docker run -d --name {args.proxy} --restart=always -p {port}:{inner} -v /etc/proxy/proxy.conf:{mount}:ro {args.docker_image}
+  - docker run -d --name {args.proxy} --restart=always -p {port}:{inner} {mounts} {args.docker_image}
 """
 
 
@@ -263,6 +284,10 @@ def main():
     p.add_argument("--backend", help="HAProxy 가 전달할 대상 host:port")
     p.add_argument("--port", type=int, help="프록시 수신 포트 (기본 squid 3128, haproxy 80)")
     p.add_argument("--install", choices=["docker", "apt"], help="설치 방식. 생략하면 물어본다.")
+    p.add_argument("--whitelist", type=lambda s: [d.strip() for d in s.split(",") if d.strip()],
+                   default=["data.go.kr", "law.go.kr"],
+                   help="Squid 가 접속을 허용할 목적지 도메인(쉼표 구분, 하위 도메인 포함). "
+                        "기본 data.go.kr,law.go.kr. 빈 문자열이면 제한 없음")
     p.add_argument("--docker-image", help=f"사용할 이미지 (기본 {DOCKER_IMAGE})")
     p.add_argument("--registry", help="비공개 레지스트리 주소 (예: myacr.azurecr.io). 지정하면 docker login 한다.")
     p.add_argument("--registry-user", help="레지스트리 사용자 (ACR 은 토큰 이름 또는 서비스 주체 ID)")

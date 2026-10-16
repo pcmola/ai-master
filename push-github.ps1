@@ -8,7 +8,7 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot ".")).Path
 Set-Location $Root
 
 function Invoke-Git {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
     & git "-c" "safe.directory=$Root" @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Git 명령 실패: git $($Arguments -join ' ')"
@@ -16,7 +16,9 @@ function Invoke-Git {
 }
 
 $Top = (& git "-c" "safe.directory=$Root" rev-parse --show-toplevel).Trim()
-if ($LASTEXITCODE -ne 0 -or $Top -ne $Root) {
+$NormalizedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+$NormalizedTop = if ($Top) { [System.IO.Path]::GetFullPath($Top).TrimEnd('\', '/') } else { "" }
+if ($LASTEXITCODE -ne 0 -or $NormalizedTop -ine $NormalizedRoot) {
     throw "이 스크립트는 저장소 루트에서만 실행할 수 있습니다: $Root"
 }
 
@@ -36,7 +38,7 @@ if ($TrackedEnv.Count -gt 0) {
     throw "민감한 환경파일이 추적 중입니다: $($TrackedEnv -join ', ')"
 }
 
-Invoke-Git add -A
+Invoke-Git -Arguments @("add", "-A")
 $Staged = @(& git "-c" "safe.directory=$Root" diff --cached --name-only)
 if ($LASTEXITCODE -ne 0) {
     throw "스테이징된 파일 목록을 확인하지 못했습니다."
@@ -53,8 +55,8 @@ if ($Staged.Count -eq 0) {
         $Message = "Update sources $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
     }
     Write-Host "스테이징 파일 $($Staged.Count)개를 커밋합니다: $Message"
-    Invoke-Git commit -m $Message
+    Invoke-Git -Arguments @("commit", "-m", $Message)
 }
 
-Invoke-Git push --set-upstream origin $Branch
+Invoke-Git -Arguments @("push", "--set-upstream", "origin", $Branch)
 Write-Host "GitHub 푸시 완료: $Remote ($Branch)"
