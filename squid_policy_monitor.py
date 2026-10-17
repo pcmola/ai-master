@@ -36,7 +36,11 @@ def env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
-def ssh_policy_command(root: str, container: str = "") -> str:
+def ssh_policy_command(root: str, container: str = "", wrapper: str = "") -> str:
+    if wrapper:
+        if not re.fullmatch(r"/[A-Za-z0-9._/-]+", wrapper):
+            raise ValueError("SQUID_POLICY_WRAPPER must be a simple absolute path")
+        return f"sudo -n {wrapper}"
     if not re.fullmatch(r"/[A-Za-z0-9._/-]+", root):
         raise ValueError("SQUID_POLICY_ROOT must be a simple absolute path")
     quoted = root.replace("'", "'\\''")
@@ -54,12 +58,12 @@ def ssh_policy_command(root: str, container: str = "") -> str:
     return script
 
 
-def read_remote_policy(host: str, user: str, root: str, key: str = "", container: str = "") -> dict[str, str]:
+def read_remote_policy(host: str, user: str, root: str, key: str = "", container: str = "", wrapper: str = "") -> dict[str, str]:
     command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
                "-o", "StrictHostKeyChecking=accept-new"]
     if key:
         command.extend(["-i", key])
-    command.extend([f"{user}@{host}", ssh_policy_command(root, container)])
+    command.extend([f"{user}@{host}", ssh_policy_command(root, container, wrapper)])
     try:
         result = subprocess.run(command, capture_output=True, timeout=45)
     except FileNotFoundError as exc:
@@ -134,6 +138,7 @@ def main() -> int:
     parser.add_argument("--key", default=env("SQUID_SSH_KEY"))
     parser.add_argument("--policy-root", default=env("SQUID_POLICY_ROOT", DEFAULT_ROOT))
     parser.add_argument("--container", default=env("SQUID_CONTAINER"), help="Docker container name, if Squid runs in Docker")
+    parser.add_argument("--wrapper", default=env("SQUID_POLICY_WRAPPER"), help="Fixed read-only server wrapper command")
     parser.add_argument("--snapshot", type=Path, default=Path(env("SQUID_POLICY_SNAPSHOT", str(DEFAULT_SNAPSHOT))))
     parser.add_argument("--json", action="store_true", help="print machine-readable result")
     parser.add_argument("--no-save", action="store_true", help="do not update the baseline snapshot")
@@ -141,7 +146,7 @@ def main() -> int:
 
     try:
         previous = load_snapshot(args.snapshot)
-        files = read_remote_policy(args.host, args.user, args.policy_root, args.key, args.container)
+        files = read_remote_policy(args.host, args.user, args.policy_root, args.key, args.container, args.wrapper)
         current = normalize_policy(files)
         change = diff_policy(previous, current)
         result = {
