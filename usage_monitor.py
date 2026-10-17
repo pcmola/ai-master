@@ -307,7 +307,7 @@ HTML_PAGE = r'''<!doctype html>
 :root{--ink:#172033;--muted:#718096;--line:#e5eaf0;--panel:#fff;--bg:#eef2f7;--track:#e8edf3;--ok:#2f9e6b;--warn:#d98a1c;--bad:#d64545;--claude:#d97757;--codex:#10a37f}
 *{box-sizing:border-box}body{margin:0;color:var(--ink);font:14px/1.6 "Segoe UI","Malgun Gothic",sans-serif;background:var(--bg)}
 .top{height:58px;background:#13213a;color:#fff;display:flex;align-items:center;padding:0 24px;gap:14px}.mark{width:28px;height:28px;border-radius:8px;background:#42b883;display:grid;place-items:center;font-weight:800}.brand{font-size:16px;font-weight:700}.crumb{color:#aebbd0;font-size:12px}.top .sp{flex:1}
-button{font:inherit;border:1px solid #33476b;background:transparent;color:#fff;border-radius:8px;padding:5px 12px;cursor:pointer}button:hover{background:#1f3152}
+button,select{font:inherit;border:1px solid #33476b;background:transparent;color:#fff;border-radius:8px;padding:5px 12px;cursor:pointer}button:hover,select:hover{background:#1f3152}select option{color:var(--ink);background:#fff}
 .wrap{max-width:1100px;margin:0 auto;padding:24px 16px 60px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;border-top:4px solid var(--c)}
 .head{display:flex;align-items:center;gap:10px;margin-bottom:14px}.logo{width:30px;height:30px;border-radius:8px;background:var(--c);color:#fff;display:grid;place-items:center;font-weight:800}.head h2{margin:0;font-size:18px}.plan{margin-left:auto;font-size:12px;background:#f1f4f8;border-radius:999px;padding:2px 10px;color:var(--muted);text-transform:capitalize}
@@ -321,13 +321,16 @@ table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:ta
 .foot{color:var(--muted);font-size:12px;margin-top:10px}.status{color:var(--muted);font-size:12px;text-align:right;margin-bottom:10px}
 @media(max-width:820px){.grid{grid-template-columns:1fr}}
 </style></head><body>
-<header class="top"><div class="mark">U</div><div class="brand">AI Usage Monitor</div><div class="crumb">Claude · Codex 잔여 한도</div><div class="sp"></div><button id="refresh">새로고침</button></header>
+<header class="top"><div class="mark">U</div><div class="brand">AI Usage Monitor</div><div class="crumb">Claude · Codex 잔여 한도</div><div class="sp"></div><select id="refreshInterval" title="자동 갱신 주기"><option value="5">5분</option><option value="15">15분</option><option value="30">30분</option><option value="60" selected>60분</option><option value="120">120분</option><option value="0">수동</option></select><button id="refresh">새로고침</button></header>
 <div class="wrap"><div class="status" id="status">불러오는 중…</div><div class="grid">
 <section class="card" style="--c:var(--claude)" id="claude"></section>
 <section class="card" style="--c:var(--codex)" id="codex"></section>
 </div></div>
 <script>
-const $=s=>document.querySelector(s);let data=null;
+const $=s=>document.querySelector(s);let data=null,refreshTimer=null;const refreshKey='ai-usage-monitor-refresh-minutes';
+function refreshMinutes(){return Number($('#refreshInterval').value)||0}
+function refreshText(){const m=refreshMinutes();return m?m+'분마다 자동 갱신':'수동 갱신'}
+function configureRefresh(){if(refreshTimer)clearInterval(refreshTimer);const m=refreshMinutes();localStorage.setItem(refreshKey,String(m));if(m)refreshTimer=setInterval(load,m*60000)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function fmtNum(n){return n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n)}
 function until(iso){if(!iso)return '';let s=Math.max(0,(new Date(iso)-Date.now())/1000);const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+'일 ':'')+(d||h?h+'시간 ':'')+m+'분 후 리셋'}
@@ -339,8 +342,8 @@ function local(lc){const w=lc.windows;return `<h3>로컬 기록 기준 토큰 �
 function card(el,name,logo,d,extra){el.innerHTML=`<div class="head"><div class="logo">${logo}</div><h2>${name}</h2>${d.plan?`<span class="plan">${esc(d.plan)}</span>`:''}</div>${d.error?`<div class="err">${esc(d.error)}</div>`:''}${limits(d.limits||[])}${extra||''}${local(d.local)}`}
 function render(){if(!data)return;card($('#claude'),'Claude','C',data.claude,'');
 card($('#codex'),'Codex','X',data.codex,data.codex.as_of?`<div class="foot">한도 기준 시각: ${esc(clock(data.codex.as_of))} (${esc(ago(data.codex.as_of))}, 마지막 Codex 응답)</div>`:'')}
-async function load(){$('#status').textContent='불러오는 중…';try{const r=await fetch('/api/usage');data=await r.json();render();$('#status').textContent='업데이트: '+new Date().toLocaleTimeString('ko-KR')+' · 60분마다 자동 갱신'}catch(e){$('#status').textContent='불러오기 실패: '+e.message}}
-$('#refresh').onclick=load;load();setInterval(load,3600000);setInterval(render,30000);
+async function load(){$('#status').textContent='불러오는 중…';try{const r=await fetch('/api/usage');data=await r.json();render();$('#status').textContent='업데이트: '+new Date().toLocaleTimeString('ko-KR')+' · '+refreshText()}catch(e){$('#status').textContent='불러오기 실패: '+e.message}}
+$('#refresh').onclick=load;const saved=localStorage.getItem(refreshKey);if(saved!==null&&[5,15,30,60,120,0].includes(Number(saved)))$('#refreshInterval').value=saved;$('#refreshInterval').onchange=()=>{configureRefresh();load()};configureRefresh();load();setInterval(render,30000);
 </script></body></html>'''
 
 
