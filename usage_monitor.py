@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from wiki_search import open_chrome
+from wiki_search import local_server, open_chrome
 
 HOME = Path.home()
 CLAUDE_CREDENTIALS = HOME / ".claude" / ".credentials.json"
@@ -321,7 +321,7 @@ table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:ta
 .foot{color:var(--muted);font-size:12px;margin-top:10px}.status{color:var(--muted);font-size:12px;text-align:right;margin-bottom:10px}
 @media(max-width:820px){.grid{grid-template-columns:1fr}}
 </style></head><body>
-<header class="top"><div class="mark">U</div><div class="brand">AI Usage Monitor</div><div class="crumb">Claude · Codex 잔여 한도</div><div class="sp"></div><select id="refreshInterval" title="자동 갱신 주기"><option value="5">5분</option><option value="15">15분</option><option value="30">30분</option><option value="60" selected>60분</option><option value="120">120분</option><option value="0">수동</option></select><button id="refresh">새로고침</button></header>
+<header class="top"><div class="mark">U</div><div class="brand">AI Usage Monitor</div><div class="crumb">Claude · Codex 잔여 한도</div><div class="sp"></div><select id="refreshInterval" title="자동 갱신 주기"><option value="5">5분</option><option value="10">10분</option><option value="30">30분</option><option value="60" selected>60분</option><option value="120">120분</option><option value="0">수동</option></select><button id="refresh">새로고침</button></header>
 <div class="wrap"><div class="status" id="status">불러오는 중…</div><div class="grid">
 <section class="card" style="--c:var(--claude)" id="claude"></section>
 <section class="card" style="--c:var(--codex)" id="codex"></section>
@@ -372,7 +372,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     port = int(args[0]) if args else 8767
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = local_server(port, Handler)
     print(f"AI usage monitor: http://127.0.0.1:{port}")
     if "--no-browser" not in sys.argv:
         open_chrome(f"http://127.0.0.1:{port}")

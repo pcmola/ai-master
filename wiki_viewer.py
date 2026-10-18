@@ -134,7 +134,12 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
     if not ROOT.is_dir(): raise SystemExit(f"Wiki root not found: {ROOT}")
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    # Windows 의 SO_REUSEADDR 로 같은 포트에 서버가 중복으로 뜨지 않도록 재사용을 끈다.
+    ThreadingHTTPServer.allow_reuse_address = False
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError:
+        raise SystemExit(f"포트 {port} 가 이미 사용 중입니다. 이미 떠 있는 뷰어를 끄고(Ctrl+C) 다시 실행하세요.")
     print(f"Wiki viewer: http://127.0.0.1:{port}")
     print(f"Read-only root: {ROOT}")
     try: server.serve_forever()

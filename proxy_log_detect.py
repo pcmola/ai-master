@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from proxy_log_viewer import LOG_PATH, SSH_USER, parse_line
+from proxy_log_viewer import LOG_PATH, RUNTIME, SSH_USER, parse_line
 
 BASE = Path(__file__).resolve().parent
 SIM_FILE = BASE / "sim_access.log"
@@ -279,7 +279,7 @@ def detect(rows: list[dict], allowed: list[str], whitelist: list[str]) -> list[F
 def load_rows(args) -> tuple[list[dict], str]:
     if args.host:
         path = REMOTE_SIM if args.sim else LOG_PATH
-        remote = f"cat {REMOTE_SIM}" if args.sim else f"sudo docker exec squid cat {LOG_PATH}"
+        remote = f"cat {REMOTE_SIM}" if args.sim else f"sudo {RUNTIME} exec squid cat {LOG_PATH}"
         res = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", f"{SSH_USER}@{args.host}", remote],
                              capture_output=True, timeout=60)
         if res.returncode != 0:

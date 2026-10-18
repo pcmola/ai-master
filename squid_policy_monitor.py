@@ -44,17 +44,22 @@ def ssh_policy_command(root: str, container: str = "", wrapper: str = "") -> str
     if not re.fullmatch(r"/[A-Za-z0-9._/-]+", root):
         raise ValueError("SQUID_POLICY_ROOT must be a simple absolute path")
     quoted = root.replace("'", "'\\''")
+    # 컨테이너 안에는 sudo 가 없으므로(exec 가 이미 root) 호스트에서 읽을 때만 sudo 를 붙인다.
+    sudo = "" if container else "sudo -n "
     script = (
-        "sudo -n find '" + quoted + "' -maxdepth 3 -type f "
-        "\\( -name 'squid.conf' -o -name '*.conf' -o -name '*.acl' \\) -print "
+        sudo + "find '" + quoted + "' -maxdepth 3 -type f "
+        "\\( -name 'squid.conf' -o -name '*.conf' -o -name '*.acl' -o -path '*/lists/*' \\) -print "
         "| sort | while IFS= read -r f; do "
-        "printf '\\n---FILE:%s---\\n' \"$f\"; sudo -n cat \"$f\"; "
+        "printf '\\n---FILE:%s---\\n' \"$f\"; " + sudo + "cat \"$f\"; "
         "done"
     )
     if container:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", container):
             raise ValueError("SQUID_CONTAINER contains invalid characters")
-        return f"sudo -n docker exec {container} sh -c {shlex.quote(script)}"
+        runtime = env("SQUID_RUNTIME", "podman")
+        if runtime not in ("podman", "docker"):
+            raise ValueError("SQUID_RUNTIME must be podman or docker")
+        return f"sudo -n {runtime} exec {container} sh -c {shlex.quote(script)}"
     return script
 
 
@@ -97,6 +102,10 @@ def normalize_policy(files: dict[str, str]) -> dict:
             if not line or line.startswith("#"):
                 continue
             line = re.sub(r"\s+", " ", line)
+            if "/lists/" in path:
+                # acl ... "/etc/squid/lists/whitelist.txt" 가 읽는 목록 파일: 한 줄이 하나의 항목이다.
+                rules.append({"file": path, "line": number, "kind": "list", "text": f"{Path(path).name} {line}"})
+                continue
             parts = line.split(" ")
             kind = parts[0].lower()
             if kind not in {"acl", "http_access", "url_regex", "urlpath_regex", "include"}:
