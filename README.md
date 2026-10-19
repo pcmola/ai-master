@@ -63,7 +63,7 @@ Copy-Item .env.sample .env
 | `sim_access.log` | proxy_log_detect.py simulate (가상 프록시 로그) |
 | `proxy_policy_state/` | squid_policy_publish.py (정책 기준 스냅샷, 변경 이력) |
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
-| `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력) |
+| `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
 
 ## 로컬 웹서버
 
@@ -77,33 +77,37 @@ hosts 파일은 포트를 정할 수 없으므로 서버마다 다른 루프백 
 | `127.0.0.1 wiki.local` | 127.0.0.1:포트 | `http://wiki.local:8765` |
 | `127.0.87.65 wiki.local` | 127.0.87.65:80 | `http://wiki.local` |
 
-관리자 PowerShell에서 `C:\Windows\System32\drivers\etc\hosts`에 아래를 추가하고 `ipconfig /flushdns`를 실행합니다. 사용량·비용 모니터(ai-monitor)도 같은 규칙(`ai-monitor\webserver.py`)을 씁니다.
+관리자 PowerShell에서 `C:\Windows\System32\drivers\etc\hosts`에 아래를 추가하고 `ipconfig /flushdns`를 실행합니다.
 
 ```
-# ai-master local web servers
 127.0.87.64 ai-master.local
 127.0.87.65 wiki.local
 127.0.87.66 wiki-search.local
-127.0.87.67 usage-monitor.local
 127.0.87.68 proxy-log.local
-127.0.87.69 cost-monitor.local
 ```
 
-hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다.
+hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다. 127.0.87.67·69·70은 ai-monitor(사용량·비용 모니터와 그 허브)가 같은 규칙으로 씁니다.
 
 ### 허브 (hub.py)
 
-http://ai-master.local 한 화면에서 서버 5개(ai-master 3개 + ai-monitor 2개)의 상태를 보고 시작·중지·재시작하고, 로그와 화면을 봅니다.
+http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그와 화면을 봅니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
 
 ```powershell
-python hub.py                # 허브만 켠다
+python hub.py                # 허브를 켜고 크롬으로 연다
 python hub.py --start-all    # 꺼져 있는 서버를 모두 시작
 python hub.py --restart-all  # 모두 다시 시작 (중복 실행·예전 주소로 뜬 서버 정리)
+python hub.py --no-browser   # 크롬을 열지 않음 (다른 옵션과 함께 사용)
 ```
 
-- 서버는 창 없이 뜨고 출력은 `data/logs/<서버>.log`에 남습니다. 허브를 꺼도 서버는 계속 돕니다.
+- 서버는 창 없이 뜨고 출력은 `data/logs/<서버>.log`에 남습니다. 허브를 꺼도(Ctrl+C) 서버는 계속 돕니다.
 - 실행 여부는 프로세스 명령줄의 스크립트 이름으로 찾으므로 직접 띄운 서버도 허브에 보이고 끌 수 있습니다(로그는 허브에서 시작한 서버만 남음).
-- ai-monitor 위치가 `..\ai-monitor`가 아니면 환경 변수 `AI_MONITOR_DIR`로 지정합니다.
+- 허브 콘솔에는 시각과 함께 시작 설정, 시작·중지 요청, 생성·종료한 PID, 상태 변화(직접 끄거나 서버가 죽은 경우 포함), 거부된 요청, 오류가 찍힙니다. 서버가 시작하자마자 죽으면 그 서버 출력의 마지막 줄도 함께 찍힙니다.
+
+허브가 이미 떠 있으면 다시 실행할 때 "이미 사용 중"과 함께 PID가 나옵니다. 떠 있는 허브는 브라우저로 열면 되고, 끄려면 다음을 실행합니다.
+
+```powershell
+Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | ForEach-Object { taskkill /PID $_.OwningProcess /T /F }
+```
 
 ## 실행 예시
 

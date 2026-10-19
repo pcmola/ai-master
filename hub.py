@@ -1,4 +1,4 @@
-"""Local hub: one page to start, stop and watch the local web servers (ai-master + ai-monitor).
+"""Local hub: one page to start, stop and watch the ai-master local web servers.
 
     python hub.py                # http://ai-master.local (hosts 등록 시), 없으면 http://127.0.0.1:8764
     python hub.py --start-all    # 허브를 켜면서 꺼져 있는 서버를 모두 시작
@@ -7,6 +7,7 @@
 
 - 서버는 창 없이 띄우고 출력은 data/logs/<key>.log 에 남긴다. 허브를 꺼도 서버는 계속 돈다.
 - 실행 여부는 프로세스 명령줄의 스크립트 이름으로 찾는다. 허브 밖에서 직접 띄운 서버도 보이고 끌 수 있다.
+- 콘솔에는 시각과 함께 시작 설정, 요청, 생성·종료한 PID, 상태 변화(허브 밖에서 끄거나 죽은 경우 포함), 오류를 남긴다.
 - 서버 주소 규칙(hosts 의 IP 에 따라 포트 없는 주소)은 common/server.py 설명 참고.
 """
 
@@ -27,8 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common.paths import DATA_DIR, PROJECT_ROOT  # noqa: E402
 from common.server import local_server, open_chrome, site_url  # noqa: E402
 
-HUB_PORT, HUB_SITE = 8764, "ai-master.local"
-MONITOR_DIR = Path(os.environ.get("AI_MONITOR_DIR", PROJECT_ROOT.parent / "ai-monitor"))
+HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "AI Master 서버 허브"
 LOG_DIR = DATA_DIR / "logs"
 LOG_ROTATE_BYTES = 2 * 1024 * 1024
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -39,12 +39,8 @@ SERVERS = [s for s in [
      "port": 8765, "site": "wiki.local"},
     {"key": "wiki-search", "title": "Wiki 검색", "dir": PROJECT_ROOT, "script": "wiki_tools/wiki_search.py",
      "port": 8766, "site": "wiki-search.local"},
-    {"key": "usage-monitor", "title": "사용량 모니터", "dir": MONITOR_DIR, "script": "usage_monitor.py",
-     "port": 8767, "site": "usage-monitor.local"},
     {"key": "proxy-log", "title": "프록시 로그 뷰어", "dir": PROJECT_ROOT, "script": "proxy_tools/proxy_log_viewer.py",
      "port": 8768, "site": "proxy-log.local"},
-    {"key": "cost-monitor", "title": "비용 모니터", "dir": MONITOR_DIR, "script": "cost_monitor.py",
-     "port": 8769, "site": "cost-monitor.local"},
 ] if (s["dir"] / s["script"]).is_file()]
 BY_KEY = {s["key"]: s for s in SERVERS}
 
@@ -85,6 +81,23 @@ def listeners() -> dict[int, list[str]]:
 _cache: dict = {"at": 0.0, "data": None}
 _cache_lock = threading.Lock()
 _busy: dict[str, str] = {}  # key → 진행 중인 작업 이름
+_print_lock = threading.Lock()
+
+
+def log(msg: str):
+    """허브 콘솔 로그. 여러 스레드가 함께 쓰므로 줄이 섞이지 않게 잠근다."""
+    with _print_lock:
+        print(f"{datetime.now():%Y-%m-%d %H:%M:%S} {msg}", flush=True)
+
+
+def describe(s: dict) -> str:
+    """상태 한 줄: 상태, PID(수신 주소), 브라우저 주소, 경고."""
+    pids = ", ".join(f"{i['pid']}({'/'.join(i['listen']) or '수신 없음'})" for i in s["instances"]) or "-"
+    notes = [f"중복 {len(s['instances'])}개" if len(s["instances"]) > 1 else "",
+             "예전 주소" if s["stale"] else "",
+             f"주소 충돌: PID {s['conflict']['pid']} {s['conflict']['name']}" if s["conflict"] else ""]
+    notes = [n for n in notes if n]
+    return f"{s['state']:8} PID {pids}  {s['url']}" + (f"  [{', '.join(notes)}]" if notes else "")
 
 
 def server_status(force: bool = False) -> list[dict]:
@@ -134,55 +147,107 @@ def server_status(force: bool = False) -> list[dict]:
 
 def start(s: dict):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log = LOG_DIR / f"{s['key']}.log"
-    if log.is_file() and log.stat().st_size > LOG_ROTATE_BYTES:
+    out_file = LOG_DIR / f"{s['key']}.log"
+    if out_file.is_file() and out_file.stat().st_size > LOG_ROTATE_BYTES:
         try:
-            log.replace(log.with_suffix(".old.log"))
+            out_file.replace(out_file.with_suffix(".old.log"))
         except OSError:
             pass  # 다른 프로세스가 쓰고 있으면 그대로 이어 쓴다
     cmd = [sys.executable, s["script"], "--no-browser"]
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
-    with open(log, "ab") as f:
+    with open(out_file, "ab") as f:
         f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 시작: {' '.join(cmd)} =====\n".encode("utf-8"))
         f.flush()
-        subprocess.Popen(cmd, cwd=s["dir"], stdout=f, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                         env=env, creationflags=DETACH, close_fds=True)
+        proc = subprocess.Popen(cmd, cwd=s["dir"], stdout=f, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                env=env, creationflags=DETACH, close_fds=True)
+    log(f"[{s['key']}] 프로세스 생성 PID {proc.pid}: {' '.join(cmd)}")
+    log(f"[{s['key']}]   작업 폴더 {s['dir']}, 출력 {out_file}")
 
 
 def stop(key: str):
     current = next(x for x in server_status(force=True) if x["key"] == key)
+    if not current["instances"]:
+        log(f"[{key}] 실행 중인 프로세스가 없어 끌 것이 없습니다")
+        return
     for inst in current["instances"]:
-        subprocess.run(["taskkill", "/PID", str(inst["pid"]), "/T", "/F"], capture_output=True, creationflags=NO_WINDOW)
-    deadline = time.monotonic() + 10
+        res = subprocess.run(["taskkill", "/PID", str(inst["pid"]), "/T", "/F"], capture_output=True,
+                             creationflags=NO_WINDOW)
+        out = " / ".join(line.strip() for line in res.stdout.decode("cp949", errors="replace").splitlines() if line.strip())
+        log(f"[{key}] taskkill PID {inst['pid']} (트리 {inst['pids']}) → 종료 코드 {res.returncode} {out}")
+    began, deadline = time.monotonic(), time.monotonic() + 10
     while time.monotonic() < deadline:
         now = next(x for x in server_status(force=True) if x["key"] == key)
         if not now["instances"]:
+            log(f"[{key}] 종료 확인 ({time.monotonic() - began:.1f}초)")
             return
         time.sleep(0.5)
+    log(f"[{key}] 10초가 지나도 프로세스가 남아 있습니다: {describe(now)}")
+
+
+def wait_running(key: str, timeout: float = 60) -> dict:
+    """시작한 서버가 주소에서 응답할 때까지 기다린다. 그 전에 죽으면 서버 출력의 마지막 줄을 남긴다."""
+    deadline = time.monotonic() + timeout
+    while True:
+        now = next(x for x in server_status(force=True) if x["key"] == key)
+        if now["state"] == "running" or time.monotonic() > deadline:
+            return now
+        if not now["instances"]:
+            log(f"[{key}] 시작 직후 프로세스가 끝났습니다. 서버 출력 마지막 줄:")
+            for line in log_tail(key, 8).splitlines():
+                log(f"[{key}]   | {line}")
+            return now
+        time.sleep(1)
 
 
 def run_action(key: str, action: str):
     s = BY_KEY[key]
     _busy[key] = {"start": "시작 중", "stop": "중지 중", "restart": "재시작 중"}[action]
+    began = time.monotonic()
+    log(f"[{key}] {action} 요청 처리 시작")
     try:
         if action in ("stop", "restart"):
             stop(key)
         if action == "start" and next(x for x in server_status(force=True) if x["key"] == key)["instances"]:
-            return  # 이미 떠 있으면 하나 더 띄우지 않는다
+            log(f"[{key}] 이미 실행 중이라 새로 띄우지 않습니다")  # 하나 더 띄우면 중복 실행이 된다
+            return
         if action in ("start", "restart"):
             start(s)
-            time.sleep(1)
+            log(f"[{key}] 결과: {describe(wait_running(key))}")
+    except Exception as exc:  # 스레드 안의 오류가 콘솔에 남지 않고 사라지지 않도록
+        log(f"[{key}] {action} 실패: {type(exc).__name__}: {exc}")
     finally:
         _busy.pop(key, None)
         _cache["at"] = 0.0
+        log(f"[{key}] {action} 끝 ({time.monotonic() - began:.1f}초)")
 
 
 def dispatch(key: str, action: str) -> list[str]:
     keys = list(BY_KEY) if key == "all" else [key]
+    busy = [k for k in keys if k in _busy]
+    if busy:
+        log(f"다른 작업이 진행 중이라 건너뜀: {', '.join(f'{k}({_busy[k]})' for k in busy)}")
     keys = [k for k in keys if k in BY_KEY and k not in _busy]
     for k in keys:
         threading.Thread(target=run_action, args=(k, action), daemon=True).start()
     return keys
+
+
+def watch(interval: float = 5):
+    """상태가 바뀌면 남긴다. 허브 밖에서 끄거나 서버가 죽은 경우도 여기서 보인다."""
+    last: dict[str, str] = {}
+    while True:
+        try:
+            for s in server_status():
+                if s["busy"]:
+                    last.pop(s["key"], None)  # 작업 중 변화와 결과는 run_action 이 남기므로 끝난 뒤 상태를 새 기준으로
+                    continue
+                line = describe(s)
+                if s["key"] in last and last[s["key"]] != line:
+                    log(f"[{s['key']}] 상태 변경: {line}")
+                last[s["key"]] = line
+        except Exception as exc:
+            log(f"상태 확인 실패: {type(exc).__name__}: {exc}")
+        time.sleep(interval)
 
 
 def log_tail(key: str, lines: int = 300) -> str:
@@ -217,11 +282,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         if url.path == "/":
-            self.send_body(PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            self.send_body(PAGE.replace("__TITLE__", HUB_TITLE).encode("utf-8"), "text/html; charset=utf-8")
         elif url.path == "/api/status":
             try:
                 self.send_json({"servers": server_status(), "time": datetime.now().isoformat(timespec="seconds")})
             except (OSError, subprocess.SubprocessError, ValueError) as exc:
+                log(f"상태 조회 실패: {type(exc).__name__}: {exc}")
                 self.send_json({"error": str(exc)}, 500)
         elif url.path == "/api/log":
             key = parse_qs(url.query).get("key", [""])[0]
@@ -236,19 +302,25 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(self.path).path != "/api/action":
             self.send_error(404)
             return
+        client = self.client_address[0]
         if not self.trusted():
+            log(f"요청 거부(403) {client}: Host={self.headers.get('Host')} Origin={self.headers.get('Origin')}")
             self.send_json({"error": "forbidden"}, 403)
             return
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         except ValueError:
+            log(f"요청 거부(400) {client}: JSON 형식 오류")
             self.send_json({"error": "bad json"}, 400)
             return
         key, action = body.get("key"), body.get("action")
         if action not in ("start", "stop", "restart") or (key != "all" and key not in BY_KEY):
+            log(f"요청 거부(400) {client}: key={key} action={action}")
             self.send_json({"error": "bad request"}, 400)
             return
-        self.send_json({"accepted": dispatch(key, action)})
+        accepted = dispatch(key, action)
+        log(f"요청 {client}: {action} {key} → 처리 {', '.join(accepted) or '없음'}")
+        self.send_json({"accepted": accepted})
 
     def log_message(self, *_):
         pass
@@ -256,7 +328,7 @@ class Handler(BaseHTTPRequestHandler):
 
 PAGE = r"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI Master 허브</title>
+<title>__TITLE__</title>
 <style>
 :root{--bg:#eef2f7;--panel:#fff;--ink:#1d2939;--muted:#667085;--line:#d9e0ea;--top:#13213a;--blue:#2563eb;
 --ok:#16a34a;--warn:#d97706;--bad:#dc2626;--off:#98a2b3;--soft:#f5f7fb;--code:#101827;--codeink:#e6edf6}
@@ -284,7 +356,7 @@ iframe{width:100%;height:640px;border:0;background:#fff;display:block}
 .err{color:var(--bad);padding:12px}
 @media(max-width:820px){.hide-sm{display:none}main{padding:12px}}
 </style></head><body>
-<header><h1>AI Master 서버 허브</h1><span class="time" id="time"></span>
+<header><h1>__TITLE__</h1><span class="time" id="time"></span>
 <button onclick="act('all','start')">모두 시작</button><button onclick="act('all','restart')">모두 재시작</button>
 <button onclick="if(confirm('모든 서버를 끌까요?'))act('all','stop')">모두 중지</button></header>
 <main>
@@ -340,20 +412,33 @@ refresh();setInterval(refresh,3000);
 
 def main():
     flags = set(sys.argv[1:])
-    server = local_server(HUB_PORT, Handler, HUB_SITE)
-    print(f"Server hub: {server.url}")
+    ip, port, _ = site_url(HUB_SITE, HUB_PORT)
+    try:
+        server = local_server(HUB_PORT, Handler, HUB_SITE)
+    except SystemExit:
+        owner = next((pid for pid, addrs in listeners().items() if f"{ip}:{port}" in addrs), None)
+        log(f"{HUB_TITLE} 를 띄우지 못했습니다: {ip}:{port} 를 이미 사용 중입니다"
+            + (f" (PID {owner}). 이미 떠 있는 허브라면 브라우저로 http://{HUB_SITE} 를 열거나, "
+               f"끄고 다시 실행하세요: taskkill /PID {owner} /T /F" if owner else "."))
+        raise SystemExit(1)
+    log(f"{HUB_TITLE} 시작: {server.url} (수신 {ip}:{port}, PID {os.getpid()})")
+    log(f"  파이썬 {sys.executable}")
+    log(f"  서버 출력 로그 폴더 {LOG_DIR}")
     for s in server_status(force=True):
-        print(f"  {s['title']:10} {s['state']:8} {s['url']}" + (f"  (중복 {len(s['instances'])}개)" if len(s["instances"]) > 1 else ""))
+        log(f"  [{s['key']}] {BY_KEY[s['key']]['dir'] / s['script']}")
+        log(f"  [{s['key']}]   {describe(s)}")
+    threading.Thread(target=watch, daemon=True).start()
     if "--restart-all" in flags:
-        print("모든 서버를 다시 시작합니다.")
+        log("모든 서버를 다시 시작합니다 (--restart-all)")
         dispatch("all", "restart")
     elif "--start-all" in flags:
-        print("꺼져 있는 서버를 시작합니다.")
+        log("꺼져 있는 서버를 시작합니다 (--start-all)")
         dispatch("all", "start")
     if "--no-browser" not in flags:
         open_chrome(server.url)
+    log("요청을 기다립니다. 끄려면 Ctrl+C (서버들은 계속 실행됨)")
     try: server.serve_forever()
-    except KeyboardInterrupt: pass
+    except KeyboardInterrupt: log("Ctrl+C: 허브를 끕니다")
     finally: server.server_close()
 
 
