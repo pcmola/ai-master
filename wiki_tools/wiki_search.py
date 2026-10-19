@@ -26,13 +26,14 @@ from urllib.parse import quote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR, ENV_FILE, WIKI_REPO  # noqa: E402
-from common.server import local_server, open_chrome  # noqa: E402,F401  (다른 도구가 여기서 가져다 쓰던 이름 유지)
+from common.server import local_server, open_chrome, site_url  # noqa: E402,F401  (다른 도구가 여기서 가져다 쓰던 이름 유지)
 
 ROOT = WIKI_REPO.resolve()
 CACHE = DATA_DIR / "wiki_search_cache.json"
 EMBED_WEIGHT = float(os.environ.get("EMBED_WEIGHT", "8"))  # 혼합 검색에서 임베딩 유사도 가중치
 OPENAI_TIMEOUT = 120  # 초. 게이트웨이가 응답하지 않으면 오래 매달리지 않고 오프라인 검색으로 넘어간다.
-VIEWER = os.environ.get("WIKI_VIEWER_URL", "http://127.0.0.1:8765")
+# 검색 결과의 문서 링크. 비우면 wiki_viewer.py 가 뜨는 주소(hosts 의 wiki.local 기준)를 쓴다.
+VIEWER = os.environ.get("WIKI_VIEWER_URL") or site_url("wiki.local", 8765)[2]
 
 try:
     from dotenv import load_dotenv
@@ -623,10 +624,10 @@ def main():
     _index_sig = wiki_signature(ROOT)
     print(f"Indexed {len(INDEX.docs)} documents from {ROOT}")
     print(f"Embeddings: {'on' if INDEX.embeddings.vectors else 'off (offline semantic search)'}")
-    server = local_server(port, Handler)
-    print(f"Wiki guide search: http://127.0.0.1:{port}")
+    server = local_server(port, Handler, "wiki-search.local")
+    print(f"Wiki guide search: {server.url}")
     if "--no-browser" not in sys.argv:
-        open_chrome(f"http://127.0.0.1:{port}")
+        open_chrome(server.url)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close()

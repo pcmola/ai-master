@@ -11,7 +11,10 @@ import re
 import sys
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
+from common.server import local_server, open_chrome  # noqa: E402
 
 
 ROOT = (Path(__file__).resolve().parents[1] / "wiki-repo").resolve()  # 프로젝트 루트의 wiki-repo
@@ -166,16 +169,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    port = int(args[0]) if args else 8765
     if not ROOT.is_dir(): raise SystemExit(f"Wiki root not found: {ROOT}")
-    # Windows 의 SO_REUSEADDR 로 같은 포트에 서버가 중복으로 뜨지 않도록 재사용을 끈다.
-    ThreadingHTTPServer.allow_reuse_address = False
-    try:
-        server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    except OSError:
-        raise SystemExit(f"포트 {port} 가 이미 사용 중입니다. 이미 떠 있는 뷰어를 끄고(Ctrl+C) 다시 실행하세요.")
-    print(f"Wiki viewer: http://127.0.0.1:{port}")
+    server = local_server(port, Handler, "wiki.local")  # 같은 주소에 중복으로 뜨지 않게 막는다
+    print(f"Wiki viewer: {server.url}")
     print(f"Read-only root: {ROOT}")
+    if "--no-browser" not in sys.argv:
+        open_chrome(server.url)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close()

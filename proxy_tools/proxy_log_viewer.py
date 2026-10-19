@@ -331,10 +331,10 @@ def main():
     for h in HOSTS:
         print(f"  {h['name']}  {h['ip']}  {h.get('state', '')}")
 
-    server = local_server(args.port, Handler)
-    print(f"Proxy log viewer: http://127.0.0.1:{args.port}")
+    server = local_server(args.port, Handler, "proxy-log.local")
+    print(f"Proxy log viewer: {server.url}")
     if not args.no_browser:
-        open_chrome(f"http://127.0.0.1:{args.port}")
+        open_chrome(server.url)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close()
