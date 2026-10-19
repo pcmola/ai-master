@@ -57,6 +57,27 @@ flowchart LR
     publish --> repo
     vmtool -- "VM 생성" --> vm
     teams -- "알림" --> msteams
+
+    classDef user fill:#EEF2FF,stroke:#6366F1,stroke-width:2px,color:#312E81
+    classDef hub fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
+    classDef wiki fill:#DBEAFE,stroke:#3B82F6,color:#1E3A8A
+    classDef proxy fill:#FFEDD5,stroke:#F97316,color:#7C2D12
+    classDef teams fill:#CCFBF1,stroke:#14B8A6,color:#134E4A
+    classDef store fill:#F1F5F9,stroke:#64748B,color:#1E293B
+    classDef cloud fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
+    classDef ext fill:#FEF9C3,stroke:#CA8A04,stroke-dasharray:4 3,color:#713F12
+    class user user
+    class hub hub
+    class viewer,search,docs wiki
+    class logviewer,detect,publish,vmtool proxy
+    class teams teams
+    class repo store
+    class openai,devops,vm cloud
+    class anthropic,msteams ext
+    style local fill:#94A3B81A,stroke:#94A3B8
+    style wiki_tools fill:#3B82F614,stroke:#3B82F6,stroke-dasharray:4 3
+    style proxy_tools fill:#F9731614,stroke:#F97316,stroke-dasharray:4 3
+    style azure fill:#0284C71A,stroke:#0284C7
 ```
 
 모든 도구는 프로젝트 루트의 `.env` 하나를 함께 읽고, 실행 중 생기는 파일은 `data/`에 남깁니다.
@@ -123,11 +144,22 @@ hosts 파일은 포트를 정할 수 없으므로 서버마다 다른 루프백 
 
 ```mermaid
 flowchart TD
-    start(["서버 시작"]) --> read["hosts 파일에서<br/>자기 이름(예: wiki.local) 찾기"]
+    start(["서버 시작"]) --> read["hosts 파일에서<br/>자기 이름 찾기<br/>(예: wiki.local)"]
     read --> found{"적힌 IP는?"}
     found -- "없음" --> a["127.0.0.1:포트<br/>http://127.0.0.1:8765"]
     found -- "127.0.0.1" --> b["127.0.0.1:포트<br/>http://wiki.local:8765"]
     found -- "127.0.87.xx" --> c["127.0.87.xx:80<br/>http://wiki.local"]
+
+    classDef start fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
+    classDef step fill:#DBEAFE,stroke:#3B82F6,color:#1E3A8A
+    classDef decide fill:#FEF3C7,stroke:#D97706,color:#78350F
+    classDef meh fill:#F1F5F9,stroke:#94A3B8,color:#334155
+    classDef best fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    class start start
+    class read step
+    class found decide
+    class a,b meh
+    class c best
 ```
 
 관리자 PowerShell에서 `C:\Windows\System32\drivers\etc\hosts`에 아래를 추가하고 `ipconfig /flushdns`를 실행합니다.
@@ -163,6 +195,18 @@ flowchart LR
     end
     servers -- "출력" --> logs[("data/logs/&lt;서버&gt;.log")]
     hub -. "로그 보기" .-> logs
+
+    classDef user fill:#EEF2FF,stroke:#6366F1,stroke-width:2px,color:#312E81
+    classDef hub fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
+    classDef wiki fill:#DBEAFE,stroke:#3B82F6,color:#1E3A8A
+    classDef proxy fill:#FFEDD5,stroke:#F97316,color:#7C2D12
+    classDef store fill:#F1F5F9,stroke:#64748B,color:#1E293B
+    class browser user
+    class hub hub
+    class s1,s2 wiki
+    class s3 proxy
+    class logs store
+    style servers fill:#9333EA14,stroke:#9333EA,stroke-dasharray:4 3
 ```
 
 - 서버는 창 없이 뜨고 출력은 `data/logs/<서버>.log`에 남습니다. 허브를 꺼도(Ctrl+C) 서버는 계속 돕니다.
@@ -191,20 +235,40 @@ flowchart TD
     llm -- "없음" --> openai["Azure OpenAI<br/>(OPENAI_MODEL)로 작성"]
     llm -- "둘 다 없음" --> tpl["템플릿 가이드"]
     claude & openai -- "실패·거절" --> tpl
-    claude & openai & tpl --> out(["Markdown 가이드 + 근거 문서 링크"])
+    claude & openai & tpl --> out(["Markdown 가이드<br/>+ 근거 문서 링크"])
+
+    classDef io fill:#EEF2FF,stroke:#6366F1,stroke-width:2px,color:#312E81
+    classDef step fill:#DBEAFE,stroke:#3B82F6,color:#1E3A8A
+    classDef store fill:#F1F5F9,stroke:#64748B,color:#1E293B
+    classDef decide fill:#FEF3C7,stroke:#D97706,color:#78350F
+    classDef llm fill:#F3E8FF,stroke:#9333EA,color:#581C87
+    classDef fallback fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#334155
+    classDef done fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    class q io
+    class analyze,rank,filter step
+    class cache,repo store
+    class llm decide
+    class claude,openai llm
+    class tpl fallback
+    class out done
 ```
 
 ### Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"actorBkg": "#FFEDD5", "actorBorder": "#F97316", "actorTextColor": "#7C2D12", "actorLineColor": "#F97316", "signalColor": "#64748B", "signalTextColor": "#64748B", "labelBoxBkgColor": "#FEF3C7", "labelBoxBorderColor": "#D97706", "labelTextColor": "#78350F", "loopTextColor": "#D97706", "sequenceNumberColor": "#FFFFFF", "noteBkgColor": "#FEF9C3"}}}%%
 sequenceDiagram
     autonumber
     actor 운영자
-    participant P as squid_policy_publish.py
-    participant VM as 프록시 VM (Squid)
-    participant S as data/proxy_policy_state
-    participant D as Azure DevOps
-    participant W as wiki-repo
+    box rgba(249, 115, 22, 0.08) 로컬 PC
+        participant P as squid_policy_publish.py
+        participant S as data/proxy_policy_state
+        participant W as wiki-repo
+    end
+    box rgba(2, 132, 199, 0.08) Azure
+        participant VM as 프록시 VM (Squid)
+        participant D as Azure DevOps
+    end
 
     운영자->>P: 실행 (--dry-run / --yes / --task-id)
     P->>S: 기준 스냅샷 읽기
@@ -217,9 +281,11 @@ sequenceDiagram
     else 변경 있음
         P->>운영자: 변경 내용 보여 주고 승인 요청
         운영자->>P: 승인 (--yes면 생략)
-        P->>D: Task 생성 (--task-id면 댓글 추가)
-        P->>W: '프록시 화이트리스트 현황' 갱신 후 commit/push
-        P->>S: 모두 성공한 뒤에만 스냅샷·이력 갱신
+        rect rgba(22, 163, 74, 0.1)
+            P->>D: Task 생성 (--task-id면 댓글 추가)
+            P->>W: '프록시 화이트리스트 현황' 갱신 후 commit/push
+            P->>S: 모두 성공한 뒤에만 스냅샷·이력 갱신
+        end
     end
 ```
 
@@ -232,11 +298,22 @@ flowchart LR
     sim["simulate<br/>가상 에러 로그 생성"] --> local[("data/sim_access.log")]
     sim -- "--upload IP" --> vmsim[("VM ~/sim_access.log")]
     real[("VM Squid access.log")]
-    local -- "detect (기본)" --> det["이상 탐지<br/>차단 반복·도메인 스캔·업스트림 장애·<br/>미허용 클라이언트·지연·대용량 등"]
+    local -- "detect (기본)" --> det["이상 탐지<br/>차단 반복·도메인 스캔<br/>업스트림 장애<br/>미허용 클라이언트<br/>응답 지연·대용량 전송 등"]
     real -- "detect --host IP (SSH)" --> det
     vmsim -- "detect --host IP --sim" --> det
     det --> report(["콘솔 보고서 / --json"])
     det --> viewer["proxy_log_viewer.py<br/>화면에서 같은 탐지 결과 표시"]
+
+    classDef gen fill:#F3E8FF,stroke:#9333EA,color:#581C87
+    classDef sim fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#334155
+    classDef real fill:#E0F2FE,stroke:#0284C7,stroke-width:2px,color:#0C4A6E
+    classDef detect fill:#FFE4E6,stroke:#E11D48,stroke-width:2px,color:#881337
+    classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
+    class sim gen
+    class local,vmsim sim
+    class real real
+    class det detect
+    class report,viewer done
 ```
 
 ## 실행 예시
