@@ -3,10 +3,10 @@
 환경 변수: AZURE_DEVOPS_ORG, AZURE_DEVOPS_PROJECT, AZURE_DEVOPS_WIKI,
            AZURE_DEVOPS_PAT (Wiki Read & write 권한 필요)
 
-python wiki_documents.py list
-python wiki_documents.py create --parent '/AI Master 프로젝트/02. 운영/03. 업무 2' --title '샘플 문서'
-python wiki_documents.py create --parent '/AI Master 프로젝트/02. 운영' --title '업무 문서' --file content.md
-python wiki_documents.py delete --path '/AI Master 프로젝트/02. 운영/03. 업무 2/샘플 문서'
+python wiki_tools/wiki_documents.py list
+python wiki_tools/wiki_documents.py create --parent '/AI Master 프로젝트/02. 운영/03. 업무 2' --title '샘플 문서'
+python wiki_tools/wiki_documents.py create --parent '/AI Master 프로젝트/02. 운영' --title '업무 문서' --file content.md
+python wiki_tools/wiki_documents.py delete --path '/AI Master 프로젝트/02. 운영/03. 업무 2/샘플 문서'
 """
 
 import argparse
@@ -25,7 +25,7 @@ from urllib.request import Request, urlopen
 
 def load_env():
     """스크립트 옆 .env를 읽습니다. 기존 환경 변수 값을 우선합니다."""
-    env_path = Path(__file__).resolve().parent / '.env'
+    env_path = Path(__file__).resolve().parents[1] / '.env'  # 프로젝트 루트의 .env
     if not env_path.is_file():
         return
     for line in env_path.read_text(encoding='utf-8-sig').splitlines():

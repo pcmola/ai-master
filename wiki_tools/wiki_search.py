@@ -15,24 +15,28 @@ import json
 import math
 import os
 import re
-import subprocess
 import sys
-import webbrowser
+import threading
+import time
 from collections import Counter
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
-BASE = Path(__file__).resolve().parent
-ROOT = (BASE / "wiki-repo").resolve()
-CACHE = BASE / ".wiki_search_cache.json"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
+from common.paths import DATA_DIR, ENV_FILE, WIKI_REPO  # noqa: E402
+from common.server import local_server, open_chrome  # noqa: E402,F401  (다른 도구가 여기서 가져다 쓰던 이름 유지)
+
+ROOT = WIKI_REPO.resolve()
+CACHE = DATA_DIR / "wiki_search_cache.json"
+EMBED_WEIGHT = float(os.environ.get("EMBED_WEIGHT", "8"))  # 혼합 검색에서 임베딩 유사도 가중치
 OPENAI_TIMEOUT = 120  # 초. 게이트웨이가 응답하지 않으면 오래 매달리지 않고 오프라인 검색으로 넘어간다.
 VIEWER = os.environ.get("WIKI_VIEWER_URL", "http://127.0.0.1:8765")
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(BASE / ".env")
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 
@@ -205,7 +209,9 @@ class Index:
                 scores[i] += 0.15 * sum(math.log1p(d.low.count(b)) for b in boost)
         sims = self.embeddings.similarity(query)
         if sims:
-            scores = [s + 0.8 * max(sim - 0.2, 0.0) for s, sim in zip(scores, sims)]
+            # 2026-10-19 정답 16문항 비교: text-embedding-3-large + 가중치 8 이 hit@3 87.5%, 최저 7위로 가장 좋았다
+            # (기존 0.8 은 68.8%, 최저 23위). 키워드 점수가 의미 점수를 덮지 않도록 크게 둔다.
+            scores = [s + EMBED_WEIGHT * max(sim, 0.0) for s, sim in zip(scores, sims)]
         ranked = sorted(range(n), key=lambda i: scores[i], reverse=True)
         return [(self.docs[i], scores[i]) for i in ranked[:limit] if scores[i] > 0.05]
 
@@ -566,6 +572,7 @@ class Handler(BaseHTTPRequestHandler):
             if not q:
                 self.send_json({"error": "empty query"}, 400); return
             path = urlparse(self.path).path
+            refresh_index()
             if path == "/api/search":
                 self.send_json(do_search(q)); return
             if path == "/api/guide":
@@ -579,42 +586,41 @@ class Handler(BaseHTTPRequestHandler):
 
 
 INDEX: Index
+_index_sig: str | None = None
+_index_lock = threading.Lock()
 
 
-class LocalServer(ThreadingHTTPServer):
-    # Windows 에서는 SO_REUSEADDR 때문에 같은 포트에 두 번째 서버가 오류 없이 함께 떠서
-    # 예전 서버가 계속 응답하는 일이 생긴다. 재사용을 끄면 두 번째 실행이 바로 실패한다.
-    allow_reuse_address = False
+def wiki_signature(root: Path) -> str:
+    """wiki-repo 의 .md 경로·수정 시각 목록의 해시. 문서 추가·삭제·이름 변경·수정이 있으면 값이 바뀐다."""
+    items = []
+    for p in root.rglob("*.md"):
+        rel = p.relative_to(root)
+        if not any(part.startswith(".") for part in rel.parts):
+            items.append(f"{rel.as_posix()}|{p.stat().st_mtime_ns}")
+    return hashlib.sha1("\n".join(sorted(items)).encode("utf-8")).hexdigest()
 
 
-def local_server(port: int, handler) -> ThreadingHTTPServer:
-    try:
-        return LocalServer(("127.0.0.1", port), handler)
-    except OSError:
-        raise SystemExit(f"포트 {port} 가 이미 사용 중입니다. 이미 떠 있는 서버를 끄고(Ctrl+C) 다시 실행하세요.")
-
-
-def open_chrome(url: str):
-    """크롬으로 페이지를 연다. 크롬이 없으면 기본 브라우저를 쓴다."""
-    candidates = [
-        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Google/Chrome/Application/chrome.exe",
-        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Google/Chrome/Application/chrome.exe",
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Google/Chrome/Application/chrome.exe",
-    ]
-    chrome = next((p for p in candidates if p.is_file()), None)
-    if chrome:
-        subprocess.Popen([str(chrome), url])
-    else:
-        webbrowser.open(url)
+def refresh_index():
+    """검색 요청마다 wiki-repo 변경 여부를 보고, 바뀌었으면 인덱스를 다시 만든다(임베딩은 바뀐 문서만 새로 계산)."""
+    global INDEX, _index_sig
+    with _index_lock:
+        sig = wiki_signature(ROOT)
+        if sig == _index_sig:
+            return
+        started = time.monotonic()
+        INDEX = Index(ROOT)
+        _index_sig = sig
+        print(f"Re-indexed {len(INDEX.docs)} documents ({time.monotonic() - started:.1f}s)", flush=True)
 
 
 def main():
-    global INDEX
+    global INDEX, _index_sig
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     port = int(args[0]) if args else 8766
     if not ROOT.is_dir(): raise SystemExit(f"Wiki root not found: {ROOT}")
     print(f"Indexing {ROOT} ...", flush=True)
     INDEX = Index(ROOT)
+    _index_sig = wiki_signature(ROOT)
     print(f"Indexed {len(INDEX.docs)} documents from {ROOT}")
     print(f"Embeddings: {'on' if INDEX.embeddings.vectors else 'off (offline semantic search)'}")
     server = local_server(port, Handler)

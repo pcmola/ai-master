@@ -13,12 +13,12 @@ r"""Create low-cost Linux proxy VMs (Squid or HAProxy) on Azure with the Azure C
 
 사용 예:
     az login
-    python azure_proxy_vm.py                         # 프록시 종류를 물어본다
-    python azure_proxy_vm.py --proxy squid --install podman --count 2
-    python azure_proxy_vm.py --proxy squid --install podman --docker-image myacr.azurecr.io/infra/squid:6.10 \
+    python proxy_tools/azure_proxy_vm.py                         # 프록시 종류를 물어본다
+    python proxy_tools/azure_proxy_vm.py --proxy squid --install podman --count 2
+    python proxy_tools/azure_proxy_vm.py --proxy squid --install podman --docker-image myacr.azurecr.io/infra/squid:6.10 \
         --registry myacr.azurecr.io --registry-user <token-name> --registry-password <token>
-    python azure_proxy_vm.py --proxy haproxy --backend 10.0.0.4:8080
-    python azure_proxy_vm.py --proxy squid --dry-run  # 실행할 az 명령만 출력
+    python proxy_tools/azure_proxy_vm.py --proxy haproxy --backend 10.0.0.4:8080
+    python proxy_tools/azure_proxy_vm.py --proxy squid --dry-run  # 실행할 az 명령만 출력
 """
 
 from __future__ import annotations

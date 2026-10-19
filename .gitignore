@@ -1,6 +1,6 @@
 .env
-.wiki_search_cache.json
+# 실행 중에 생기는 파일(검색 캐시, 가상 로그, 정책 스냅샷, Teams 토큰)
+data/
 __pycache__/
 *.pyc
 *.log
-.proxy_policy_state/

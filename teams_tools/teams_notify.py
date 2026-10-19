@@ -5,9 +5,9 @@
 - 메시지는 Adaptive Card 로 보낸다. 웹후크는 정상 접수 시 202 를 돌려준다(실제 게시는 흐름이 비동기로 처리).
 
 사용 예:
-    python teams_notify.py "배포가 끝났습니다"
-    python teams_notify.py --title "운영 점검" "수집 실패 알림이 7분 지연됨"
-    echo 본문 | python teams_notify.py --title 알림
+    python teams_tools/teams_notify.py "배포가 끝났습니다"
+    python teams_tools/teams_notify.py --title "운영 점검" "수집 실패 알림이 7분 지연됨"
+    echo 본문 | python teams_tools/teams_notify.py --title 알림
 """
 
 from __future__ import annotations
@@ -20,11 +20,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parent
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
+from common.paths import ENV_FILE  # noqa: E402
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(BASE / ".env")
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 

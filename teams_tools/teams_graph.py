@@ -1,15 +1,15 @@
 """Send a Teams chat message as yourself through Microsoft Graph (delegated permission).
 
 - Azure AD(Entra ID)에 앱을 등록하고 .env 에 TEAMS_CLIENT_ID / TEAMS_TENANT_ID 를 넣는다.
-- 처음 한 번은 장치 코드로 로그인한다(브라우저에서 코드 입력). 토큰은 .teams_token_cache.json 에
+- 처음 한 번은 장치 코드로 로그인한다(브라우저에서 코드 입력). 토큰은 data/teams_token_cache.json 에
   저장되어 이후에는 자동으로 갱신된다. 이 파일은 로그인 정보이므로 공유하거나 저장소에 올리지 않는다.
 - 권한(위임): ChatMessage.Send, Chat.ReadBasic, Chat.Create — 모두 관리자 동의 없이 사용자 동의로 쓸 수 있다.
 
 사용 예:
-    python teams_graph.py "본문"                         # 나와의 채팅(48:notes, 비공식 ID)
-    python teams_graph.py --to user@corp.com "본문"       # 1:1 채팅(없으면 만든다)
-    python teams_graph.py --chat 19:xxx@thread.v2 "본문"  # 채팅 ID 지정
-    python teams_graph.py --list                          # 최근 채팅 ID 확인
+    python teams_tools/teams_graph.py "본문"                         # 나와의 채팅(48:notes, 비공식 ID)
+    python teams_tools/teams_graph.py --to user@corp.com "본문"       # 1:1 채팅(없으면 만든다)
+    python teams_tools/teams_graph.py --chat 19:xxx@thread.v2 "본문"  # 채팅 ID 지정
+    python teams_tools/teams_graph.py --list                          # 최근 채팅 ID 확인
 """
 
 from __future__ import annotations
@@ -26,8 +26,10 @@ from pathlib import Path
 
 import msal
 
-BASE = Path(__file__).resolve().parent
-TOKEN_CACHE = BASE / ".teams_token_cache.json"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
+from common.paths import DATA_DIR, ENV_FILE  # noqa: E402
+
+TOKEN_CACHE = DATA_DIR / "teams_token_cache.json"
 GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPES = [f"https://graph.microsoft.com/{s}" for s in ("ChatMessage.Send", "Chat.ReadBasic", "Chat.Create")]
 # '나와의 채팅' ID. Microsoft 공식 문서에는 없고 테넌트에 따라 "Notes is not flighted" 오류가 날 수 있다.
@@ -35,7 +37,7 @@ SELF_CHAT_ID = "48:notes"
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(BASE / ".env")
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 

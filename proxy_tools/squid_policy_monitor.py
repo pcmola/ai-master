@@ -22,12 +22,15 @@ from pathlib import Path
 DEFAULT_HOST = "wjy-proxy01"
 DEFAULT_USER = "azureuser"
 DEFAULT_ROOT = "/etc/squid"
-DEFAULT_SNAPSHOT = Path(__file__).with_name(".proxy_policy_state") / "wjy-proxy01.json"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
+from common.paths import DATA_DIR, ENV_FILE  # noqa: E402
+
+DEFAULT_SNAPSHOT = DATA_DIR / "proxy_policy_state" / "wjy-proxy01.json"
 FILE_MARKER = re.compile(r"^---FILE:(.+)---$")
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).with_name(".env"))
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 

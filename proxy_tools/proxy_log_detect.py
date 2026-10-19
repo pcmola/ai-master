@@ -4,12 +4,12 @@ simulate: 정상 트래픽에 장애·이상 시나리오를 섞은 가상의 ac
 detect  : 로컬 파일 또는 프록시 VM(SSH)의 로그를 규칙으로 분석해 이상 징후를 보고한다.
 
 사용 예:
-    python proxy_log_detect.py simulate                         # sim_access.log 생성 + 심은 시나리오 출력
-    python proxy_log_detect.py simulate --upload 72.155.73.113  # VM 의 ~/sim_access.log 로도 올린다
-    python proxy_log_detect.py detect sim_access.log            # 로컬 파일 분석
-    python proxy_log_detect.py detect --host 72.155.73.113 --sim  # VM 의 가상 로그 분석
-    python proxy_log_detect.py detect --host 72.155.73.113        # VM 의 실제 squid 로그 분석
-    python proxy_log_detect.py detect sim_access.log --json       # 결과를 JSON 으로
+    python proxy_tools/proxy_log_detect.py simulate                         # sim_access.log 생성 + 심은 시나리오 출력
+    python proxy_tools/proxy_log_detect.py simulate --upload 72.155.73.113  # VM 의 ~/sim_access.log 로도 올린다
+    python proxy_tools/proxy_log_detect.py detect data/sim_access.log            # 로컬 파일 분석
+    python proxy_tools/proxy_log_detect.py detect --host 72.155.73.113 --sim  # VM 의 가상 로그 분석
+    python proxy_tools/proxy_log_detect.py detect --host 72.155.73.113        # VM 의 실제 squid 로그 분석
+    python proxy_tools/proxy_log_detect.py detect data/sim_access.log --json       # 결과를 JSON 으로
 
 detect 는 high 등급이 하나라도 있으면 종료 코드 2, medium 만 있으면 1, 없으면 0 을 돌려준다(스케줄 실행용).
 """
@@ -28,10 +28,11 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from proxy_log_viewer import LOG_PATH, RUNTIME, SSH_USER, parse_line
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
+from common.paths import DATA_DIR  # noqa: E402
+from proxy_log_viewer import LOG_PATH, RUNTIME, SSH_USER, parse_line  # noqa: E402
 
-BASE = Path(__file__).resolve().parent
-SIM_FILE = BASE / "sim_access.log"
+SIM_FILE = DATA_DIR / "sim_access.log"
 REMOTE_SIM = "sim_access.log"  # VM 의 /home/azureuser 아래
 ALLOWED_CLIENTS = ["14.39.36.171/32"]
 WHITELIST = ["data.go.kr", "law.go.kr"]

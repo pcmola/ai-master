@@ -6,8 +6,8 @@
 - 화면에서 허용/차단 필터, 검색, 도메인별 집계, 자동 새로고침을 제공한다.
 
 사용 예:
-    python proxy_log_viewer.py                 # http://127.0.0.1:8768
-    python proxy_log_viewer.py --host 72.155.73.113
+    python proxy_tools/proxy_log_viewer.py                 # http://127.0.0.1:8768
+    python proxy_tools/proxy_log_viewer.py --host 72.155.73.113
 """
 
 from __future__ import annotations
@@ -23,7 +23,11 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from wiki_search import local_server, open_chrome
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
+from common.paths import DATA_DIR  # noqa: E402
+from common.server import local_server, open_chrome  # noqa: E402
 
 RESOURCE_GROUP = "wjy-proxy-rg"
 SSH_USER = "azureuser"
@@ -106,7 +110,7 @@ def parse_nginx(line: str) -> dict | None:
     }
 
 
-LOCAL_SIM = Path(__file__).resolve().parent / "sim_access.log"  # proxy_log_detect.py simulate 결과
+LOCAL_SIM = DATA_DIR / "sim_access.log"  # proxy_log_detect.py simulate 결과
 REMOTE_SIM = "sim_access.log"  # simulate --upload 로 올린 VM 의 ~/sim_access.log
 
 
@@ -133,7 +137,7 @@ def read_logs(ip: str, lines: int, source: str = "real", kind: str = "squid") ->
         text = res.stdout.decode("utf-8", errors="replace")
     elif source == "local":
         if not LOCAL_SIM.is_file():
-            return {"error": f"{LOCAL_SIM.name} 이 없습니다. python proxy_log_detect.py simulate 로 먼저 만드세요."}
+            return {"error": f"{LOCAL_SIM.name} 이 없습니다. python proxy_tools/proxy_log_detect.py simulate 로 먼저 만드세요."}
         text = "\n".join(LOCAL_SIM.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
     else:
         remote = (f"tail -n {lines} {REMOTE_SIM}" if source == "sim"
@@ -147,7 +151,7 @@ def read_logs(ip: str, lines: int, source: str = "real", kind: str = "squid") ->
         if res.returncode != 0:
             err = res.stderr.decode("utf-8", errors="replace").strip()
             if source == "sim" and "No such file" in err:
-                err = "VM 에 가상 로그가 없습니다. python proxy_log_detect.py simulate --upload <IP> 로 올리세요."
+                err = "VM 에 가상 로그가 없습니다. python proxy_tools/proxy_log_detect.py simulate --upload <IP> 로 올리세요."
             return {"error": f"{ip} 로그 읽기 실패: {err or 'exit ' + str(res.returncode)}"}
         text = res.stdout.decode("utf-8", errors="replace")
     rows = [r for r in map(parser, text.splitlines()) if r][-lines:]

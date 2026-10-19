@@ -10,10 +10,10 @@
 처음 실행(기준 스냅샷 없음)은 Task 없이 기준만 저장하고 위키 현황 문서를 만든다.
 
 사용 예:
-    python squid_policy_publish.py --dry-run      # 무엇을 할지 출력만 (Task·위키·스냅샷 변경 없음)
-    python squid_policy_publish.py                # 변경이 있으면 승인 후 Task 등록 + 위키 갱신
-    python squid_policy_publish.py --yes          # 승인 없이 진행 (작업 스케줄러용)
-    python squid_policy_publish.py --task-id 123  # 새 Task 대신 기존 Task 123 에 댓글로 추가
+    python proxy_tools/squid_policy_publish.py --dry-run      # 무엇을 할지 출력만 (Task·위키·스냅샷 변경 없음)
+    python proxy_tools/squid_policy_publish.py                # 변경이 있으면 승인 후 Task 등록 + 위키 갱신
+    python proxy_tools/squid_policy_publish.py --yes          # 승인 없이 진행 (작업 스케줄러용)
+    python proxy_tools/squid_policy_publish.py --task-id 123  # 새 Task 대신 기존 Task 123 에 댓글로 추가
 
 필요한 설정(.env): AZURE_DEVOPS_ORG / PROJECT / PAT (PAT 에 Work Items Read & write 권한 필요),
                    SQUID_HOST(프록시 IP), SQUID_CONTAINER=squid, SQUID_POLICY_ROOT=/etc/squid
@@ -35,21 +35,21 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote
 from urllib.request import Request, urlopen
 
-from squid_policy_monitor import (DEFAULT_SNAPSHOT, diff_policy, env, load_snapshot, normalize_policy,
-                                  read_remote_policy)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
+from common.paths import DATA_DIR, ENV_FILE, WIKI_REPO  # noqa: E402
+from squid_policy_monitor import (  # noqa: E402
+    DEFAULT_SNAPSHOT, diff_policy, env, load_snapshot, normalize_policy, read_remote_policy)
 
-BASE = Path(__file__).resolve().parent
-WIKI_REPO = BASE / "wiki-repo"
 WIKI_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06-네트워크-및-Proxy"
              / "01-네트워크-및-Proxy-현황-파악" / "프록시-화이트리스트-현황.md")
-HISTORY = BASE / ".proxy_policy_state" / "publish_history.json"
+HISTORY = DATA_DIR / "proxy_policy_state" / "publish_history.json"
 KST = timezone(timedelta(hours=9))
 TAGS = "프록시; 화이트리스트; 자동등록"
 
 
 def load_env():
     """스크립트 옆 .env 를 읽는다(기존 환경 변수 우선). wiki_documents 는 import 시 종료 통계를 출력하므로 쓰지 않는다."""
-    path = BASE / ".env"
+    path = ENV_FILE
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8-sig").splitlines():
@@ -180,7 +180,7 @@ def render_page(host: str, ip: str, policy: dict, history: list[dict], when: str
     lines += ["", "## 5. 관리 방법", "",
               "- 허용 도메인은 VM 의 `/etc/proxy/lists/whitelist.txt` 에 한 줄씩 적고 "
               "`sudo podman exec squid squid -k reconfigure` 로 반영한다.",
-              "- 반영 후 `python squid_policy_publish.py` 를 실행하면 Task 등록과 이 문서 갱신이 함께 진행된다.", ""]
+              "- 반영 후 `python proxy_tools/squid_policy_publish.py` 를 실행하면 Task 등록과 이 문서 갱신이 함께 진행된다.", ""]
     return "\n".join(lines)
 
 
