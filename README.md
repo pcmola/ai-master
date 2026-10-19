@@ -38,18 +38,16 @@ flowchart LR
     end
 
     subgraph azure["Azure"]
-        openai["Azure OpenAI 게이트웨이"]
+        openai["Azure OpenAI 게이트웨이<br/>가이드 작성: gpt-5.4<br/>임베딩:<br/>text-embedding-3-large"]
         devops["Azure DevOps<br/>Wiki · Task"]
         vm["프록시 VM<br/>Squid (podman)"]
     end
-    anthropic["Anthropic API<br/>(선택)"]
     msteams["Microsoft Teams"]
 
     user --> hub
     hub -- "시작·중지·로그" --> viewer & search & logviewer
     viewer & search --> repo
-    search -- "임베딩·가이드" --> openai
-    search -. "ANTHROPIC_API_KEY 있으면" .-> anthropic
+    search -- "임베딩·가이드 작성" --> openai
     docs -- "REST API" --> devops
     repo -- "git push" --> devops
     logviewer & detect & publish -- "SSH" --> vm
@@ -73,7 +71,7 @@ flowchart LR
     class teams teams
     class repo store
     class openai,devops,vm cloud
-    class anthropic,msteams ext
+    class msteams ext
     style local fill:#94A3B81A,stroke:#94A3B8
     style wiki_tools fill:#3B82F614,stroke:#3B82F6,stroke-dasharray:4 3
     style proxy_tools fill:#F9731614,stroke:#F97316,stroke-dasharray:4 3
@@ -113,7 +111,6 @@ Copy-Item .env.sample .env
 | `OPENAI_MODEL` | `gpt-5.4` | 가이드 작성 LLM. 2026-10-19 후보 5개 비교에서 완성도와 속도가 가장 균형이 좋았다 |
 | `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. 정답 16문항 비교에서 small·ada-002보다 정확했다 |
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮는다 |
-| `ANTHROPIC_API_KEY` | (비움) | 넣으면 가이드 작성에 Claude(`ANTHROPIC_MODEL`)를 먼저 쓴다 |
 | `SQUID_HOST` | - | 정책 감지 대상 프록시 VM의 공용 IP |
 | `SQUID_CONTAINER` / `SQUID_RUNTIME` | `squid` / `podman` | VM에서 Squid가 도는 컨테이너 이름과 런타임 |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
@@ -230,12 +227,12 @@ flowchart TD
     cache[("data/wiki_search_cache.json<br/>문서 임베딩")] --> rank
     repo[("wiki-repo 문서")] --> rank
     rank --> filter["핵심 개념이 나오는 문서만<br/>상위 15개 선택"]
-    filter --> llm{"LLM 클라이언트?"}
-    llm -- "ANTHROPIC_API_KEY 있음" --> claude["Claude로 가이드 작성"]
-    llm -- "없음" --> openai["Azure OpenAI<br/>(OPENAI_MODEL)로 작성"]
-    llm -- "둘 다 없음" --> tpl["템플릿 가이드"]
-    claude & openai -- "실패·거절" --> tpl
-    claude & openai & tpl --> out(["Markdown 가이드<br/>+ 근거 문서 링크"])
+    filter --> llm{"Azure OpenAI<br/>설정 있음?"}
+    llm -- "있음" --> openai["Azure OpenAI 게이트웨이<br/>gpt-5.4로 가이드 작성"]
+    llm -- "없음" --> tpl["문서 조합 템플릿"]
+    openai -- "호출 실패" --> tpl
+    openai -- "생성 방식: LLM 작성" --> out(["Markdown 가이드<br/>+ 근거 문서 링크"])
+    tpl -- "생성 방식: 문서 조합 템플릿" --> out
 
     classDef io fill:#EEF2FF,stroke:#6366F1,stroke-width:2px,color:#312E81
     classDef step fill:#DBEAFE,stroke:#3B82F6,color:#1E3A8A
@@ -248,7 +245,7 @@ flowchart TD
     class analyze,rank,filter step
     class cache,repo store
     class llm decide
-    class claude,openai llm
+    class openai llm
     class tpl fallback
     class out done
 ```
@@ -332,7 +329,7 @@ python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --dry-run
 
 ## 주의사항
 
-- `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`를 소스에 직접 작성하지 마세요.
+- `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`를 소스에 직접 작성하지 마세요.
 - 이미 노출된 인증정보는 폐기하고 재발급하세요.
 - `wiki-repo`, `wiki-backup`, `wiki/AI-Master.wiki`는 별도 Git 저장소를 포함합니다.
 - 같은 주소로 서버를 두 번 띄우면 두 번째 실행은 "이미 사용 중" 메시지로 끝납니다. 코드를 바꾼 뒤에는 기존 서버를 끄고 다시 실행하세요(허브의 재시작 버튼).

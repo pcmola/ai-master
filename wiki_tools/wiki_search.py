@@ -368,16 +368,20 @@ def do_guide(query: str, key: str | None, variant: str | None) -> dict:
 
     title = f"{option['label'] if option else query.strip()} 가이드"
     mode = "template"
+    model = None
     markdown = None
     client = claude_client() or openai_client()
     if client and statements:
         markdown = llm_guide(client, query, title, option, statements, sources)
         mode = "llm" if markdown else "template"
+        if markdown:  # llm_guide 와 같은 기본값으로 실제 쓴 모델 이름을 화면에 알려 준다
+            model = (os.environ.get("OPENAI_MODEL", "gpt-4.1") if hasattr(client, "chat")
+                     else os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5"))
     if not markdown:
         markdown = template_guide(query, title, option, statements, sources)
     highlights = sorted({w for g in groups for w in g} | set(boost), key=len, reverse=True)
     weighted = group_weights(groups) + [([b], 0.3) for b in boost]
-    return {"title": title, "mode": mode, "markdown": markdown,
+    return {"title": title, "mode": mode, "model": model, "markdown": markdown,
             "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms},
             "highlights": highlights,
             "results": [{"path": d.path, "title": d.title, "link": view_link(d.path), "score": round(s, 3),
@@ -507,7 +511,7 @@ mark{background:var(--hl);padding:0 1px;border-radius:2px}
 .guide h1{font-size:26px;margin:0 0 8px}.guide h2{font-size:19px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-top:28px}.guide h3{font-size:16px;margin-top:20px}.guide blockquote{margin:0;padding:8px 14px;background:var(--soft);border-left:4px solid var(--blue);color:#4a5568}.guide a{color:var(--blue);text-decoration:none}.guide ul{padding-left:22px}.guide table{border-collapse:collapse;width:100%;font-size:12px;display:block;overflow-x:auto}.guide td,.guide th{border:1px solid var(--line);padding:5px 8px;text-align:left}.guide th{background:var(--soft)}
 .wait{text-align:center;padding:36px 0;color:var(--muted)}.wait b{color:var(--ink);font-variant-numeric:tabular-nums}.prog{height:6px;max-width:320px;margin:14px auto 0;background:#e5eaf0;border-radius:3px;overflow:hidden}.prog i{display:block;width:35%;height:100%;background:var(--blue);border-radius:3px;animation:slide 1.4s ease-in-out infinite}@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(290%)}}
 .guide pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow-x:auto;font:12.5px/1.55 Consolas,monospace}.guide .mermaid{margin:14px 0;text-align:center;overflow-x:auto}
-.tools{display:flex;gap:8px;justify-content:flex-end;margin-bottom:8px}.tools[hidden]{display:none}.muted{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px 0}
+.tools{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-bottom:8px}.gen{margin-right:auto;font-size:12px;font-weight:600;border-radius:999px;padding:4px 12px;background:#f1f5f9;color:#475569}.gen.llm{background:#dcfce7;color:#166534}.tools[hidden]{display:none}.muted{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px 0}
 @media(max-width:820px){.grid{grid-template-columns:1fr}.opts{grid-template-columns:1fr}}
 </style></head><body>
 <header class="top"><div class="mark">G</div><div class="brand">Wiki Guide Search</div><div class="crumb">wiki-repo 의미 검색 · 가이드 생성</div></header>
@@ -515,7 +519,7 @@ mark{background:var(--hl);padding:0 1px;border-radius:2px}
 <form class="search" id="form"><input id="q" placeholder="예: 프록시 설정 가이드 알려줘" autocomplete="off" autofocus><button id="go">검색</button></form>
 <div class="steps"><span class="step" id="s1">1. 문서 검색</span><span class="step" id="s2">2. 유형 확인</span><span class="step" id="s3">3. 관련 문서 재검색</span><span class="step" id="s4">4. 가이드 생성</span></div>
 <div class="grid"><section class="card"><h2>검색 결과</h2><div id="analysis"></div><div id="results"><div class="empty">질문을 입력하세요.</div></div></section>
-<section><div id="ask"></div><div class="card" id="guideCard"><div class="tools" id="tools" hidden><button class="ghost" id="copy">Markdown 복사</button><button class="ghost" id="dl">.md 다운로드</button></div><div class="guide" id="guide"><div class="empty">검색 후 가이드가 여기에 생성됩니다.</div></div></div></section></div>
+<section><div id="ask"></div><div class="card" id="guideCard"><div class="tools" id="tools" hidden><span class="gen" id="gen"></span><button class="ghost" id="copy">Markdown 복사</button><button class="ghost" id="dl">.md 다운로드</button></div><div class="guide" id="guide"><div class="empty">검색 후 가이드가 여기에 생성됩니다.</div></div></div></section></div>
 </div>
 <script>
 const $=s=>document.querySelector(s);let state={q:'',md:'',title:'guide'};
@@ -543,7 +547,7 @@ $('#guide').innerHTML='<div class="wait">관련 문서를 다시 검색해 가�
 const tick=setInterval(()=>{const e=$('#elapsed');if(e)e.textContent=sec()+'초'},1000);
 let d;try{d=await post('/api/guide',{q:state.q,key,variant})}catch(err){$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+' ('+sec()+'초)</div>';return}finally{clearInterval(tick)}steps(4,true);state.md=d.markdown;state.title=d.title;
 showResults(d,label?label+' 기준 재검색':'');
-$('#guide').innerHTML=md(d.markdown)+`<p class="muted" style="font-size:11px;margin-top:24px">생성 방식: ${d.mode==='llm'?'LLM 작성':'문서 조합 템플릿'} · 소요 ${sec()}초</p>`;$('#tools').hidden=false;diagrams()}
+$('#guide').innerHTML=md(d.markdown);const g=$('#gen');g.className='gen'+(d.mode==='llm'?' llm':'');g.textContent=`생성 방식: ${d.mode==='llm'?'LLM 작성'+(d.model?' · '+d.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams()}
 $('#form').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)search(q).catch(err=>{$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+'</div>'})};
 $('#copy').onclick=()=>navigator.clipboard.writeText(state.md).then(()=>{$('#copy').textContent='복사됨';setTimeout(()=>$('#copy').textContent='Markdown 복사',1200)});
 $('#dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([state.md],{type:'text/markdown'}));a.download=state.title.replace(/\s+/g,'-')+'.md';a.click()};
