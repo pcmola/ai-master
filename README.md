@@ -1,7 +1,6 @@
 # AI Master
 
 Azure DevOps Wiki를 관리하고, 사내 Azure OpenAI 게이트웨이와 Azure 프록시 VM을 운영하기 위한 도구 모음입니다.
-사용량·비용 모니터(`usage_monitor.py`, `cost_monitor.py`)는 `F:\sandbox\ai-monitor`로 분리했습니다.
 
 ## 구성
 
@@ -16,6 +15,51 @@ ai-master/
 ├─ test/           Azure OpenAI 채팅, 임베딩, 스트리밍 테스트
 └─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git)
 ```
+
+```mermaid
+flowchart LR
+    user(["사용자 (크롬)"])
+
+    subgraph local["로컬 PC (ai-master)"]
+        hub["hub.py<br/>로컬 웹서버 허브"]
+        subgraph wiki_tools
+            viewer["wiki_viewer.py"]
+            search["wiki_search.py"]
+            docs["wiki_documents.py"]
+        end
+        subgraph proxy_tools
+            logviewer["proxy_log_viewer.py"]
+            detect["proxy_log_detect.py"]
+            publish["squid_policy_publish.py"]
+            vmtool["azure_proxy_vm.py"]
+        end
+        teams["teams_tools"]
+        repo[("wiki-repo<br/>(별도 Git)")]
+    end
+
+    subgraph azure["Azure"]
+        openai["Azure OpenAI 게이트웨이"]
+        devops["Azure DevOps<br/>Wiki · Task"]
+        vm["프록시 VM<br/>Squid (podman)"]
+    end
+    anthropic["Anthropic API<br/>(선택)"]
+    msteams["Microsoft Teams"]
+
+    user --> hub
+    hub -- "시작·중지·로그" --> viewer & search & logviewer
+    viewer & search --> repo
+    search -- "임베딩·가이드" --> openai
+    search -. "ANTHROPIC_API_KEY 있으면" .-> anthropic
+    docs -- "REST API" --> devops
+    repo -- "git push" --> devops
+    logviewer & detect & publish -- "SSH" --> vm
+    publish -- "Task 등록" --> devops
+    publish --> repo
+    vmtool -- "VM 생성" --> vm
+    teams -- "알림" --> msteams
+```
+
+모든 도구는 프로젝트 루트의 `.env` 하나를 함께 읽고, 실행 중 생기는 파일은 `data/`에 남깁니다.
 
 | 폴더 | 파일 | 용도 | 주소 (hosts 미등록 시) |
 |---|---|---|---|
@@ -77,6 +121,15 @@ hosts 파일은 포트를 정할 수 없으므로 서버마다 다른 루프백 
 | `127.0.0.1 wiki.local` | 127.0.0.1:포트 | `http://wiki.local:8765` |
 | `127.0.87.65 wiki.local` | 127.0.87.65:80 | `http://wiki.local` |
 
+```mermaid
+flowchart TD
+    start(["서버 시작"]) --> read["hosts 파일에서<br/>자기 이름(예: wiki.local) 찾기"]
+    read --> found{"적힌 IP는?"}
+    found -- "없음" --> a["127.0.0.1:포트<br/>http://127.0.0.1:8765"]
+    found -- "127.0.0.1" --> b["127.0.0.1:포트<br/>http://wiki.local:8765"]
+    found -- "127.0.87.xx" --> c["127.0.87.xx:80<br/>http://wiki.local"]
+```
+
 관리자 PowerShell에서 `C:\Windows\System32\drivers\etc\hosts`에 아래를 추가하고 `ipconfig /flushdns`를 실행합니다.
 
 ```
@@ -99,6 +152,19 @@ python hub.py --restart-all  # 모두 다시 시작 (중복 실행·예전 주�
 python hub.py --no-browser   # 크롬을 열지 않음 (다른 옵션과 함께 사용)
 ```
 
+```mermaid
+flowchart LR
+    browser(["크롬<br/>http://ai-master.local"]) <--> hub["hub.py<br/>127.0.87.64:80"]
+    hub -- "상태 확인·시작·중지·재시작<br/>(창 없이 실행)" --> servers
+    subgraph servers["ai-master 서버"]
+        s1["wiki_viewer.py<br/>wiki.local"]
+        s2["wiki_search.py<br/>wiki-search.local"]
+        s3["proxy_log_viewer.py<br/>proxy-log.local"]
+    end
+    servers -- "출력" --> logs[("data/logs/&lt;서버&gt;.log")]
+    hub -. "로그 보기" .-> logs
+```
+
 - 서버는 창 없이 뜨고 출력은 `data/logs/<서버>.log`에 남습니다. 허브를 꺼도(Ctrl+C) 서버는 계속 돕니다.
 - 실행 여부는 프로세스 명령줄의 스크립트 이름으로 찾으므로 직접 띄운 서버도 허브에 보이고 끌 수 있습니다(로그는 허브에서 시작한 서버만 남음).
 - 허브 콘솔에는 시각과 함께 시작 설정, 시작·중지 요청, 생성·종료한 PID, 상태 변화(직접 끄거나 서버가 죽은 경우 포함), 거부된 요청, 오류가 찍힙니다. 서버가 시작하자마자 죽으면 그 서버 출력의 마지막 줄도 함께 찍힙니다.
@@ -107,6 +173,70 @@ python hub.py --no-browser   # 크롬을 열지 않음 (다른 옵션과 함께 
 
 ```powershell
 Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | ForEach-Object { taskkill /PID $_.OwningProcess /T /F }
+```
+
+## 주요 흐름
+
+### Wiki 검색·가이드 생성 (wiki_search.py)
+
+```mermaid
+flowchart TD
+    q(["질의 입력"]) --> analyze["질의 분석<br/>개념·동의어 묶음, 키워드"]
+    analyze --> rank["혼합 검색<br/>키워드 점수 + 임베딩 유사도 × EMBED_WEIGHT"]
+    cache[("data/wiki_search_cache.json<br/>문서 임베딩")] --> rank
+    repo[("wiki-repo 문서")] --> rank
+    rank --> filter["핵심 개념이 나오는 문서만<br/>상위 15개 선택"]
+    filter --> llm{"LLM 클라이언트?"}
+    llm -- "ANTHROPIC_API_KEY 있음" --> claude["Claude로 가이드 작성"]
+    llm -- "없음" --> openai["Azure OpenAI<br/>(OPENAI_MODEL)로 작성"]
+    llm -- "둘 다 없음" --> tpl["템플릿 가이드"]
+    claude & openai -- "실패·거절" --> tpl
+    claude & openai & tpl --> out(["Markdown 가이드 + 근거 문서 링크"])
+```
+
+### Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor 운영자
+    participant P as squid_policy_publish.py
+    participant VM as 프록시 VM (Squid)
+    participant S as data/proxy_policy_state
+    participant D as Azure DevOps
+    participant W as wiki-repo
+
+    운영자->>P: 실행 (--dry-run / --yes / --task-id)
+    P->>S: 기준 스냅샷 읽기
+    P->>VM: SSH로 설정 + whitelist.txt 읽기
+    P->>P: 기준과 비교 (추가/삭제)
+    alt 변경 없음
+        P-->>운영자: "변경 없음" 후 종료
+    else --dry-run
+        P-->>운영자: 할 일만 출력 (아무것도 바꾸지 않음)
+    else 변경 있음
+        P->>운영자: 변경 내용 보여 주고 승인 요청
+        운영자->>P: 승인 (--yes면 생략)
+        P->>D: Task 생성 (--task-id면 댓글 추가)
+        P->>W: '프록시 화이트리스트 현황' 갱신 후 commit/push
+        P->>S: 모두 성공한 뒤에만 스냅샷·이력 갱신
+    end
+```
+
+처음 실행(기준 스냅샷 없음)이면 Task 없이 기준만 저장하고 Wiki 현황 문서를 만듭니다. 중간에 실패하면 스냅샷이 그대로라서 다음 실행 때 같은 변경을 다시 처리합니다.
+
+### 프록시 로그 이상 탐지 (proxy_log_detect.py)
+
+```mermaid
+flowchart LR
+    sim["simulate<br/>가상 에러 로그 생성"] --> local[("data/sim_access.log")]
+    sim -- "--upload IP" --> vmsim[("VM ~/sim_access.log")]
+    real[("VM Squid access.log")]
+    local -- "detect (기본)" --> det["이상 탐지<br/>차단 반복·도메인 스캔·업스트림 장애·<br/>미허용 클라이언트·지연·대용량 등"]
+    real -- "detect --host IP (SSH)" --> det
+    vmsim -- "detect --host IP --sim" --> det
+    det --> report(["콘솔 보고서 / --json"])
+    det --> viewer["proxy_log_viewer.py<br/>화면에서 같은 탐지 결과 표시"]
 ```
 
 ## 실행 예시

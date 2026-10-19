@@ -3,5 +3,8 @@
   "explorer.decorations.badges": true,
   "git.decorations.enabled": true,
   "git.openRepositoryInParentFolders": "always",
-  "git.detectSubmodules": true
+  "git.detectSubmodules": true,
+  // 터미널의 http://127.0.0.1:87xx 링크를 VS Code 내장 브라우저가 아니라 크롬으로 연다.
+  "workbench.browser.openLocalhostLinks": false,
+  "workbench.externalBrowser": "chrome"
 }
