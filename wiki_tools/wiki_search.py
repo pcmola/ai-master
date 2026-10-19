@@ -350,6 +350,16 @@ def categorize(sentence: str) -> str:
 
 
 def do_guide(query: str, key: str | None, variant: str | None) -> dict:
+    """guide_events 를 끝까지 받아 한 번에 돌려준다(스트리밍이 필요 없는 호출용)."""
+    result: dict = {}
+    for event in guide_events(query, key, variant):
+        if event["type"] in ("meta", "done"):
+            result.update({k: v for k, v in event.items() if k != "type"})
+    return result
+
+
+def guide_events(query: str, key: str | None, variant: str | None):
+    """가이드 생성 과정을 이벤트로 낸다: meta(검색 결과) → delta(LLM 이 쓴 완성된 줄, 여러 번) → done(최종 Markdown)."""
     concepts, terms = analyze(query)
     groups = build_groups(concepts, terms)
     option = CLARIFY[key]["options"][variant] if key in CLARIFY and variant in CLARIFY[key]["options"] else None
@@ -367,25 +377,34 @@ def do_guide(query: str, key: str | None, variant: str | None) -> dict:
             statements.setdefault(line, []).append(d)
 
     title = f"{option['label'] if option else query.strip()} 가이드"
-    mode = "template"
-    model = None
-    markdown = None
-    client = claude_client() or openai_client()
-    if client and statements:
-        markdown = llm_guide(client, query, title, option, statements, sources)
-        mode = "llm" if markdown else "template"
-        if markdown:  # llm_guide 와 같은 기본값으로 실제 쓴 모델 이름을 화면에 알려 준다
-            model = (os.environ.get("OPENAI_MODEL", "gpt-4.1") if hasattr(client, "chat")
-                     else os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5"))
-    if not markdown:
-        markdown = template_guide(query, title, option, statements, sources)
+    client = (claude_client() or openai_client()) if statements else None
+    model = llm_model(client) if client else None
     highlights = sorted({w for g in groups for w in g} | set(boost), key=len, reverse=True)
     weighted = group_weights(groups) + [([b], 0.3) for b in boost]
-    return {"title": title, "mode": mode, "model": model, "markdown": markdown,
-            "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms},
-            "highlights": highlights,
-            "results": [{"path": d.path, "title": d.title, "link": view_link(d.path), "score": round(s, 3),
-                         "snippets": matching_lines(d, weighted)} for d, s in sources]}
+    yield {"type": "meta", "title": title, "model": model,
+           "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms},
+           "highlights": highlights,
+           "results": [{"path": d.path, "title": d.title, "link": view_link(d.path), "score": round(s, 3),
+                        "snippets": matching_lines(d, weighted)} for d, s in sources]}
+
+    markdown = None
+    if client:
+        gen = llm_guide(client, query, title, option, statements, sources)
+        try:
+            while True:
+                yield {"type": "delta", "text": next(gen)}
+        except StopIteration as stop:
+            markdown = stop.value
+    if markdown:
+        yield {"type": "done", "mode": "llm", "model": model, "markdown": markdown}
+    else:  # LLM 이 없거나 도중에 실패하면 템플릿으로 바꿔 낸다(화면은 받은 글을 이 내용으로 갈아 끼운다)
+        yield {"type": "done", "mode": "template", "model": None,
+               "markdown": template_guide(query, title, option, statements, sources)}
+
+
+def llm_model(client) -> str:
+    return (os.environ.get("OPENAI_MODEL", "gpt-4.1") if hasattr(client, "chat")
+            else os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5"))
 
 
 def cite(docs: list[Doc]) -> str:
@@ -435,7 +454,8 @@ def template_guide(query, title, option, statements, sources) -> str:
     return "\n".join(out)
 
 
-def llm_guide(client, query, title, option, statements, sources) -> str | None:
+def llm_guide(client, query, title, option, statements, sources):
+    """LLM 이 쓰는 가이드를 완성된 줄 단위로 낸다(다이어그램 자리표시자는 원문으로 되돌린 뒤). 최종 Markdown 은 return 값, 실패하면 None."""
     # mermaid 다이어그램은 LLM 이 글로 풀어 쓰거나 고치지 않도록 자리표시자로 바꿔 넘기고, 응답에서 원문으로 되돌린다.
     diagrams: list[str] = []
 
@@ -461,14 +481,32 @@ def llm_guide(client, query, title, option, statements, sources) -> str | None:
               "다이어그램을 글·표·ASCII 로 풀어 쓰지 말고 '[[DIAGRAM-n]]' 한 줄만 단독으로 적어라. 괄호 속 설명은 옮기지 마라.\n"
               f"- 첫 줄은 '# {title}'로 시작하고, Markdown 본문만 출력하라.")
     system = "너는 사내 위키 문서를 근거로 운영 가이드를 작성하는 기술 문서 작성자다."
+    text, pending = "", ""
+
+    def lines(chunk: str):
+        # 자리표시자가 한 줄에 단독으로 오므로, 줄이 끝난 부분만 복원해 내보낸다.
+        nonlocal pending
+        pending += chunk
+        cut = pending.rfind("\n") + 1
+        if cut:
+            done, pending = pending[:cut], pending[cut:]
+            yield DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), done)
+
     try:
         if hasattr(client, "chat"):  # OpenAI / Azure OpenAI 게이트웨이
-            res = client.chat.completions.create(
-                model=os.environ.get("OPENAI_MODEL", "gpt-4.1"),
+            stream = client.chat.completions.create(
+                model=llm_model(client), stream=True,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
-            text = (res.choices[0].message.content or "").strip()
+            for chunk in stream:
+                piece = chunk.choices[0].delta.content if chunk.choices else None
+                if piece:
+                    text += piece
+                    yield from lines(piece)
+            if pending:
+                yield from lines("\n")
+            text = text.strip()
         else:  # Anthropic
-            model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5")
+            model = llm_model(client)
             # 안전 분류기가 거절하면 서버가 다른 모델로 이어서 답하게 한다(지원 모델만).
             extra = ({"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
                      if model in {"claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"} else {"betas": []})
@@ -479,6 +517,7 @@ def llm_guide(client, query, title, option, statements, sources) -> str | None:
                 print(f"[llm guide refused] {res.stop_details}")
                 return None
             text = "".join(b.text for b in res.content if b.type == "text").strip()
+            yield from lines(text + "\n")
         text = DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text)
         refs = "\n".join(f"- [{d.title}]({view_link(d.path)}) — {d.path}" for d, _ in sources)
         return f"{text}\n\n## 원문 링크\n\n{refs}" if text else None
@@ -511,7 +550,7 @@ mark{background:var(--hl);padding:0 1px;border-radius:2px}
 .guide h1{font-size:26px;margin:0 0 8px}.guide h2{font-size:19px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-top:28px}.guide h3{font-size:16px;margin-top:20px}.guide blockquote{margin:0;padding:8px 14px;background:var(--soft);border-left:4px solid var(--blue);color:#4a5568}.guide a{color:var(--blue);text-decoration:none}.guide ul{padding-left:22px}.guide table{border-collapse:collapse;width:100%;font-size:12px;display:block;overflow-x:auto}.guide td,.guide th{border:1px solid var(--line);padding:5px 8px;text-align:left}.guide th{background:var(--soft)}
 .wait{text-align:center;padding:36px 0;color:var(--muted)}.wait b{color:var(--ink);font-variant-numeric:tabular-nums}.prog{height:6px;max-width:320px;margin:14px auto 0;background:#e5eaf0;border-radius:3px;overflow:hidden}.prog i{display:block;width:35%;height:100%;background:var(--blue);border-radius:3px;animation:slide 1.4s ease-in-out infinite}@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(290%)}}
 .guide pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow-x:auto;font:12.5px/1.55 Consolas,monospace}.guide .mermaid{margin:14px 0;text-align:center;overflow-x:auto}
-.tools{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-bottom:8px}.gen{margin-right:auto;font-size:12px;font-weight:600;border-radius:999px;padding:4px 12px;background:#f1f5f9;color:#475569}.gen.llm{background:#dcfce7;color:#166534}.tools[hidden]{display:none}.muted{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px 0}
+.tools{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-bottom:8px}.gen{margin-right:auto;font-size:12px;font-weight:600;border-radius:999px;padding:4px 12px;background:#f1f5f9;color:#475569}.gen.llm{background:#dcfce7;color:#166534}.gen.live{background:#dbeafe;color:#1e40af}.tools[hidden]{display:none}.muted{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px 0}
 @media(max-width:820px){.grid{grid-template-columns:1fr}.opts{grid-template-columns:1fr}}
 </style></head><body>
 <header class="top"><div class="mark">G</div><div class="brand">Wiki Guide Search</div><div class="crumb">wiki-repo 의미 검색 · 가이드 생성</div></header>
@@ -544,10 +583,15 @@ else guide(d.variant&&d.variant.key,d.variant&&d.variant.id,d.variant&&d.variant
 async function guide(key,variant,label){steps(3);if(label)$('#ask').innerHTML=`<div class="card" style="margin-bottom:16px">선택한 유형: <b>${esc(label)}</b> <button class="ghost" style="float:right;padding:3px 10px" id="re">다시 선택</button></div>`;const re=$('#re');if(re)re.onclick=()=>search(state.q);
 const t0=Date.now(),sec=()=>Math.floor((Date.now()-t0)/1000);
 $('#guide').innerHTML='<div class="wait">관련 문서를 다시 검색해 가이드를 만드는 중… <b id="elapsed">0초</b><div class="prog"><i></i></div></div>';
-const tick=setInterval(()=>{const e=$('#elapsed');if(e)e.textContent=sec()+'초'},1000);
-let d;try{d=await post('/api/guide',{q:state.q,key,variant})}catch(err){$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+' ('+sec()+'초)</div>';return}finally{clearInterval(tick)}steps(4,true);state.md=d.markdown;state.title=d.title;
-showResults(d,label?label+' 기준 재검색':'');
-$('#guide').innerHTML=md(d.markdown);const g=$('#gen');g.className='gen'+(d.mode==='llm'?' llm':'');g.textContent=`생성 방식: ${d.mode==='llm'?'LLM 작성'+(d.model?' · '+d.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams()}
+const tick=setInterval(()=>{const e=$('#elapsed');if(e)e.textContent=sec()+'초';const g=$('#gen');if(g.classList.contains('live'))g.textContent=g.textContent.replace(/\d+초$/,sec()+'초')},1000);
+if(state.ctl)state.ctl.abort();const ctl=state.ctl=new AbortController();const g=$('#gen');let model=null,text='',drawn=0,timer=null;
+const draw=()=>{timer=null;if(drawn!==text.length){drawn=text.length;$('#guide').innerHTML=md(text)}};
+const on=e=>{if(e.type==='meta'){model=e.model;state.title=e.title;showResults(e,label?label+' 기준 재검색':'')}
+else if(e.type==='delta'){if(!text){steps(4);g.className='gen live';g.textContent=`작성 중 · ${model||'LLM'} · ${sec()}초`;$('#tools').hidden=false}text+=e.text;if(!timer)timer=setTimeout(draw,120)}
+else if(e.type==='done'){clearTimeout(timer);steps(4,true);state.md=e.markdown;$('#guide').innerHTML=md(e.markdown);g.className='gen'+(e.mode==='llm'?' llm':'');g.textContent=`생성 방식: ${e.mode==='llm'?'LLM 작성'+(e.model?' · '+e.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams()}};
+try{const r=await fetch('/api/guide/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:state.q,key,variant}),signal:ctl.signal});if(!r.ok)throw new Error(await r.text());
+const rd=r.body.getReader(),dec=new TextDecoder();let buf='';for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(line.trim())on(JSON.parse(line))}}}
+catch(err){if(err.name==='AbortError')return;$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+' ('+sec()+'초)</div>'}finally{clearInterval(tick)}}
 $('#form').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)search(q).catch(err=>{$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+'</div>'})};
 $('#copy').onclick=()=>navigator.clipboard.writeText(state.md).then(()=>{$('#copy').textContent='복사됨';setTimeout(()=>$('#copy').textContent='Markdown 복사',1200)});
 $('#dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([state.md],{type:'text/markdown'}));a.download=state.title.replace(/\s+/g,'-')+'.md';a.click()};
@@ -562,6 +606,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def send_stream(self, events):
+        """이벤트를 한 줄에 JSON 하나(NDJSON)로 바로바로 보낸다. 길이를 모르므로 연결을 닫아 끝을 알린다."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        try:
+            for event in events:
+                self.wfile.write(json.dumps(event, ensure_ascii=False).encode("utf-8") + b"\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass  # 새 검색을 해서 브라우저가 이전 요청을 끊은 경우
+        self.close_connection = True
 
     def do_GET(self):
         if urlparse(self.path).path != "/":
@@ -582,6 +641,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(do_search(q)); return
             if path == "/api/guide":
                 self.send_json(do_guide(q, body.get("key"), body.get("variant"))); return
+            if path == "/api/guide/stream":
+                self.send_stream(guide_events(q, body.get("key"), body.get("variant"))); return
             self.send_error(404)
         except (ValueError, json.JSONDecodeError):
             self.send_json({"error": "bad request"}, 400)
