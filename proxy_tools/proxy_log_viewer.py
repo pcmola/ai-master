@@ -7,7 +7,7 @@
 
 사용 예:
     python proxy_tools/proxy_log_viewer.py                 # http://127.0.0.1:8768
-    python proxy_tools/proxy_log_viewer.py --host 72.155.73.113
+    python proxy_tools/proxy_log_viewer.py --host <VM_IP>
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ MAX_LINES = 5000
 # VM 에서 squid 컨테이너를 띄운 런타임. wjy-proxy01 은 podman(Quadlet), 예전 구성은 docker.
 RUNTIME = os.environ.get("SQUID_RUNTIME") if os.environ.get("SQUID_RUNTIME") in ("docker", "podman") else "podman"
 
-HOSTS: list[dict] = []  # [{"name": "wjy-proxy01", "ip": "72.155.73.113"}]
+HOSTS: list[dict] = []  # [{"name": "wjy-proxy01", "ip": "203.0.113.20"}]
 
 
 def discover_hosts(resource_group: str) -> list[dict]:
@@ -221,7 +221,7 @@ td.host{white-space:normal;word-break:break-all}td.num,th.num{text-align:right}
 <div class="bar">
 <select id="src" title="로그 소스"><option value="real">실제 로그</option><option value="sim">가상 로그 (VM ~/sim_access.log)</option><option value="local">가상 로그 (로컬 파일)</option></select>
 <select id="host"></select>
-<select id="lines"><option>200</option><option selected>500</option><option>2000</option><option>5000</option></select>
+<label for="lines">표시 개수</label><select id="lines" aria-label="로그 표시 개수"><option>10</option><option selected>200</option><option>500</option><option>1000</option></select>
 <div class="seg" id="seg"><button data-f="all" class="on">전체</button><button data-f="ok">허용</button><button data-f="bad">차단</button></div>
 <input type="search" id="q" placeholder="도메인·클라이언트 IP·결과 코드 검색">
 <label class="auto"><input type="checkbox" id="auto"> 5초 자동 새로고침</label>

@@ -43,11 +43,13 @@ flowchart LR
         vm["프록시 VM<br/>Squid (podman)"]
     end
     msteams["Microsoft Teams"]
+    tavily["Tavily 웹 검색<br/>(TAVILY_API_KEY 있을 때)"]
 
     user --> hub
     hub -- "시작·중지·로그" --> viewer & search & logviewer
     viewer & search --> repo
     search -- "임베딩·가이드 작성" --> openai
+    search -. "위키 근거 부족 시" .-> tavily
     docs -- "REST API" --> devops
     repo -- "git push" --> devops
     logviewer & detect & publish -- "SSH" --> vm
@@ -71,7 +73,7 @@ flowchart LR
     class teams teams
     class repo store
     class openai,devops,vm cloud
-    class msteams ext
+    class msteams,tavily ext
     style local fill:#94A3B81A,stroke:#94A3B8
     style wiki_tools fill:#3B82F614,stroke:#3B82F6,stroke-dasharray:4 3
     style proxy_tools fill:#F9731614,stroke:#F97316,stroke-dasharray:4 3
@@ -93,6 +95,8 @@ flowchart LR
 | | `squid_policy_monitor.py` | Squid 정책 변경 감지 (읽기 전용) | - |
 | | `squid_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki 현황 갱신 | - |
 | teams_tools | `teams_notify.py`, `teams_graph.py` | Teams 알림 (Workflows 웹후크 / Graph API) | - |
+| | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | http://127.0.0.1:8771 (요청 중에만) |
+| test | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
 
 ## 설정
 
@@ -111,7 +115,10 @@ Copy-Item .env.sample .env
 | `OPENAI_MODEL` | `gpt-5.4` | 가이드 작성 LLM. 2026-10-19 후보 5개 비교에서 완성도와 속도가 가장 균형이 좋았다 |
 | `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. 정답 16문항 비교에서 small·ada-002보다 정확했다 |
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮는다 |
+| `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다. 비우면 웹 검색 안 함 |
+| `WEB_SEARCH_MIN_SIM` | `0.5` | 위키 최고 임베딩 유사도가 이보다 낮으면 웹 검색. 2026-10-20 측정에서 위키에 있는 질의는 0.59 이상, 없는 질의는 0.46 이하였다 |
 | `SQUID_HOST` | - | 정책 감지 대상 프록시 VM의 공용 IP |
+| `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
 | `SQUID_CONTAINER` / `SQUID_RUNTIME` | `squid` / `podman` | VM에서 Squid가 도는 컨테이너 이름과 런타임 |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
 
@@ -126,6 +133,7 @@ Copy-Item .env.sample .env
 | `proxy_policy_state/` | squid_policy_publish.py (정책 기준 스냅샷, 변경 이력) |
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
+| `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
 ## 로컬 웹서버
 
@@ -227,7 +235,10 @@ flowchart TD
     cache[("data/wiki_search_cache.json<br/>문서 임베딩")] --> rank
     repo[("wiki-repo 문서")] --> rank
     rank --> filter["핵심 개념이 나오는 문서만<br/>상위 15개 선택"]
-    filter --> llm{"Azure OpenAI<br/>설정 있음?"}
+    filter --> weak{"위키 근거 약함?<br/>유사도 &lt; 0.5 또는 0건"}
+    weak -- "예 (TAVILY_API_KEY 있을 때)" --> web["Tavily 웹 검색<br/>상위 5건"]
+    weak -- "아니오" --> llm{"Azure OpenAI<br/>설정 있음?"}
+    web -- "위키 + 웹 결과" --> llm
     llm -- "있음" --> openai["Azure OpenAI 게이트웨이<br/>gpt-5.4로 가이드 작성"]
     llm -- "없음" --> tpl["문서 조합 템플릿"]
     openai -- "호출 실패" --> tpl
@@ -239,11 +250,14 @@ flowchart TD
     classDef store fill:#F1F5F9,stroke:#64748B,color:#1E293B
     classDef decide fill:#FEF3C7,stroke:#D97706,color:#78350F
     classDef llm fill:#F3E8FF,stroke:#9333EA,color:#581C87
+    classDef webq fill:#FEF9C3,stroke:#CA8A04,stroke-dasharray:4 3,color:#713F12
     classDef fallback fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#334155
     classDef done fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
     class q io
     class analyze,rank,filter step
     class cache,repo store
+    class weak decide
+    class web webq
     class llm decide
     class openai llm
     class tpl fallback
@@ -313,6 +327,50 @@ flowchart LR
     class report,viewer done
 ```
 
+## 시나리오 2 테스트 환경
+
+시나리오 2는 Wiki의 Proxy 현황 문서와 Azure의 실제 VM을 비교해, 차이가 있으면 승인을 받아 Task를 만들고 문서를 현행화합니다. 테스트 환경은 Azure를 바꾸지 않고 Wiki 쪽에 일부러 차이를 넣어 만듭니다.
+
+```mermaid
+flowchart LR
+    setup["setup_env.py"] -- "실제 VM 조회" --> az[("Azure<br/>WJY-PROXY-RG")]
+    setup -- "'현행화 전' 문서 쓰기<br/>로컬 커밋" --> wiki[("wiki-repo<br/>Proxy VM 현황 (테스트 구독)")]
+    setup -- "스냅샷·정답 저장" --> data[("data/scenario2/")]
+    scenario["시나리오 2 실행"] --> az & wiki
+    scenario -- "Yes/No" --> approval["approval_local.py<br/>(Teams 대체)"]
+    scenario -. "결과를 정답과 비교" .-> data
+
+    classDef tool fill:#F3E8FF,stroke:#9333EA,color:#581C87
+    classDef store fill:#F1F5F9,stroke:#64748B,color:#1E293B
+    classDef cloud fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
+    classDef approve fill:#FFEDD5,stroke:#F97316,color:#7C2D12
+    class setup,scenario tool
+    class wiki,data store
+    class az cloud
+    class approval approve
+```
+
+`setup_env.py`는 리소스 그룹 `WJY-PROXY-RG`에서 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM을 읽어 아래 차이를 넣은 Wiki 문서를 만듭니다. 실제 값과 정답은 `data/scenario2/`에만 저장합니다(저장소 공개).
+
+| VM | Wiki(현행화 전) | 비교 단계가 찾아야 할 차이 |
+|---|---|---|
+| 1번째 VM | 상태·SIZE를 실제와 다르게 | 상태 변경, 스펙 변경 |
+| 2번째 VM | 사설 IP를 실제와 다르게 | IP 변경 |
+| 3번째 VM | 표에서 뺌 | 신규 |
+| 없는 VM(`*-prxy04`) | 표에 넣음 | 삭제 |
+
+```powershell
+python test\scenario2\setup_env.py            # 점검 + Wiki 문서를 '현행화 전'으로 초기화 (시나리오 실행 전마다)
+python test\scenario2\setup_env.py --check    # 점검만
+python test\scenario2\setup_env.py --reseed   # VM이 바뀌었을 때(시작·중지 포함) 표와 정답을 다시 만듦
+python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신규: wjy-proxy03"   # 승인 화면만 시험
+```
+
+- 점검 항목: az 로그인과 Proxy VM 3대 이상, 스냅샷과 실제 VM 일치, Azure DevOps PAT, 승인 화면 모듈.
+- VM 전원 상태도 비교 대상이라 VM을 켜거나 끄면 정답이 틀어집니다. 이때 `--check`가 실패하므로 `--reseed`로 다시 만듭니다.
+- Wiki 문서는 wiki-repo에 로컬 커밋만 하고 Azure DevOps Wiki로 push하지 않습니다.
+- Teams 승인은 아직 연결하지 않았습니다. `approval_local.py`의 `request_approval(title, items, question)`을 같은 인자의 Teams 승인 함수로 바꾸면 됩니다.
+
 ## 실행 예시
 
 프로젝트 루트에서 실행합니다. 다른 폴더에서 실행해도 `.env`·`wiki-repo`·`data`는 프로젝트 루트 기준으로 찾습니다.
@@ -322,14 +380,15 @@ python wiki_tools\wiki_search.py
 python wiki_tools\wiki_viewer.py
 python wiki_tools\wiki_documents.py list
 python proxy_tools\proxy_log_viewer.py
-python proxy_tools\proxy_log_detect.py detect --host 72.155.73.113
+python proxy_tools\proxy_log_detect.py detect --host <VM_IP>
 python proxy_tools\squid_policy_publish.py --dry-run
 python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --dry-run
 ```
 
 ## 주의사항
 
-- `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`를 소스에 직접 작성하지 마세요.
+- `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`, `TAVILY_API_KEY`를 소스에 직접 작성하지 마세요.
 - 이미 노출된 인증정보는 폐기하고 재발급하세요.
+- 이 저장소는 공개입니다. 실제 VM IP, 허용 클라이언트 IP, 구독 ID, 사내 게이트웨이 주소는 소스·README에 쓰지 말고 `.env` 또는 `data/`(Git 제외)에만 둡니다. 예시에는 `<VM_IP>`나 문서용 IP(`203.0.113.x`)를 씁니다.
 - `wiki-repo`, `wiki-backup`, `wiki/AI-Master.wiki`는 별도 Git 저장소를 포함합니다.
 - 같은 주소로 서버를 두 번 띄우면 두 번째 실행은 "이미 사용 중" 메시지로 끝납니다. 코드를 바꾼 뒤에는 기존 서버를 끄고 다시 실행하세요(허브의 재시작 버튼).

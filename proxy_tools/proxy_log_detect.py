@@ -5,10 +5,10 @@ detect  : 로컬 파일 또는 프록시 VM(SSH)의 로그를 규칙으로 분�
 
 사용 예:
     python proxy_tools/proxy_log_detect.py simulate                         # sim_access.log 생성 + 심은 시나리오 출력
-    python proxy_tools/proxy_log_detect.py simulate --upload 72.155.73.113  # VM 의 ~/sim_access.log 로도 올린다
+    python proxy_tools/proxy_log_detect.py simulate --upload <VM_IP>  # VM 의 ~/sim_access.log 로도 올린다
     python proxy_tools/proxy_log_detect.py detect data/sim_access.log            # 로컬 파일 분석
-    python proxy_tools/proxy_log_detect.py detect --host 72.155.73.113 --sim  # VM 의 가상 로그 분석
-    python proxy_tools/proxy_log_detect.py detect --host 72.155.73.113        # VM 의 실제 squid 로그 분석
+    python proxy_tools/proxy_log_detect.py detect --host <VM_IP> --sim  # VM 의 가상 로그 분석
+    python proxy_tools/proxy_log_detect.py detect --host <VM_IP>        # VM 의 실제 squid 로그 분석
     python proxy_tools/proxy_log_detect.py detect data/sim_access.log --json       # 결과를 JSON 으로
 
 detect 는 high 등급이 하나라도 있으면 종료 코드 2, medium 만 있으면 1, 없으면 0 을 돌려준다(스케줄 실행용).
@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import os
 import random
 import subprocess
 import sys
@@ -29,12 +30,19 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
-from common.paths import DATA_DIR  # noqa: E402
+from common.paths import DATA_DIR, ENV_FILE  # noqa: E402
 from proxy_log_viewer import LOG_PATH, RUNTIME, SSH_USER, parse_line  # noqa: E402
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ENV_FILE)
+except ImportError:
+    pass
 
 SIM_FILE = DATA_DIR / "sim_access.log"
 REMOTE_SIM = "sim_access.log"  # VM 의 /home/azureuser 아래
-ALLOWED_CLIENTS = ["14.39.36.171/32"]
+# 프록시를 쓸 수 있는 클라이언트(쉼표 구분 CIDR). 실제 값은 .env 의 PROXY_ALLOWED_CLIENTS 에 둔다(저장소 공개).
+ALLOWED_CLIENTS = [c.strip() for c in os.environ.get("PROXY_ALLOWED_CLIENTS", "203.0.113.10/32").split(",") if c.strip()]
 WHITELIST = ["data.go.kr", "law.go.kr"]
 
 # 탐지 기준. 값은 소규모 프록시(1~2명 사용) 기준이며 운영하면서 조정한다.
@@ -79,7 +87,7 @@ def simulate(seed: int, minutes: int) -> tuple[list[str], list[str]]:
     for i in range(15):
         ts = t0 + i * 2.5
         rows.append((ts, line(ts, 0, me, "TCP_DENIED", 403, 3394, "CONNECT", "www.google.com:443", "HIER_NONE/-", "text/html")))
-    truth.append("차단 반복: 14.39.36.171 → www.google.com 15회/40초")
+    truth.append(f"차단 반복: {me} → www.google.com 15회/40초")
 
     # 2) 여러 외부 도메인을 훑는 접근 → domain_scan
     t0 = at(0.35)
@@ -110,7 +118,7 @@ def simulate(seed: int, minutes: int) -> tuple[list[str], list[str]]:
         ts = t0 + i * 60
         rows.append((ts, line(ts, rnd.randint(20_000, 40_000), me, "TCP_TUNNEL", 200, 80 * 1024 * 1024,
                               "CONNECT", "api.data.go.kr:443")))
-    truth.append("대용량 전송: 14.39.36.171 80MB x 4회/3분 (단건 + 누적)")
+    truth.append(f"대용량 전송: {me} 80MB x 4회/3분 (단건 + 누적)")
 
     # 6) 비표준 포트 터널 시도(SSH 등) → Safe_ports 에서 차단
     t0 = at(0.85)

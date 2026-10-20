@@ -7,7 +7,7 @@
 사용 예:
     python proxy_tools/proxy_fault_inject.py list
     python proxy_tools/proxy_fault_inject.py apply whitelist-typo                  # 로컬 커밋만
-    python proxy_tools/proxy_fault_inject.py apply bad-dns --push --deploy 72.155.73.113
+    python proxy_tools/proxy_fault_inject.py apply bad-dns --push --deploy <VM_IP>
     python proxy_tools/proxy_fault_inject.py status                                 # 지금 심어진 장애가 있는지
 
 --deploy 는 proxy-config 의 scripts/deploy.sh 를 --restart 로 실행한 뒤 scripts/traffic.sh 로 로그를 만든다.
@@ -24,7 +24,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
-from common.paths import PROJECT_ROOT  # noqa: E402
+from common.paths import ENV_FILE, PROJECT_ROOT  # noqa: E402
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ENV_FILE)
+except ImportError:
+    pass
+
+# proxy-config 의 allowed_clients 에 적힌 실제 IP. 저장소가 공개라 .env 의 PROXY_ALLOWED_CLIENTS 첫 값을 쓴다.
+CLIENT = os.environ.get("PROXY_ALLOWED_CLIENTS", "203.0.113.10/32").split(",")[0].strip().split("/")[0]
 
 REPO = Path(os.environ.get("PROXY_CONFIG_DIR", PROJECT_ROOT.parent / "proxy-config"))
 GIT_BASH = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
@@ -40,10 +49,10 @@ SCENARIOS = {
     },
     "client-acl-typo": {
         "file": "squid/proxy.conf",
-        "before": "acl allowed_clients src 14.39.36.171/32\n",
-        "after": "acl allowed_clients src 14.39.36.17/32\n",
+        "before": f"acl allowed_clients src {CLIENT}/32\n",
+        "after": f"acl allowed_clients src {CLIENT[:-1]}/32\n",  # 마지막 숫자 하나를 빠뜨린 오타
         "message": "Update office egress IP for allowed_clients",
-        "symptom": "14.39.36.171 의 모든 요청이 TCP_DENIED/403 → whitelisted_denied, denied_burst",
+        "symptom": f"{CLIENT} 의 모든 요청이 TCP_DENIED/403 → whitelisted_denied, denied_burst",
     },
     "bad-dns": {
         "file": "squid/proxy.conf",

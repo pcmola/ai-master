@@ -6,6 +6,8 @@
 - 가이드 작성 LLM: ANTHROPIC_API_KEY 가 있으면 Claude, 없으면 OpenAI 호환 클라이언트를 쓴다.
 - OpenAI 호환 클라이언트: AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY 면 사내 Azure OpenAI 게이트웨이,
   OPENAI_API_KEY 면 OpenAI. 이 클라이언트가 있으면 임베딩 재순위화도 사용한다.
+- 웹 검색: TAVILY_API_KEY 가 있고 위키 근거가 약하면(최고 임베딩 유사도 < WEB_SEARCH_MIN_SIM, 또는 근거 문서 0건)
+  Tavily 검색 결과를 가이드 근거에 보탠다. 사내 게이트웨이는 내장 web_search 도구(Responses API)를 지원하지 않는다.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ import re
 import sys
 import threading
 import time
+import urllib.request
 from collections import Counter
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
@@ -224,6 +227,7 @@ class Embeddings:
         self.client = openai_client()
         self.model = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
         self.vectors: list[list[float]] = []
+        self._last: tuple[str, list[float]] | None = None
         if not self.client:
             return
         try:
@@ -250,14 +254,18 @@ class Embeddings:
     def similarity(self, query: str) -> list[float]:
         if not self.vectors:
             return []
+        if self._last and self._last[0] == query:
+            return self._last[1]
         try:
             q = self.client.embeddings.create(model=self.model, input=[query]).data[0].embedding
         except Exception as exc:
             print(f"[embeddings query failed] {exc}")
             return []
         qn = math.sqrt(sum(x * x for x in q)) or 1.0
-        return [sum(a * b for a, b in zip(q, v)) / (qn * (math.sqrt(sum(x * x for x in v)) or 1.0))
+        sims = [sum(a * b for a, b in zip(q, v)) / (qn * (math.sqrt(sum(x * x for x in v)) or 1.0))
                 for v in self.vectors]
+        self._last = (query, sims)
+        return sims
 
 
 def openai_client():
@@ -377,11 +385,14 @@ def guide_events(query: str, key: str | None, variant: str | None):
             statements.setdefault(line, []).append(d)
 
     title = f"{option['label'] if option else query.strip()} 가이드"
-    client = (claude_client() or openai_client()) if statements else None
+    web_reason = web_search_reason(sources, search_query)
+    web = web_search(f"{query} {option['label']}" if option else query) if web_reason else []
+    client = (claude_client() or openai_client()) if statements or web else None
     model = llm_model(client) if client else None
     highlights = sorted({w for g in groups for w in g} | set(boost), key=len, reverse=True)
     weighted = group_weights(groups) + [([b], 0.3) for b in boost]
     yield {"type": "meta", "title": title, "model": model,
+           "web": [{"title": w["title"], "url": w["url"]} for w in web], "web_reason": web_reason,
            "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms},
            "highlights": highlights,
            "results": [{"path": d.path, "title": d.title, "link": view_link(d.path), "score": round(s, 3),
@@ -389,7 +400,7 @@ def guide_events(query: str, key: str | None, variant: str | None):
 
     markdown = None
     if client:
-        gen = llm_guide(client, query, title, option, statements, sources)
+        gen = llm_guide(client, query, title, option, statements, sources, web)
         try:
             while True:
                 yield {"type": "delta", "text": next(gen)}
@@ -398,8 +409,40 @@ def guide_events(query: str, key: str | None, variant: str | None):
     if markdown:
         yield {"type": "done", "mode": "llm", "model": model, "markdown": markdown}
     else:  # LLM 이 없거나 도중에 실패하면 템플릿으로 바꿔 낸다(화면은 받은 글을 이 내용으로 갈아 끼운다)
-        yield {"type": "done", "mode": "template", "model": None,
-               "markdown": template_guide(query, title, option, statements, sources)}
+        markdown = template_guide(query, title, option, statements, sources)
+        if web:
+            markdown += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
+        yield {"type": "done", "mode": "template", "model": None, "markdown": markdown}
+
+
+def web_search_reason(sources, query: str) -> str | None:
+    """위키 근거가 약해 웹 검색이 필요하면 그 이유를, 아니면 None 을 돌려준다.
+    2026-10-20 측정: 위키에 있는 질의 5개는 최고 유사도 0.587~0.648, 없는 질의 5개는 0.248~0.463 이라 0.5 를 기준으로 둔다."""
+    if not os.environ.get("TAVILY_API_KEY"):
+        return None
+    if not sources:
+        return "관련 위키 문서 없음"
+    sims = INDEX.embeddings.similarity(query)
+    limit = float(os.environ.get("WEB_SEARCH_MIN_SIM", "0.5"))
+    if sims and max(sims) < limit:
+        return f"위키 최고 유사도 {max(sims):.2f} < {limit}"
+    return None
+
+
+def web_search(query: str) -> list[dict]:
+    """Tavily 검색 결과(제목·URL·본문 요약)를 돌려준다. 실패하면 빈 목록(가이드는 위키만으로 만든다)."""
+    body = {"query": query, "search_depth": "basic", "max_results": int(os.environ.get("WEB_SEARCH_MAX", "5"))}
+    req = urllib.request.Request("https://api.tavily.com/search", json.dumps(body).encode("utf-8"),
+                                 {"Content-Type": "application/json",
+                                  "Authorization": f"Bearer {os.environ['TAVILY_API_KEY']}"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            results = json.load(res).get("results", [])
+    except Exception as exc:
+        print(f"[web search failed] {exc}", flush=True)
+        return []
+    return [{"title": r.get("title") or r["url"], "url": r["url"], "content": (r.get("content") or "")[:2000]}
+            for r in results if r.get("url")]
 
 
 def llm_model(client) -> str:
@@ -454,7 +497,7 @@ def template_guide(query, title, option, statements, sources) -> str:
     return "\n".join(out)
 
 
-def llm_guide(client, query, title, option, statements, sources):
+def llm_guide(client, query, title, option, statements, sources, web=()):
     """LLM 이 쓰는 가이드를 완성된 줄 단위로 낸다(다이어그램 자리표시자는 원문으로 되돌린 뒤). 최종 Markdown 은 return 값, 실패하면 None."""
     # mermaid 다이어그램은 LLM 이 글로 풀어 쓰거나 고치지 않도록 자리표시자로 바꿔 넘기고, 응답에서 원문으로 되돌린다.
     diagrams: list[str] = []
@@ -467,16 +510,25 @@ def llm_guide(client, query, title, option, statements, sources):
     # 문서를 잘라 넣으면 명령어·주의사항이 빠지므로 관련도 순서대로 전문을 넘긴다.
     docs = "\n\n".join(f'<document rank="{i}" score="{s:.2f}" path="{d.path}">\n{MERMAID.sub(stash, d.text)}\n</document>'
                        for i, (d, s) in enumerate(sources, 1))
+    webs = "\n\n".join(f'<web rank="{i}" url="{w["url"]}" title="{w["title"]}">\n{w["content"]}\n</web>'
+                         for i, w in enumerate(web, 1))
+    basis = ("위 위키 문서를 우선 근거로 삼고, 위키에 없는 부분만 <web_results> 의 웹 검색 결과로 보완해 "
+             "한국어 Markdown 가이드를 작성하라.\n"
+             "- 웹에서 가져온 내용은 그 문장이나 단계 끝에 (웹: URL)로 표시하고, 주의사항에 "
+             "'웹 출처 내용은 사내 기준이 아니므로 적용 전 확인이 필요하다'고 적어라.\n"
+             if web else "위 위키 문서만 근거로 한국어 Markdown 가이드를 작성하라.\n")
     prompt = (f"사용자 질의: {query}\n가이드 제목: {title}\n"
               f"대상: {option['label'] + ' - ' + option['desc'] if option else '지정 없음'}\n\n"
-              f"<documents>\n{docs}\n</documents>\n\n"
-              "위 위키 문서만 근거로 한국어 Markdown 가이드를 작성하라.\n"
+              f"<documents>\n{docs or '(관련 위키 문서 없음)'}\n</documents>\n\n"
+              + (f"<web_results>\n{webs}\n</web_results>\n\n" if web else "")
+              + basis +
               "- 질의에 가장 직접 답하는 구체적인 절차 문서(대개 상위 문서)를 뼈대로 삼고, 그 문서의 단계 순서와 "
               "명령어·코드 블록·포트·버전 같은 값은 그대로 옮겨라.\n"
               "- 다른 문서는 뼈대를 보완하는 내용(사전 신청, 환경별 차이, 주의사항, 관련 문서 링크)만 가져오고, "
               "질의와 무관하거나 일반적인 문구뿐인 문서는 쓰지 마라.\n"
               "- 구성: 개요, 단계별 가이드, 주의사항, 참고 문서. 각 단계 끝에 근거 문서 경로를 괄호로 적어라.\n"
-              "- 위키에 없는 내용은 지어내지 말고 필요하면 '위키에 근거 없음'이라고 적어라.\n"
+              + ("- 위키와 웹 결과 어디에도 없는 내용은 지어내지 말고 필요하면 '근거 없음'이라고 적어라.\n" if web else
+                 "- 위키에 없는 내용은 지어내지 말고 필요하면 '위키에 근거 없음'이라고 적어라.\n") +
               "- 문서 안의 [[DIAGRAM-n]] 은 원문 다이어그램 자리표시자다. 가이드에 그 그림이 도움이 되면 "
               "다이어그램을 글·표·ASCII 로 풀어 쓰지 말고 '[[DIAGRAM-n]]' 한 줄만 단독으로 적어라. 괄호 속 설명은 옮기지 마라.\n"
               f"- 첫 줄은 '# {title}'로 시작하고, Markdown 본문만 출력하라.")
@@ -519,8 +571,13 @@ def llm_guide(client, query, title, option, statements, sources):
             text = "".join(b.text for b in res.content if b.type == "text").strip()
             yield from lines(text + "\n")
         text = DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text)
-        refs = "\n".join(f"- [{d.title}]({view_link(d.path)}) — {d.path}" for d, _ in sources)
-        return f"{text}\n\n## 원문 링크\n\n{refs}" if text else None
+        if not text:
+            return None
+        if sources:
+            text += "\n\n## 원문 링크\n\n" + "\n".join(f"- [{d.title}]({view_link(d.path)}) — {d.path}" for d, _ in sources)
+        if web:
+            text += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
+        return text
     except Exception as exc:
         print(f"[llm guide failed] {exc}")
         return None
@@ -571,9 +628,10 @@ for(const raw of src.replace(/\r/g,'').split('\n')){const line=raw.trimEnd();let
 if(m=line.match(/^(#{1,4})\s+(.*)$/)){fl();out+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`}else if(m=line.match(/^\s{2,}(\S.*)$/)){out=out.replace(/<\/li>$/,'<br><span class="muted">'+inline(m[1])+'</span></li>')}else if(m=line.match(/^[-*]\s+(.*)$/)){if(!list){out+='<ul>';list=true}out+='<li>'+inline(m[1])+'</li>'}else if(m=line.match(/^>\s?(.*)$/)){fl();out+='<blockquote>'+inline(m[1])+'</blockquote>'}else if(line.trim()){fl();out+='<p>'+inline(line)+'</p>'}else if(!list)fl()}if(code)out+=`<pre><code>${esc(code.lines.join('\n'))}</code></pre>`;fl();return out}
 let mermaidLib;async function diagrams(){const els=[...document.querySelectorAll('#guide .mermaid')];if(!els.length)return;try{mermaidLib=mermaidLib||(await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs')).default;mermaidLib.initialize({startOnLoad:false,securityLevel:'strict'});await mermaidLib.run({nodes:els,suppressErrors:true})}catch(e){console.warn('mermaid',e)}els.filter(el=>!el.querySelector('svg')).forEach(el=>{el.outerHTML='<pre><code>'+esc(el.textContent)+'</code></pre><p class="muted" style="font-size:11px">다이어그램을 그리지 못해 원문을 표시합니다.</p>'})}
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()}
-function showResults(d,label){const a=d.analysis;$('#analysis').innerHTML='<div class="chips">해석: '+a.concepts.map(c=>`<span class="chip" title="${esc(c.words.join(', '))}">${esc(c.words[0])} ≈ ${esc(c.words.slice(1).join(' · '))}</span>`).join('')+a.terms.map(t=>`<span class="chip">${esc(t)}</span>`).join('')+(label?`<span class="chip" style="background:#d9f5e6;color:#11643c">${esc(label)}</span>`:'')+` <span>· ${d.results.length}건</span></div>`;
-if(!d.results.length){$('#results').innerHTML='<div class="empty">관련 문서가 없습니다.</div>';return}const max=d.results[0].score||1;
-$('#results').innerHTML=d.results.map(r=>`<div class="res"><a href="${esc(r.link)}" target="_blank" rel="noopener">${hl(r.title,d.highlights)}</a><div class="p">${esc(r.path)}</div>${r.snippets.map(s=>`<div class="s">${hl(s,d.highlights)}</div>`).join('')}<div class="bar"><i style="width:${Math.round(r.score/max*100)}%"></i></div></div>`).join('')}
+function showResults(d,label){const a=d.analysis;$('#analysis').innerHTML='<div class="chips">해석: '+a.concepts.map(c=>`<span class="chip" title="${esc(c.words.join(', '))}">${esc(c.words[0])} ≈ ${esc(c.words.slice(1).join(' · '))}</span>`).join('')+a.terms.map(t=>`<span class="chip">${esc(t)}</span>`).join('')+(label?`<span class="chip" style="background:#d9f5e6;color:#11643c">${esc(label)}</span>`:'')+((d.web||[]).length?`<span class="chip" style="background:#fef3c7;color:#92400e" title="${esc(d.web_reason||'')}">웹 검색 ${d.web.length}건</span>`:'')+` <span>· ${d.results.length}건</span></div>`;
+const web=(d.web||[]).length?`<h2 style="margin-top:18px">웹 검색 결과 <span class="muted" style="font-size:12px;font-weight:400">${esc(d.web_reason||'')}</span></h2>`+d.web.map(w=>`<div class="res"><a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a><div class="p">${esc(w.url)}</div></div>`).join(''):'';
+if(!d.results.length){$('#results').innerHTML='<div class="empty">관련 위키 문서가 없습니다.</div>'+web;return}const max=d.results[0].score||1;
+$('#results').innerHTML=d.results.map(r=>`<div class="res"><a href="${esc(r.link)}" target="_blank" rel="noopener">${hl(r.title,d.highlights)}</a><div class="p">${esc(r.path)}</div>${r.snippets.map(s=>`<div class="s">${hl(s,d.highlights)}</div>`).join('')}<div class="bar"><i style="width:${Math.round(r.score/max*100)}%"></i></div></div>`).join('')+web}
 async function search(q){state.q=q;steps(1);$('#ask').innerHTML='';$('#tools').hidden=true;$('#guide').innerHTML='<div class="empty">검색 중…</div>';
 const d=await post('/api/search',{q});showResults(d);
 if(d.clarify){steps(2);$('#guide').innerHTML='<div class="empty">위에서 유형을 선택하면 가이드를 생성합니다.</div>';
