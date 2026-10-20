@@ -4,3 +4,6 @@ data/
 __pycache__/
 *.pyc
 *.log
+
+# 별도 Git 저장소 (Azure DevOps Wiki). ai-master 에서는 추적하지 않는다.
+wiki-repo/
