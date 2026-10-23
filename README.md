@@ -38,7 +38,7 @@ flowchart LR
     end
 
     subgraph azure["Azure"]
-        openai["Azure OpenAI 게이트웨이<br/>가이드 작성: gpt-5.4<br/>임베딩:<br/>text-embedding-3-large"]
+        openai["Azure OpenAI 게이트웨이<br/>가이드 작성·AI 요약: gpt-6.1-sol<br/>임베딩:<br/>text-embedding-3-large"]
         devops["Azure DevOps<br/>Wiki · Task"]
         vm["프록시 VM<br/>Squid (podman)"]
     end
@@ -114,7 +114,7 @@ Copy-Item .env.sample .env
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `OPENAI_MODEL` | `gpt-5.4` | 가이드 작성 LLM. 2026-10-19 후보 5개 비교에서 완성도와 속도가 가장 균형이 좋았다 |
+| `OPENAI_MODEL` | `gpt-6.1-sol` | 가이드 작성(wiki_search)과 시나리오 2 AI 요약(llm_summary)에 쓰는 LLM. 2026-10-24 gpt-5.4에서 바꿈(2026-10-19 후보 5개 비교 때는 gpt-5.4가 완성도와 속도의 균형이 가장 좋았다) |
 | `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. 정답 16문항 비교에서 small·ada-002보다 정확했다 |
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮는다 |
 | `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다. 비우면 웹 검색 안 함 |
@@ -249,7 +249,7 @@ flowchart TD
     weak -- "예 (TAVILY_API_KEY 있을 때)" --> web["Tavily 웹 검색<br/>핵심어 검색어<br/>관련 없는 결과 제거"]
     weak -- "아니오" --> llm{"Azure OpenAI<br/>설정 있음?"}
     web -- "위키 + 웹 결과" --> llm
-    llm -- "있음" --> openai["Azure OpenAI 게이트웨이<br/>gpt-5.4로 가이드 작성"]
+    llm -- "있음" --> openai["Azure OpenAI 게이트웨이<br/>gpt-6.1-sol로 가이드 작성"]
     llm -- "없음" --> tpl["문서 조합 템플릿"]
     openai -- "호출 실패" --> tpl
     openai -- "생성 방식: LLM 작성" --> out(["Markdown 가이드<br/>+ 근거 문서 링크"])
@@ -281,7 +281,7 @@ flowchart TD
 | 동의어 묶기 (프록시 = proxy = 프락시) | 개념 사전 `CONCEPTS` | 규칙 기반 |
 | 오타 교정 (프록실·프롤시 → 프록시, porxy → proxy) | 한글 자모 분해 + 편집 거리(Damerau–Levenshtein) + 개념 사전 매칭 | 규칙 기반 |
 | 의미가 비슷한 문서 찾기 | 임베딩 `text-embedding-3-large` 유사도 | AI (머신러닝) |
-| 가이드 작성 | LLM `gpt-5.4` | AI (LLM) |
+| 가이드 작성 | LLM `gpt-6.1-sol` (`OPENAI_MODEL`) | AI (LLM) |
 
 - 오타 교정은 한글 3음절 이상·영문 5글자 이상만 고칩니다. 2음절은 `설정`↔`결정`처럼 다른 실제 단어와 거리가 1이라 고치지 않습니다.
 - 고친 단어는 화면 해석 칩(`오타 교정: 프록실 → 프록시`)과 트레이스 `analyze` 줄(`typo_fixes=`)에 나옵니다. 검색은 고친 질의로 하므로 결과가 정상 질의와 같습니다.
@@ -295,7 +295,7 @@ flowchart TD
 
 #### 화면
 
-- 가이드 위에 생성 방식 배지(`LLM 작성 · gpt-5.4 · 소요 N초` 또는 `문서 조합 템플릿`)가 나옵니다.
+- 가이드 위에 생성 방식 배지(`LLM 작성 · gpt-6.1-sol · 소요 N초` 또는 `문서 조합 템플릿`)가 나옵니다.
 - 가이드는 스트리밍(`/api/guide/stream`)으로 받도록 되어 있지만, 사내 게이트웨이가 응답을 모았다가 한꺼번에 보내서 실제로는 끝날 때 한 번에 나타납니다(트레이스 `first_line_ms`가 전체 시간과 거의 같음). 게이트웨이 버퍼링이 꺼지면 코드 수정 없이 글이 흘러나옵니다.
 
 #### 트레이스
@@ -303,13 +303,13 @@ flowchart TD
 요청마다 노드별 소요 시간과 결과가 허브 로그(`data/logs/wiki-search.log`)와 `data/traces/`에 남습니다(`common/trace.py`).
 
 ```text
-10:41:14 [2d15573c] ▶ guide/stream  q=프록시 설정 가이드 알려줘 key=proxy variant=forward
-10:41:14 [2d15573c]     04 embed_query          354ms  model=text-embedding-3-large best_sim=0.601 …
-10:41:14 [2d15573c]   03 hybrid_search        366ms  docs=1026 results=20 top=6.37 top_doc=…
-10:41:14 [2d15573c]   05 select_sources         4ms  sources=15 statements=35 top3=…
-10:41:14 [2d15573c]   06 web_decision           0ms  result=꺼짐 (TAVILY_API_KEY 없음)
-10:41:52 [2d15573c]   07 llm_generate      37,917ms  model=gpt-5.4 prompt_tokens=8364 completion_tokens=5692 first_line_ms=36749 …
-10:41:52 [2d15573c] ■ guide/stream ok 38.6s | llm_generate 37.9s · hybrid_search 0.4s … | mode=llm model=gpt-5.4
+01:38:57 [07902dac] ▶ guide/stream  q=프록시 설정 가이드 알려줘 key=proxy variant=forward
+01:38:58 [07902dac]     03 embed_query          307ms  model=text-embedding-3-large best_sim=0.601 …
+01:38:58 [07902dac]   02 hybrid_search        321ms  docs=1026 results=20 top=6.37 top_doc=…
+01:38:58 [07902dac]   04 select_sources         3ms  sources=15 statements=35 top3=…
+01:38:58 [07902dac]   05 web_decision         385ms  best_sim=0.601 variant=포워드 프록시 variant_sim=0.499 result=위키만 사용
+01:39:55 [07902dac]   07 llm_generate      57,255ms  model=gpt-6.1-sol prompt_tokens=8364 completion_tokens=4957 reasoning_tokens=205 first_line_ms=56911 …
+01:39:55 [07902dac] ■ guide/stream ok 58.1s | llm_generate 57.3s · web_decision 0.4s … | mode=llm model=gpt-6.1-sol
 ```
 
 - 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
@@ -456,8 +456,9 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 | 2. wiki_read | Wiki 문서의 `## VM 목록` 표를 읽음 (머리글 이름으로 칸을 찾음) |
 | 3. azure_read | 리소스 그룹에서 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM의 IP·상태·SIZE·리전 |
 | 4. compare | 신규·삭제·변경(사설/공인 IP, 상태, SIZE, LOCATION, RESOURCE GROUP). 차이 없으면 종료. Proxy(용도) 칸은 사람이 관리하므로 비교하지 않음 |
+| 4.5 llm_summary (AI) | 차이 전체를 2문장·120자 이내 존댓말로 요약해 LLM(`OPENAI_MODEL`)으로 승인 카드·화면·Task 맨 위에 "AI 요약 · 참고용"으로 넣음(위험도는 기준이 없어 표시하지 않음). 차이 목록은 규칙으로 만든 짧은 줄 그대로. 비교 자체는 규칙으로 하고 AI는 설명만 함. 데이터에 없는 사실은 '확인 필요'로 쓰게 함. 실패하면 규칙 목록만 표시하고 트레이스에 이유를 남김(`--no-ai`로 끔) |
 | 5. approval | Teams 채널에 요약 카드와 **Yes · 현행화 / No · 기록만** 버튼을 보내고 이 PC의 승인 서버에서 답을 기다림(기본 15분). 웹후크가 없으면 승인 화면을 브라우저로 엶. No·시간 초과는 Teams에 알리고 종료 |
-| 6. task_create | Azure DevOps Task(변경 내역, 담당자 = `SCENARIO2_ASSIGNEE` 또는 PAT 소유자, 태그 `proxy-status; scenario2`) |
+| 6. backlog · task_create | 백로그 아래에 Task 생성: Epic `01. 공통`(#1) → Feature `[공통] Proxy 현황 관리` → 그 달 PBI `YYMM) Proxy VM 현황 Wiki 현행화` → Task `NN. [Proxy 현황] …`. Feature·PBI는 있으면 다시 쓰고 없으면 만들며(달이 바뀌면 새 PBI), Task는 PBI 아래 다음 순번. 담당자 = `SCENARIO2_ASSIGNEE` 또는 PAT 소유자, Area·Iteration은 상위 항목을 따름, 태그 `proxy-status; scenario2`. 이름·Epic은 `SCENARIO2_EPIC_ID`·`SCENARIO2_FEATURE`·`SCENARIO2_PBI`로 바꿈 |
 | 7. wiki_update | 표를 Azure 값으로 고치고 `## 변경 이력`에 행 추가, 최종 수정일 갱신 → wiki-repo 커밋 (`--push`일 때만 push) |
 | 8. report | Task를 완료 상태(프로세스의 Completed 범주, 예: Done)로 바꾸고 댓글, Teams에 결과 카드 |
 
@@ -465,8 +466,10 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 python proxy_tools\proxy_status_sync.py --dry-run --verify   # 1~4단계 + 테스트 정답 대조, 아무것도 바꾸지 않음
 python proxy_tools\proxy_status_sync.py                      # Teams 승인 후 Task·Wiki 반영
 python proxy_tools\proxy_status_sync.py --yes --push         # 승인 없이 진행하고 Azure DevOps Wiki로 push
+python proxy_tools\proxy_status_sync.py --dry-run --no-ai     # AI 요약 없이
 ```
 
+- 버튼을 누르면 열린 브라우저 창이 진행 화면으로 바뀌어 단계(Task 생성 → Wiki 현행화 → 완료 처리)를 실시간으로 보여 주고, 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다. 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있고, 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
 - 노드별 기록은 콘솔과 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.

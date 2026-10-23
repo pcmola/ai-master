@@ -623,7 +623,7 @@ def web_search(query: str, must: list[str] = ()) -> list[dict]:
 
 
 def llm_model(client) -> str:
-    return (os.environ.get("OPENAI_MODEL", "gpt-4.1") if hasattr(client, "chat")
+    return (os.environ.get("OPENAI_MODEL", "gpt-6.1-sol") if hasattr(client, "chat")
             else os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5"))
 
 

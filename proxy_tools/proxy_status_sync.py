@@ -6,20 +6,26 @@ Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 �
 2. wiki_read    Wiki 문서의 'VM 목록' 표를 읽는다
 3. azure_read   리소스 그룹에서 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM 의 IP·상태·SIZE·리전을 읽는다
 4. compare      신규·삭제·변경(사설/공인 IP, 상태, SIZE, 리전). 차이가 없으면 여기서 끝난다
+   llm_summary  (AI) 차이 전체를 LLM(OPENAI_MODEL)으로 2문장 이내로 요약해 승인 카드·화면·Task 맨 위에 '참고용'으로 붙인다.
+                비교 자체는 규칙으로 하고 AI 는 설명만 한다. 실패하면 규칙 목록만 쓴다. --no-ai 로 끈다
 5. approval     Teams 채널에 요약 카드(Yes/No 버튼)를 보내고 이 PC 의 승인 서버에서 답을 기다린다.
                 TEAMS_WEBHOOK_URL 이 없으면 승인 화면을 브라우저로 연다. No·시간 초과면 기록하고 끝낸다
-6. task_create  Azure DevOps Task(변경 내역, 담당자)
+6. task_create  Azure DevOps 백로그 아래 Task: Epic(SCENARIO2_EPIC_ID) → Feature → 그 달 PBI → 'NN. …' Task
+                (Feature·PBI 는 있으면 다시 쓰고 없으면 만든다. 담당자, 상위 항목의 Area·Iteration)
 7. wiki_update  표를 Azure 값으로 고치고 변경 이력 행을 더해 wiki-repo 에 커밋한다(--push 일 때만 push)
 8. report       Task 를 완료 상태로 바꾸고 Teams 에 결과를 알린다
 
 설정(.env): AZURE_DEVOPS_ORG/PROJECT/PAT, TEAMS_WEBHOOK_URL,
-            SCENARIO2_RESOURCE_GROUP(기본 WJY-PROXY-RG), SCENARIO2_ASSIGNEE(비우면 PAT 소유자)
+            SCENARIO2_RESOURCE_GROUP(기본 WJY-PROXY-RG), SCENARIO2_ASSIGNEE(비우면 PAT 소유자),
+            SCENARIO2_EPIC_ID(기본 1 '01. 공통'), SCENARIO2_FEATURE(기본 '[공통] Proxy 현황 관리'),
+            SCENARIO2_PBI(기본 'Proxy VM 현황 Wiki 현행화', 앞에 'YYMM) ' 이 붙는다)
 
 사용 예:
     python proxy_tools/proxy_status_sync.py --dry-run     # 1~4단계만 하고 할 일을 출력
     python proxy_tools/proxy_status_sync.py               # Teams 승인 후 Task·Wiki 반영
     python proxy_tools/proxy_status_sync.py --verify      # 4단계 결과를 테스트 정답(data/scenario2)과 비교
     python proxy_tools/proxy_status_sync.py --yes --push  # 승인 없이 진행하고 Azure DevOps Wiki 로 push
+    python proxy_tools/proxy_status_sync.py --dry-run --no-ai   # AI 요약 없이
 """
 
 from __future__ import annotations
@@ -152,7 +158,68 @@ def verify(diffs: list[dict]) -> bool:
     return ok
 
 
+# ---------------------------------------------------------------- 4.5 AI 요약
+
+def ai_summary(diffs: list[dict], wiki: list[dict], azure: list[dict]) -> dict | None:
+    """차이 전체를 LLM 으로 짧게(2문장·120자 이내, 존댓말) 요약한다. 비교 결과(diffs)는 바꾸지 않는다.
+    위험도는 정해진 기준 없이 AI 가 고르게 되어 표시하지 않는다(2026-10-24).
+    돌려주는 값: {"model", "summary"} 또는 실패 시 None."""
+    from openai import AzureOpenAI, OpenAI
+    model = os.environ.get("OPENAI_MODEL", "gpt-6.1-sol")
+    # 판단에 필요한 정보만 보낸다(공인 IP 는 바뀐 경우가 아니면 넣지 않는다).
+    vm = lambda r: {k: r.get(k) for k in ("name", "state", "size", "location", "proxy", "private_ip")}
+    payload = {"resource_group": RESOURCE_GROUP,
+               "differences": [{"index": i, **d} for i, d in enumerate(diffs)],
+               "wiki_rows": [vm(r) for r in wiki], "azure_vms": [vm(r) for r in azure]}
+    prompt = ("아래는 사내 Wiki 의 Proxy VM 현황 표와 Azure 의 실제 VM 을 비교한 결과다. 운영자가 Wiki 현행화 승인을 "
+              "판단하도록 핵심만 한국어 존댓말(~습니다, ~해 주세요)로 요약하라.\n"
+              "- summary: 2문장 이내, 120자 이내. 가장 중요한 변경과 승인 전에 확인할 것 하나.\n"
+              "- 상태 '운영'=실행 중, '중지'=중지·할당 해제. 신규=Azure 에만 있음, 삭제=Wiki 에만 있음.\n"
+              "- 주어진 데이터에 없는 사실(사용 서비스, 원인 등)은 지어내지 마라.\n"
+              'JSON 으로만 답하라: {"summary": str}\n\n'
+              + json.dumps(payload, ensure_ascii=False))
+    with span("llm_summary", model=model, diffs=len(diffs), prompt_chars=len(prompt)) as s:
+        try:
+            if os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY"):
+                client = AzureOpenAI(api_version=os.environ.get("OPENAI_API_VERSION", "2024-12-01-preview"),
+                                     timeout=60, max_retries=1)
+            elif os.environ.get("OPENAI_API_KEY"):
+                client = OpenAI(timeout=60, max_retries=1)
+            else:
+                s.fail("LLM 설정 없음(AZURE_OPENAI_* 또는 OPENAI_API_KEY) → 규칙 목록만 사용")
+                return None
+            res = client.chat.completions.create(
+                model=model, response_format={"type": "json_object"},
+                messages=[{"role": "system", "content": "너는 클라우드 인프라 변경을 검토하는 운영 엔지니어다. 사실만 짧게 쓴다."},
+                          {"role": "user", "content": prompt}])
+            s.set(prompt_tokens=res.usage.prompt_tokens, completion_tokens=res.usage.completion_tokens)
+            data = json.loads(res.choices[0].message.content or "{}")
+            summary = str(data.get("summary", "")).strip()
+            if not summary:
+                s.fail("응답에 summary 가 없음 → 규칙 목록만 사용")
+                return None
+            s.set(summary_chars=len(summary))
+            return {"model": model, "summary": summary}
+        except Exception as exc:  # 게이트웨이 오류·JSON 오류 등: 승인 흐름은 막지 않는다
+            s.fail(f"AI 요약 실패 → 규칙 목록만 사용: {type(exc).__name__}: {exc}")
+            return None
+
+
+def explained(diffs: list[dict], ai: dict | None = None) -> list[str]:
+    """승인 화면·카드·Task 에 보일 차이 목록. 짧게 유지하려고 규칙 결과만 쓴다(AI 는 위의 요약 한 줄만)."""
+    return [describe(d) for d in diffs]
+
+
 # ---------------------------------------------------------------- 5 승인
+
+def wiki_fact(links: list[tuple[str, str]]) -> str:
+    """Teams 카드 표(FactSet)에 넣을 문서 링크: 'Proxy VM 현황 (테스트 구독)' (Azure DevOps Wiki) · 로컬 뷰어."""
+    title = WIKI_PAGE.stem.replace("-", " ")
+    devops_url = next((u for l, u in links if u and l.startswith("Azure DevOps")), "")
+    local_url = next((u for l, u in links if u and "로컬" in l), "")
+    head = f"[{title}]({devops_url})" if devops_url else f"{title} (Azure DevOps Wiki 에 없음)"
+    return head + (f" · [로컬 뷰어]({local_url})" if local_url else "")
+
 
 def wiki_links(dv) -> list[tuple[str, str]]:
     """확인용 Wiki 링크. 로컬 뷰어(이 PC 의 wiki-repo)와, 문서가 원격에 push 되어 있을 때만 Azure DevOps Wiki."""
@@ -170,33 +237,34 @@ def wiki_links(dv) -> list[tuple[str, str]]:
     return links
 
 
-def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple[str, str]]) -> bool | None:
+def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple[str, str]], ai: dict | None = None):
+    """Teams 카드(또는 브라우저)로 승인을 받는다. 승인 서버는 처리가 끝날 때까지 열어 두고 진행 상황을 보여 준다.
+    돌려주는 값: (결정 True/False/None, Approval)."""
     from teams_tools import teams_notify
-    from teams_tools.approval_local import request_approval
+    from teams_tools.approval_local import Approval
 
-    items = [describe(d) for d in diffs]
+    items = explained(diffs, ai)
+    head = (f"AI 요약 ({ai['model']}, 참고용): {ai['summary']}" if ai
+            else "AI 요약 없음 (규칙 비교 결과만 표시)")
     webhook = bool(os.environ.get("TEAMS_WEBHOOK_URL"))
-
-    def notify(page_url: str, yes_url: str, no_url: str):
-        if not webhook:
-            return
-        with span("teams_notify", kind="approval_request", buttons=3 + sum(1 for _, u in links if u)) as s:
-            status = teams_notify.send(
-                "Wiki 의 Proxy 현황과 Azure 의 실제 VM 이 다릅니다. 현행화할까요?\n\n" + "\n".join(f"- {i}" for i in items)
-                + f"\n\n버튼은 이 알림을 보낸 PC({os.environ.get('COMPUTERNAME', '-')})에서 눌러야 합니다. "
-                  f"{int(timeout // 60)}분 안에 답이 없으면 취소됩니다.",
-                f"[Proxy 현황] 변경 {len(diffs)}건 · 승인 요청",
-                facts=[("리소스 그룹", RESOURCE_GROUP), ("감지 시각", when), ("Wiki 문서", WIKI_PAGE.stem)]
-                      + [("", label) for label, url in links if not url],
-                buttons=[("Yes · 현행화", yes_url), ("No · 기록만", no_url), ("자세히 보기", page_url)]
-                        + [(label.split(" (")[0], url) for label, url in links if url])
-            s.set(http=status)
-
+    ap = Approval(f"Proxy 현황 변경 {len(diffs)}건", [head] + items, "Wiki 현행화와 Task 등록을 진행할까요?", links)
     with span("approval", channel="teams" if webhook else "local", timeout_s=timeout) as s:
-        result = request_approval(f"Proxy 현황 변경 {len(diffs)}건", items, "Wiki 현행화와 Task 등록을 진행할까요?",
-                                  timeout=timeout, open_browser=not webhook, on_ready=notify, links=links)
+        page_url, yes_url, no_url = ap.start(open_browser=not webhook)
+        if webhook:
+            with span("teams_notify", kind="approval_request", buttons=3 + sum(1 for _, u in links if u)) as n:
+                n.set(http=teams_notify.send(
+                    "Wiki 의 Proxy 현황과 Azure 의 실제 VM 이 다릅니다. 현행화할까요?\n\n" + head + "\n\n"
+                    + "\n".join(f"- {i}" for i in items)
+                    + f"\n\n버튼은 이 알림을 보낸 PC({os.environ.get('COMPUTERNAME', '-')})에서 눌러야 합니다. "
+                      f"{int(timeout // 60)}분 안에 답이 없으면 취소됩니다.",
+                    f"[Proxy 현황] 변경 {len(diffs)}건 · 승인 요청",
+                    facts=[("리소스 그룹", RESOURCE_GROUP), ("감지 시각", when), ("Wiki 문서", wiki_fact(links))]
+                          + [("", label) for label, url in links if not url],
+                    buttons=[("Yes · 현행화", yes_url), ("No · 기록만", no_url), ("자세히 보기", page_url)]
+                            + [(label.split(" (")[0], url) for label, url in links if url]))
+        result = ap.wait(timeout)
         s.set(decision={True: "yes", False: "no", None: "timeout"}[result])
-    return result
+    return result, ap
 
 
 # ---------------------------------------------------------------- 6·8 Azure DevOps
@@ -221,20 +289,86 @@ def assignee(dv) -> str | None:
         return None
 
 
-def create_task(dv, diffs: list[dict], when: str, links: list[tuple[str, str]], owner: str | None) -> int:
-    rows = "".join(f"<li>{html.escape(describe(d))}</li>" for d in diffs)
-    title = f"[Proxy 현황] {RESOURCE_GROUP} 변경 {len(diffs)}건 현행화 ({when})"
+def work_item(dv, item_id: int, relations: bool = False) -> dict:
+    return dv.request("GET", f"/_apis/wit/workitems/{item_id}?api-version=7.1"
+                      + ("&$expand=relations" if relations else ""), None)
+
+
+def children(dv, item_id: int) -> list[dict]:
+    """하위 작업 항목(id, 유형, 제목)."""
+    rels = work_item(dv, item_id, True).get("relations") or []
+    ids = [r["url"].rsplit("/", 1)[1] for r in rels if r["rel"] == "System.LinkTypes.Hierarchy-Forward"]
+    if not ids:
+        return []
+    items = dv.request("GET", f"/_apis/wit/workitems?ids={','.join(ids[:200])}"
+                              "&fields=System.Id,System.WorkItemType,System.Title&api-version=7.1", None)["value"]
+    return [{"id": w["id"], "type": w["fields"]["System.WorkItemType"], "title": w["fields"]["System.Title"]} for w in items]
+
+
+def parent_link(dv, parent_id: int) -> dict:
+    return {"op": "add", "path": "/relations/-",
+            "value": {"rel": "System.LinkTypes.Hierarchy-Reverse",
+                      "url": f"https://dev.azure.com/{dv.org}/_apis/wit/workItems/{parent_id}"}}
+
+
+def ensure_child(dv, parent_id: int, kind: str, title: str, description: str) -> tuple[int, bool]:
+    """parent 아래에 같은 유형·제목의 항목이 있으면 그 id, 없으면 만들고 (id, 만들었는지)."""
+    for c in children(dv, parent_id):
+        if c["type"] == kind and c["title"] == title:
+            return c["id"], False
+    pf = work_item(dv, parent_id)["fields"]
+    ops = [{"op": "add", "path": "/fields/System.Title", "value": title},
+           {"op": "add", "path": "/fields/System.Description", "value": description},
+           {"op": "add", "path": "/fields/System.AreaPath", "value": pf["System.AreaPath"]},
+           {"op": "add", "path": "/fields/System.IterationPath", "value": pf["System.IterationPath"]},
+           {"op": "add", "path": "/fields/System.Tags", "value": "proxy-status; scenario2"},
+           parent_link(dv, parent_id)]
+    item = dv.request("POST", f"/_apis/wit/workitems/${quote_type(kind)}?api-version=7.1", ops, "application/json-patch+json")
+    return item["id"], True
+
+
+def quote_type(kind: str) -> str:
+    from urllib.parse import quote
+    return quote(kind)
+
+
+def backlog(dv, when: str) -> dict:
+    """Epic → Feature → 그 달 PBI 를 찾거나 만들고, PBI 아래 다음 Task 순번을 돌려준다."""
+    epic = int(os.environ.get("SCENARIO2_EPIC_ID", "1"))
+    feature_title = os.environ.get("SCENARIO2_FEATURE", "[공통] Proxy 현황 관리")
+    pbi_title = f"{when[2:4]}{when[5:7]}) " + os.environ.get("SCENARIO2_PBI", "Proxy VM 현황 Wiki 현행화")
+    feature, f_new = ensure_child(dv, epic, "Feature", feature_title,
+                                  "<p>Wiki 의 Proxy 현황 문서를 Azure 실제 VM 과 맞추는 운영 업무(시나리오 2).</p>")
+    pbi, p_new = ensure_child(dv, feature, "Product Backlog Item", pbi_title,
+                              "<p>이번 달 Proxy VM 현황 Wiki 현행화 건. 실행마다 아래에 Task 가 하나씩 붙는다 "
+                              "(proxy_tools/proxy_status_sync.py).</p>")
+    numbers = [int(c["title"][:2]) for c in children(dv, pbi) if c["type"] == "Task" and c["title"][:2].isdigit()]
+    return {"epic": epic, "feature": feature, "feature_new": f_new, "pbi": pbi, "pbi_title": pbi_title,
+            "pbi_new": p_new, "next": max(numbers, default=0) + 1}
+
+
+def create_task(dv, diffs: list[dict], when: str, links: list[tuple[str, str]], owner: str | None,
+                parent: dict | None = None, ai: dict | None = None) -> int:
+    rows = "".join(f"<li>{html.escape(line)}</li>" for line in explained(diffs, ai))
+    title = (f"{parent['next']:02d}. " if parent else "") + f"[Proxy 현황] {RESOURCE_GROUP} 변경 {len(diffs)}건 현행화 ({when})"
     body = (f"<p>Wiki Proxy 현황과 Azure 실제 VM 비교 결과 차이 {len(diffs)}건이 {html.escape(when)} 에 감지되어 "
             f"Teams 에서 승인되었습니다.</p><ul>{rows}</ul>"
             + "<p>현황 문서 " + html.escape(WIKI_PAGE.stem) + ": "
             + " · ".join(f'<a href="{html.escape(u)}">{html.escape(l)}</a>' if u else html.escape(l) for l, u in links)
             + "</p>"
-            "<p>등록: proxy_status_sync.py (시나리오 2)</p>")
+            + (f"<p><b>AI 요약</b> ({html.escape(ai['model'])}, 참고용): "
+               f"{html.escape(ai['summary'])}</p>" if ai else "")
+            + "<p>등록: proxy_status_sync.py (시나리오 2)</p>")
     ops = [{"op": "add", "path": "/fields/System.Title", "value": title[:250]},
            {"op": "add", "path": "/fields/System.Description", "value": body},
            {"op": "add", "path": "/fields/System.Tags", "value": "proxy-status; scenario2"}]
     if owner:
         ops.append({"op": "add", "path": "/fields/System.AssignedTo", "value": owner})
+    if parent:
+        pf = work_item(dv, parent["pbi"])["fields"]
+        ops += [{"op": "add", "path": "/fields/System.AreaPath", "value": pf["System.AreaPath"]},
+                {"op": "add", "path": "/fields/System.IterationPath", "value": pf["System.IterationPath"]},
+                parent_link(dv, parent["pbi"])]
     return dv.request("POST", "/_apis/wit/workitems/$Task?api-version=7.1", ops, "application/json-patch+json")["id"]
 
 
@@ -307,6 +441,9 @@ def run(args) -> int:
     with span("trigger", mode="dry-run" if args.dry_run else "auto" if args.yes else "teams", push=args.push):
         pass
     with span("wiki_read", page=WIKI_PAGE.name) as s:
+        if not WIKI_PAGE.is_file():
+            raise RuntimeError(f"Wiki 현황 문서가 없습니다: {WIKI_PAGE.relative_to(WIKI_REPO)}. "
+                               "테스트라면 python test/scenario2/setup_env.py 로 만드세요.")
         text = WIKI_PAGE.read_text(encoding="utf-8-sig")
         wiki = read_wiki(text)
         s.set(rows=len(wiki), names=[r["name"] for r in wiki])
@@ -316,19 +453,38 @@ def run(args) -> int:
     with span("compare") as s:
         diffs = compare(wiki, azure)
         s.set(diffs=len(diffs), summary=[describe(d) for d in diffs][:6])
-    print(f"\n차이 {len(diffs)}건" + "".join(f"\n  - {describe(d)}" for d in diffs))
     if args.verify:
         verify(diffs)
     if not diffs:
         print("Wiki 와 Azure 가 같습니다. 종료합니다.")
         return 0
+    ai = None if args.no_ai else ai_summary(diffs, wiki, azure)
+    if ai:
+        print(f"\nAI 요약 ({ai['model']}, 참고용): {ai['summary']}")
+    print(f"\n차이 {len(diffs)}건" + "".join(f"\n  - {line}" for line in explained(diffs, ai)))
     if args.dry_run:
         print(f"[dry-run] Teams 승인 요청 → Task 생성 → Wiki 표 {len(azure)}행으로 갱신 → 완료 보고 (아무것도 바꾸지 않음)")
         return 0
 
     dv = devops()
     links = wiki_links(dv)
-    decision = True if args.yes else ask_approval(diffs, when, args.timeout, links)
+    decision, ap = (True, None) if args.yes else ask_approval(diffs, when, args.timeout, links, ai)
+    try:
+        return apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai)
+    except Exception as exc:
+        if ap:
+            ap.step(f"실패: {exc}", "fail")
+            ap.finish(f"처리 중 오류가 났습니다: {exc}", ok=False)
+        raise
+    finally:
+        if ap:
+            ap.close()
+
+
+def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None) -> int:
+    """5단계 이후: 거절이면 알리고 끝, 승인이면 Task → Wiki → 완료 보고. ap 가 있으면 승인 화면에 진행 상황을 보인다."""
+    step = ap.step if ap else (lambda *a, **k: None)
+    viewer = links[0][1]  # 로컬 뷰어 링크(wiki_links 첫 항목)
     if not decision:
         reason = "거절(No)" if decision is False else "시간 초과"
         print(f"승인되지 않아 종료합니다: {reason}. 기록은 data/traces/scenario2-*.jsonl 에 남았습니다.")
@@ -337,19 +493,38 @@ def run(args) -> int:
             with span("teams_notify", kind="declined"):
                 teams_notify.send(f"Proxy 현황 변경 {len(diffs)}건은 {reason}로 반영하지 않았습니다.",
                                   "[Proxy 현황] 반영 안 함", facts=[("감지 시각", when)])
+            step("Teams 에 '반영 안 함' 알림을 보냈습니다", "ok")
+        if ap:
+            ap.finish(f"{reason}: 아무것도 바꾸지 않았습니다. Wiki 문서와 Task 는 그대로입니다.", [("Wiki 문서 보기", viewer)])
         return 1
 
+    step("Azure DevOps 백로그(Feature·PBI) 확인 중…")
+    with span("backlog") as s:
+        parent = backlog(dv, when)
+        s.set(epic=parent["epic"], feature=parent["feature"], feature_new=parent["feature_new"],
+              pbi=parent["pbi"], pbi_new=parent["pbi_new"], next_task=parent["next"])
+    made = [n for n, new in (("Feature", parent["feature_new"]), ("PBI", parent["pbi_new"])) if new]
+    print(f"백로그: Epic #{parent['epic']} → Feature #{parent['feature']} → PBI #{parent['pbi']} {parent['pbi_title']}"
+          + (f" ({', '.join(made)} 새로 만듦)" if made else ""))
+    step(f"백로그: Feature #{parent['feature']} → PBI #{parent['pbi']} {parent['pbi_title']}"
+         + (f" ({', '.join(made)} 새로 만듦)" if made else ""), "ok", (f"PBI #{parent['pbi']} 열기", dv.task_url(parent["pbi"])))
+    step("Azure DevOps Task 생성 중…")
     with span("task_create") as s:
         owner = assignee(dv)
-        task_id = create_task(dv, diffs, when, links, owner)
-        s.set(task_id=task_id, assigned_to=owner)
-    print(f"Task #{task_id} 생성 (담당 {owner or '-'}): {dv.task_url(task_id)}")
+        task_id = create_task(dv, diffs, when, links, owner, parent, ai)
+        s.set(task_id=task_id, parent_pbi=parent["pbi"], number=parent["next"], assigned_to=owner)
+    print(f"Task #{task_id} 생성 (PBI #{parent['pbi']} 아래 {parent['next']:02d}번, 담당 {owner or '-'}): {dv.task_url(task_id)}")
+    step(f"Task #{task_id} 생성 ({parent['next']:02d}번, 담당 {owner or '-'})", "ok", (f"Task #{task_id} 열기", dv.task_url(task_id)))
+    step("Wiki 문서 현행화 중…")
 
     with span("wiki_update", push=args.push) as s:
         page = updated_page(text, wiki, azure, diffs, when, f"[#{task_id}]({dv.task_url(task_id)})")
         commit = write_wiki(page, f"Proxy 현황 현행화: 변경 {len(diffs)}건 (Task #{task_id})", args.push)
         s.set(commit=commit, rows=len(azure))
     print(f"Wiki 현행화 커밋 {commit}" + (" · push 완료" if args.push else " (로컬 커밋, --push 로 Azure DevOps Wiki 에 반영)"))
+    step(f"Wiki 표 {len(azure)}행으로 현행화, 변경 이력 추가 (커밋 {commit}" + (", push 완료)" if args.push else ", 로컬)"),
+         "ok", ("수정된 문서 열기", viewer))
+    step("Task 완료 처리와 Teams 결과 알림 중…")
 
     with span("report") as s:
         state = complete_task(dv, task_id, f"Wiki 현행화 완료: wiki-repo 커밋 {commit}"
@@ -359,11 +534,16 @@ def run(args) -> int:
             from teams_tools import teams_notify
             teams_notify.send(f"Proxy 현황 변경 {len(diffs)}건을 반영했습니다.\n\n" + "\n".join(f"- {describe(d)}" for d in diffs),
                               "[Proxy 현황] 현행화 완료",
-                              facts=[("Task", f"#{task_id} ({state})"), ("Wiki 커밋", commit + (" · push" if args.push else " · 로컬")),
+                              facts=[("Wiki 문서", wiki_fact(links)), ("Task", f"[#{task_id}]({dv.task_url(task_id)}) ({state})"), ("Wiki 커밋", commit + (" · push" if args.push else " · 로컬")),
                                      ("담당", owner or "-")],
-                              buttons=[("Task 열기", dv.task_url(task_id))])
+                              buttons=[("수정된 Wiki 문서 열기", viewer), ("Task 열기", dv.task_url(task_id))])
             s.set(teams="sent")
     print(f"완료 보고: Task #{task_id} → {state}" + (", Teams 알림 보냄" if os.environ.get("TEAMS_WEBHOOK_URL") else ""))
+    step(f"Task #{task_id} → {state}" + (", Teams 결과 알림 보냄" if os.environ.get("TEAMS_WEBHOOK_URL") else ""), "ok")
+    if ap:
+        ap.finish("Wiki 문서가 수정되었습니다. 이미 열어 둔 문서 창은 새로고침(F5) 하세요.",
+                  [("수정된 Wiki 문서 열기", viewer), (f"Task #{task_id} 열기", dv.task_url(task_id))]
+                  + [(l, u) for l, u in links[1:] if u])
     return 0
 
 
@@ -374,6 +554,7 @@ def main() -> int:
     p.add_argument("--yes", action="store_true", help="승인 없이 진행(스케줄러용)")
     p.add_argument("--push", action="store_true", help="Wiki 커밋을 Azure DevOps Wiki 로 push")
     p.add_argument("--timeout", type=float, default=900, help="승인 대기 시간(초, 기본 900)")
+    p.add_argument("--no-ai", action="store_true", help="AI 요약(llm_summary)을 쓰지 않음")
     args = p.parse_args()
     try:
         with trace("scenario2", "proxy_status_sync", resource_group=RESOURCE_GROUP, dry_run=args.dry_run) as t:

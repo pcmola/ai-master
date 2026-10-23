@@ -1,19 +1,23 @@
-"""Teams 승인 카드 대신 로컬 웹 화면으로 Yes/No 승인을 받는다(Teams 를 연결하기 전 테스트용).
+"""Teams 승인 카드 대신 로컬 웹 화면으로 Yes/No 승인을 받고, 승인 뒤 처리 진행 상황과 결과 링크를 보여 준다.
 
-- request_approval() 을 부르면 임시 웹서버를 띄우고 크롬으로 승인 카드를 연다.
-  사용자가 Yes 또는 No 를 누르면 서버를 닫고 True/False 를 돌려준다. 시간 안에 답이 없으면 None.
-- 주소는 hosts 에 approval.local 이 있으면 그 이름으로, 없으면 http://127.0.0.1:8771 로 뜬다.
+- Approval: start() → wait() → (처리하면서) step() → finish() → close().
+  승인한 브라우저 창은 /progress 로 바뀌어 단계별 진행을 1초마다 갱신하고, 끝나면 결과 메시지와
+  '수정된 문서 열기' 같은 링크를 보여 준다. close() 는 브라우저가 최종 결과를 받아 갈 때까지(최대 linger 초) 기다린다.
 - Teams 카드 버튼용 주소도 만든다: /decide?answer=yes|no&token=… 를 브라우저로 열면 바로 결정된다.
-  on_ready(page_url, yes_url, no_url) 를 넘기면 서버가 뜬 직후 불러 주므로, 거기서 Teams 카드를 보내면 된다.
   token 은 요청마다 새로 만들어 다른 승인 요청의 버튼으로 결정되는 일을 막는다. 같은 PC 에서 눌러야 한다(127.0.0.1).
+- 주소는 hosts 에 approval.local 이 있으면 그 이름으로, 없으면 http://127.0.0.1:8771 로 뜬다.
+- request_approval() 은 진행 표시 없이 Yes/No 만 받는 간단한 형태다.
 
 사용 예:
     python teams_tools/approval_local.py --title "Proxy 현황 변경 감지" "신규: wjy-proxy03" "삭제: wjy-prxy04"
     (종료 코드: 0 = Yes, 1 = No, 2 = 시간 초과)
 
-    from teams_tools.approval_local import request_approval
-    if request_approval("Proxy 현황 변경 감지", ["신규: wjy-proxy03"], "현행화할까요?"):
-        ...
+    ap = Approval("Proxy 현황 변경 감지", ["신규: wjy-proxy03"], "현행화할까요?", links=[("문서", url)])
+    page_url, yes_url, no_url = ap.start(open_browser=False)   # 여기서 Teams 카드를 보낸다
+    if ap.wait(900):
+        ap.step("Task 생성 중…"); ...; ap.step("Task #12 생성", "ok", ("Task 열기", task_url))
+        ap.finish("완료했습니다. 열어 둔 문서는 새로고침하세요.", links=[("수정된 문서 열기", doc_url)])
+    ap.close()
 """
 
 from __future__ import annotations
@@ -34,31 +38,22 @@ from common.server import local_server, open_chrome  # noqa: E402
 
 PORT = 8771
 
-
-def page(title: str, items: list[str], question: str, links: list[tuple[str, str]] | None = None) -> str:
-    rows = "".join(f"<li>{html.escape(i)}</li>" for i in items) or "<li>(요약 없음)</li>"
-    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>승인 요청</title><style>
-body{{margin:0;background:#f5f5f5;font:14px/1.6 "Segoe UI","Malgun Gothic",sans-serif;color:#242424}}
-.card{{max-width:560px;margin:40px auto;background:#fff;border-radius:8px;box-shadow:0 2px 8px #0002;overflow:hidden}}
-.head{{background:#5b5fc7;color:#fff;padding:12px 18px;font-weight:600}}.head small{{opacity:.8;font-weight:400;margin-left:8px}}
-.body{{padding:18px}}h1{{font-size:17px;margin:0 0 10px}}ul{{margin:0 0 14px;padding-left:20px}}
-.q{{font-weight:600;margin-bottom:14px}}.btns{{display:flex;gap:10px}}
-button{{flex:1;padding:10px;border-radius:6px;border:1px solid #d1d1d1;font:inherit;font-weight:600;cursor:pointer;background:#fff}}
-button.yes{{background:#5b5fc7;color:#fff;border-color:#5b5fc7}}.done{{padding:14px;text-align:center;font-weight:600}}
-</style></head><body><div class="card"><div class="head">승인 요청<small>로컬 승인 화면 (Teams 대체)</small></div>
-<div class="body"><h1>{html.escape(title)}</h1><ul>{rows}</ul>{link_html(links)}<div class="q">{html.escape(question)}</div>
-<div class="btns" id="btns"><button class="yes" onclick="send('yes')">Yes</button><button onclick="send('no')">No</button></div></div></div>
-<script>async function send(a){{document.getElementById('btns').outerHTML='<div class="done">전송 중…</div>';
-const r=await fetch('/decide',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{answer:a}})}});
-document.querySelector('.done').textContent=r.ok?(a==='yes'?'승인했습니다. 창을 닫아도 됩니다.':'거절했습니다. 창을 닫아도 됩니다.'):'이미 처리된 요청입니다.'}}</script>
-</body></html>"""
-
-
-def result_page(text: str) -> bytes:
-    return ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>승인 결과</title></head>'
-            '<body style="font:15px sans-serif;text-align:center;padding:60px">' + html.escape(text) + "</body></html>"
-            ).encode("utf-8")
+STYLE = """
+body{margin:0;background:#f5f5f5;font:14px/1.6 "Segoe UI","Malgun Gothic",sans-serif;color:#242424}
+.card{max-width:560px;margin:40px auto;background:#fff;border-radius:8px;box-shadow:0 2px 8px #0002;overflow:hidden}
+.head{background:#5b5fc7;color:#fff;padding:12px 18px;font-weight:600}.head small{opacity:.8;font-weight:400;margin-left:8px}
+.body{padding:18px}h1{font-size:17px;margin:0 0 10px}ul{margin:0 0 14px;padding-left:20px}
+.q{font-weight:600;margin-bottom:14px}.btns{display:flex;gap:10px;flex-wrap:wrap}
+button,.btn{flex:1;padding:10px;border-radius:6px;border:1px solid #d1d1d1;font:inherit;font-weight:600;cursor:pointer;background:#fff;
+ color:#242424;text-align:center;text-decoration:none}
+button.yes,.btn.main{background:#5b5fc7;color:#fff;border-color:#5b5fc7}
+.steps{list-style:none;padding:0;margin:0 0 14px}.steps li{padding:6px 0;border-bottom:1px solid #eee;display:flex;gap:8px}
+.steps .ic{width:18px;text-align:center}.run .ic{animation:spin 1s linear infinite;display:inline-block}
+.ok .ic{color:#1e7a4f}.fail .ic{color:#b42318}.steps a{margin-left:auto;font-size:13px}
+.msg{padding:12px;border-radius:6px;margin-bottom:12px;font-weight:600}.msg.ok{background:#e3f5ec;color:#1e7a4f}
+.msg.fail{background:#fdecec;color:#b42318}.msg.wait{background:#eef2ff;color:#3730a3}
+@keyframes spin{to{transform:rotate(360deg)}}
+"""
 
 
 def link_html(links: list[tuple[str, str]] | None) -> str:
@@ -70,76 +65,168 @@ def link_html(links: list[tuple[str, str]] | None) -> str:
     return '<div style="margin:0 0 14px;font-size:13px">확인: ' + " · ".join(parts) + "</div>"
 
 
+def shell(title: str, inner: str, script: str = "") -> bytes:
+    return (f'<!doctype html><html lang="ko"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>'
+            f'<style>{STYLE}</style></head><body><div class="card"><div class="head">{html.escape(title)}'
+            f'<small>로컬 승인 화면 (Teams 대체)</small></div><div class="body">{inner}</div></div>'
+            f'<script>{script}</script></body></html>').encode("utf-8")
+
+
+def ask_page(title: str, items: list[str], question: str, links) -> bytes:
+    rows = "".join(f"<li>{html.escape(i)}</li>" for i in items) or "<li>(요약 없음)</li>"
+    return shell("승인 요청", f"""<h1>{html.escape(title)}</h1><ul>{rows}</ul>{link_html(links)}
+<div class="q">{html.escape(question)}</div>
+<div class="btns" id="btns"><button class="yes" onclick="send('yes')">Yes</button><button onclick="send('no')">No</button></div>""",
+        """async function send(a){document.getElementById('btns').innerHTML='<div class="msg wait" style="flex:1">전송 중…</div>';
+const r=await fetch('/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answer:a})});
+location.href=r.ok?'/progress':'/progress?late=1'}""")
+
+
+def progress_page(title: str) -> bytes:
+    # /status 를 1초마다 읽어 단계·결과를 그린다. 서버가 이미 닫혔으면 Teams 알림을 보라고 안내한다.
+    return shell("처리 결과", f"""<h1>{html.escape(title)}</h1><div id="msg" class="msg wait">처리 중…</div>
+<ul class="steps" id="steps"></ul><div class="btns" id="links"></div>""", """
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ic={run:'↻',ok:'✓',fail:'✗',info:'·'};let timer;
+async function poll(){let d;try{d=await (await fetch('/status',{cache:'no-store'})).json()}
+catch(e){clearInterval(timer);const m=document.getElementById('msg');if(m.classList.contains('wait')){m.className='msg fail';
+m.textContent='진행 상태를 더 받을 수 없습니다(처리가 끝나 서버가 닫혔을 수 있음). Teams 결과 알림을 확인하세요.'}return}
+document.getElementById('steps').innerHTML=d.steps.map(s=>`<li class="${s.state}"><span class="ic">${ic[s.state]||'·'}</span>
+<span>${esc(s.text)}</span>${s.link?`<a href="${esc(s.link[1])}" target="_blank" rel="noopener">${esc(s.link[0])}</a>`:''}</li>`).join('');
+const m=document.getElementById('msg');
+if(d.done){clearInterval(timer);m.className='msg '+(d.ok?'ok':'fail');m.textContent=d.message;
+document.getElementById('links').innerHTML=d.links.map((l,i)=>`<a class="btn${i?'':' main'}" href="${esc(l[1])}" target="_blank" rel="noopener">${esc(l[0])}</a>`).join('')}
+else m.textContent=d.decision==='yes'?'승인했습니다. 처리 중…':d.decision==='no'?'거절했습니다. 정리 중…':'답을 기다리는 중…'}
+poll();timer=setInterval(poll,1000);""")
+
+
+class Approval:
+    def __init__(self, title: str, items: list[str], question: str = "현행화할까요?",
+                 links: list[tuple[str, str]] | None = None):
+        self.title, self.items, self.question, self.links = title, items, question, links
+        self.token = secrets.token_urlsafe(9)
+        self.decided, self.final_seen = threading.Event(), threading.Event()
+        self.answer: bool | None = None
+        self.state = {"decision": None, "steps": [], "done": False, "ok": True, "message": "", "links": []}
+        self.lock = threading.Lock()
+        self.server = None
+
+    # -- 결정
+    def decide(self, value: str) -> bool:
+        with self.lock:
+            if value not in ("yes", "no") or self.decided.is_set():
+                return False
+            self.answer = value == "yes"
+            self.state["decision"] = value
+            self.decided.set()
+            return True
+
+    # -- 진행 상황
+    def step(self, text: str, state: str = "run", link: tuple[str, str] | None = None):
+        """같은 문구로 시작하는 진행 중(run) 단계가 있으면 그 줄을 바꾸고, 없으면 새 줄을 더한다."""
+        with self.lock:
+            steps = self.state["steps"]
+            if steps and steps[-1]["state"] == "run":
+                steps[-1] = {"text": text, "state": state, "link": link}
+            else:
+                steps.append({"text": text, "state": state, "link": link})
+
+    def finish(self, message: str, links: list[tuple[str, str]] | None = None, ok: bool = True):
+        with self.lock:
+            self.state.update(done=True, ok=ok, message=message, links=[list(l) for l in (links or []) if l[1]])
+
+    # -- 서버
+    def start(self, open_browser: bool = True) -> tuple[str, str, str]:
+        ap = self
+        ask = ask_page(self.title, self.items, self.question, self.links)
+        progress = progress_page(self.title)
+
+        class Handler(BaseHTTPRequestHandler):
+            def reply(self, data: bytes, status: int = 200, kind: str = "text/html; charset=utf-8"):
+                self.send_response(status)
+                self.send_header("Content-Type", kind)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_GET(self):
+                url = urlparse(self.path)
+                if url.path == "/status":
+                    with ap.lock:
+                        data = json.dumps(ap.state, ensure_ascii=False).encode("utf-8")
+                        if ap.state["done"]:
+                            ap.final_seen.set()
+                    return self.reply(data, kind="application/json; charset=utf-8")
+                if url.path == "/progress":
+                    return self.reply(progress)
+                if url.path == "/decide":  # Teams 카드 버튼
+                    qs = parse_qs(url.query)
+                    if (qs.get("token") or [""])[0] != ap.token:
+                        return self.reply(shell("처리 결과", "<div class='msg fail'>만료되었거나 다른 승인 요청의 버튼입니다.</div>"), 403)
+                    ap.decide((qs.get("answer") or [""])[0])  # 이미 결정됐어도 진행 화면을 보여 준다
+                    return self.reply(progress)
+                if ap.decided.is_set():
+                    return self.reply(progress)
+                return self.reply(ask)
+
+            def do_POST(self):
+                try:
+                    value = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}").get("answer")
+                except ValueError:
+                    value = None
+                ok = urlparse(self.path).path == "/decide" and ap.decide(value)
+                self.reply(b"", 200 if ok else 409, "text/plain")
+
+            def log_message(self, *_):
+                pass
+
+        self.server = local_server(PORT, Handler, "approval.local")
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        url = self.server.url
+        print(f"[approval] {datetime.now():%H:%M:%S} 승인 대기: {url}", flush=True)
+        if open_browser:
+            open_chrome(url)
+        return url, f"{url}/decide?answer=yes&token={self.token}", f"{url}/decide?answer=no&token={self.token}"
+
+    def wait(self, timeout: float) -> bool | None:
+        """Yes=True, No=False, 시간 초과=None."""
+        self.decided.wait(timeout)
+        if not self.decided.is_set():
+            with self.lock:
+                self.decided.set()  # 늦게 누른 버튼은 '이미 처리됨'
+                self.state["decision"] = "timeout"
+        print(f"[approval] {datetime.now():%H:%M:%S} 결과: "
+              f"{'Yes' if self.answer else 'No' if self.answer is False else '시간 초과'}", flush=True)
+        return self.answer
+
+    def close(self, linger: float = 20):
+        """브라우저가 최종 결과를 받아 갈 때까지 최대 linger 초 기다린 뒤 서버를 닫는다."""
+        if not self.server:
+            return
+        if self.state["done"] and self.state["decision"] in ("yes", "no"):
+            self.final_seen.wait(linger)
+        self.server.shutdown()
+        self.server.server_close()
+        self.server = None
+
+
 def request_approval(title: str, items: list[str], question: str = "현행화할까요?",
                      timeout: float = 600, open_browser: bool = True, on_ready=None,
                      links: list[tuple[str, str]] | None = None) -> bool | None:
-    """승인 화면을 띄우고 답을 기다린다. Yes=True, No=False, 시간 초과=None."""
-    decided = threading.Event()
-    answer: dict[str, bool] = {}
-    token = secrets.token_urlsafe(9)
-    body = page(title, items, question, links).encode("utf-8")
-
-    def decide(value: str) -> bool:
-        if value not in ("yes", "no") or decided.is_set():
-            return False
-        answer["value"] = value == "yes"
-        decided.set()
-        return True
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            url = urlparse(self.path)
-            data, status = body, 200
-            if url.path == "/decide":  # Teams 카드 버튼
-                qs = parse_qs(url.query)
-                value = (qs.get("answer") or [""])[0]
-                if (qs.get("token") or [""])[0] != token:
-                    data, status = result_page("만료되었거나 다른 승인 요청의 버튼입니다."), 403
-                elif decide(value):
-                    data = result_page("승인했습니다. 창을 닫아도 됩니다." if value == "yes" else "거절했습니다. 창을 닫아도 됩니다.")
-                else:
-                    data, status = result_page("이미 처리된 요청입니다."), 409
-            self.send_response(status)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        def do_POST(self):
-            try:
-                value = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}").get("answer")
-            except ValueError:
-                value = None
-            ok = self.path == "/decide" and decide(value)
-            self.send_response(200 if ok else 409)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-
-        def log_message(self, *_):
-            pass
-
-    server = local_server(PORT, Handler, "approval.local")
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(f"[approval] {datetime.now():%H:%M:%S} 승인 대기: {server.url}", flush=True)
+    """승인 화면을 띄우고 답을 기다린다(진행 표시 없음). Yes=True, No=False, 시간 초과=None."""
+    ap = Approval(title, items, question, links)
+    page_url, yes_url, no_url = ap.start(open_browser)
     try:
         if on_ready:
-            on_ready(server.url, f"{server.url}/decide?answer=yes&token={token}",
-                     f"{server.url}/decide?answer=no&token={token}")
-        if open_browser:
-            open_chrome(server.url)
-    except BaseException:
-        server.shutdown()
-        server.server_close()
-        raise
-    try:
-        decided.wait(timeout)
+            on_ready(page_url, yes_url, no_url)
+        result = ap.wait(timeout)
+        ap.finish("승인했습니다." if result else "거절했습니다." if result is False else "시간이 지나 취소했습니다.",
+                  ok=result is not None)
+        return result
     finally:
-        server.shutdown()
-        server.server_close()
-    result = answer.get("value")
-    print(f"[approval] {datetime.now():%H:%M:%S} 결과: {'Yes' if result else 'No' if result is False else '시간 초과'}",
-          flush=True)
-    return result
+        ap.close(linger=5)
 
 
 def main() -> int:

@@ -9,7 +9,7 @@ client = AzureOpenAI(
 )
 
 stream = client.chat.completions.create(
-    model=os.environ.get("OPENAI_MODEL", "gpt-4.1"),
+    model=os.environ.get("OPENAI_MODEL", "gpt-6.1-sol"),
     messages=[{"role": "user", "content": "1부터 5까지 천천히 세"}],
     stream=True,
 )
