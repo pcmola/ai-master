@@ -15,11 +15,40 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 | 결과물 | 가이드 Wiki 문서 (링크 제공) | Wiki 현황 갱신 + DevOps Task | 원인·수정안 (PR은 확장) |
 | 구현 | `wiki_tools/wiki_search.py` | `proxy_tools/proxy_status_sync.py` | `proxy_tools/proxy_log_detect.py` 등 (일부) |
 
-구현 상태 표시: ✅ 구현 · 🟡 일부 · ⬜ 미구현 · (확장) = 자료에서 Nice-to-have로 둔 범위
+구현 상태 표시: ✅ 구현 · 🟡 일부 · ⬜ 미구현 · (확장) = 자료에서 Nice-to-have로 둔 범위  
+다이어그램 색: 초록 = 구현 · 노랑 = 일부 · 회색 점선 = 미구현 · 주황 = 사용자 판단
 
 ### 시나리오 1. 프록시 설정 가이드 자동 생성
 
 명령어 한 줄로 기존 Azure DevOps Wiki를 검색하고, RAG(검색한 Wiki 문서를 근거로 LLM이 작성)로 통합 가이드 문서를 만듭니다. 사용자가 미리보기로 확인한 뒤 Wiki에 등록합니다. 승인 없이 자동 등록하면 LLM이 잘못 쓴 문서가 팀 Wiki에 쌓이므로, 화면의 버튼을 가벼운 승인으로 씁니다. 화면: http://wiki-search.local
+
+```mermaid
+flowchart TD
+    q(["사용자 명령<br/>'프록시 설정 가이드 알려줘'"]) --> a["1. 명령 해석<br/>개념·오타 교정<br/>유형 되묻기"]
+    a --> s["2. Wiki 검색<br/>키워드 + 임베딩"]
+    wiki[("Azure DevOps Wiki<br/>(wiki-repo)")] --> s
+    s -. "근거 약함" .-> web["웹 검색<br/>(Tavily)"]
+    s --> r["3. RAG·LLM 통합<br/>상위 문서 선별"]
+    web -.-> r
+    r --> g["4. 가이드 생성<br/>근거 문서·출처 표기"]
+    g --> u{"5. 사용자 확인<br/>미리보기"}
+    u -- "다시 생성" --> r
+    u -- "Wiki에 등록" --> reg["6. Wiki 등록<br/>02. 운영 › 00. AI 문서 생성<br/>같은 제목은 갱신"]
+    reg -- "push" --> wiki
+    reg --> out(["7. 결과 제공<br/>Wiki 링크"])
+
+    classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
+    classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
+    classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
+    classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
+    classDef io fill:#EEF2FF,stroke:#6366F1,color:#312E81
+    classDef ext fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
+    class q,out io
+    class a,s,g,reg done
+    class r part
+    class u user
+    class wiki,web ext
+```
 
 | 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
@@ -35,6 +64,33 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 
 Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다. 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다. 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**하므로, 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#시나리오-2-실행-proxy_status_syncpy))
 
+```mermaid
+flowchart TD
+    t(["1. 트리거<br/>직접 실행"]) --> w["2. Wiki 현황 조회<br/>표준 표: 규칙<br/>다른 형식: LLM + 원문 대조"]
+    t --> az["3. Azure VM 조회<br/>태그 또는 이름 규칙"]
+    w --> c{"4. 비교<br/>신규·삭제·IP·상태·SIZE"}
+    az --> c
+    c -- "차이 없음" --> end0(["종료<br/>(중지된 VM 있으면 이상 징후 알림)"])
+    c -- "차이 있음" --> ai["AI 요약<br/>(참고용)"]
+    ai --> ap{"5. Teams 승인<br/>Yes / No"}
+    ap -- "No · 시간 초과" --> end1(["기록 후 종료"])
+    ap -- "Yes" --> task["6. DevOps Task<br/>Epic › Feature › 월별 PBI"]
+    task --> wu["7. Wiki 현행화<br/>표·변경 이력 갱신, push"]
+    task -. "LLM으로 읽은 문서" .-> man["수동 반영 요청<br/>(Task 댓글)"]
+    wu --> rep(["8. 완료 보고<br/>Task Done · Teams 결과"])
+
+    classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
+    classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
+    classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
+    classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
+    classDef io fill:#EEF2FF,stroke:#6366F1,color:#312E81
+    classDef ext fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
+    class t part
+    class w,az,c,ai,task,wu,rep,man done
+    class ap user
+    class end0,end1 io
+```
+
 | 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
 | 1. 점검 트리거 | 직접 실행, 스케줄러(매일 정해진 시각) | 🟡 | 직접 실행. 스케줄러 등록 안 됨(`--yes`로 무인 실행 가능) |
@@ -49,6 +105,29 @@ Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으
 ### 시나리오 3. 장애 감지 및 자동 조치
 
 LLM이 장애 로그를 Wiki·DevOps 소스로 분석해 원인과 수정안을 도출하고 Teams 승인을 요청합니다(6~8단계는 확장 범위). 지금은 규칙 기반 로그 탐지와 장애 재현 도구까지 있습니다.
+
+```mermaid
+flowchart TD
+    t(["1. 트리거<br/>직접 실행"]) --> d["2. 로그 수집·감지<br/>SSH 로그 수집, 규칙 탐지<br/>(LLM 분석 없음)"]
+    d --> sim["3. 유사 장애 검색<br/>Wiki 사례(RAG)"]
+    sim --> src["4. DevOps 소스 확인<br/>원인 코드·설정 특정(LLM)"]
+    src --> ap{"5. Teams 조치 승인<br/>Yes / No"}
+    ap -- "Yes" --> task["6. 장애 조치 Task"]
+    task --> pr["7. 소스 수정·PR"]
+    pr --> hist(["8. 장애 대응 이력 Wiki"])
+    inj["장애 재현<br/>proxy_fault_inject.py"] -. "잘못된 설정 주입" .-> d
+
+    classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
+    classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
+    classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
+    classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
+    classDef io fill:#EEF2FF,stroke:#6366F1,color:#312E81
+    classDef ext fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
+    class t,d part
+    class sim,src,task,pr,hist todo
+    class ap todo
+    class inj done
+```
 
 | 단계 | 내용 | 상태 | 구현 |
 |---|---|---|---|
