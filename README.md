@@ -11,39 +11,40 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 | 이름 | 프록시 설정 가이드 자동 생성 | 프록시 현황 Wiki 현행화 | 장애 감지 및 자동 조치 |
 | 내용 | 명령어 한 줄로 기존 Wiki를 검색해 LLM이 통합 가이드 문서를 생성 | Wiki 현황과 Azure의 '*xy' VM을 비교하고 승인 후 반영 | LLM이 장애 로그·소스를 분석해 원인·수정안 도출 후 승인 요청 |
 | 트리거 | 사용자 명령 | 직접 실행 / 스케줄러 | 직접 실행 / 스케줄러 |
-| 승인 | 없음 | Teams Yes/No | Teams Yes/No |
-| 결과물 | 가이드 Wiki 문서 | Wiki 업데이트 | 원인·수정안 (PR은 확장) |
+| 승인 | 미리보기 확인 후 "Wiki에 등록" 버튼 | Teams Yes/No | Teams Yes/No |
+| 결과물 | 가이드 Wiki 문서 (링크 제공) | Wiki 현황 갱신 + DevOps Task | 원인·수정안 (PR은 확장) |
 | 구현 | `wiki_tools/wiki_search.py` | `proxy_tools/proxy_status_sync.py` | `proxy_tools/proxy_log_detect.py` 등 (일부) |
 
 구현 상태 표시: ✅ 구현 · 🟡 일부 · ⬜ 미구현 · (확장) = 자료에서 Nice-to-have로 둔 범위
 
 ### 시나리오 1. 프록시 설정 가이드 자동 생성
 
-명령어 한 줄로 기존 Azure DevOps Wiki를 검색하고, RAG와 LLM으로 통합 가이드 문서를 생성합니다. 화면: http://wiki-search.local
+명령어 한 줄로 기존 Azure DevOps Wiki를 검색하고, RAG(검색한 Wiki 문서를 근거로 LLM이 작성)로 통합 가이드 문서를 만듭니다. 사용자가 미리보기로 확인한 뒤 Wiki에 등록합니다. 승인 없이 자동 등록하면 LLM이 잘못 쓴 문서가 팀 Wiki에 쌓이므로, 화면의 버튼을 가벼운 승인으로 씁니다. 화면: http://wiki-search.local
 
-| 단계 | 내용 | 상태 | 구현 |
+| 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
-| 1. 사용자 명령 입력 | "프록시 설정 가이드 알려줘", 주제·문서 유형 인식 | ✅ | 개념 사전·오타 교정, 포워드/리버스 등 유형을 되묻기 |
-| 2. Azure DevOps Wiki 검색 | 키워드 검색(proxy, 프록시), 의미 기반 검색(임베딩) | ✅ | BM25 + 문자 bigram + `text-embedding-3-large` 혼합 검색. 위키 근거가 약하면 Tavily 웹 검색 보완 |
-| 3. RAG·LLM 분석·통합 | 청킹·유사 문서 추출, 중복·상충 정리, 단계별 구성 | 🟡 | 상위 15개 문서 전문을 LLM에 넘겨 통합(청킹은 하지 않음) |
-| 4. 가이드 문서 생성 | 설정 방법·예제·주의사항, 참고 문서 링크, 출처 표기 | ✅ | `OPENAI_MODEL`로 작성, 단계마다 근거 문서 경로, 원문·웹 링크 |
-| 5. Wiki 문서 등록 | 신규 위키 페이지 생성, 버전 관리 | ⬜ | 지금은 화면 표시와 Markdown 복사·다운로드까지 |
-| 6. 사용자에게 결과 제공 | 미리보기, 위키 링크, 추가 질문·수정 요청 | 🟡 | 미리보기·링크·생성 방식 배지. 추가 질문·수정 요청은 없음 |
+| 1. 사용자 명령 입력 | "프록시 설정 가이드 알려줘", 주제·유형 인식, 모호하면 되묻기(포워드/리버스), 오타 교정 | ✅ | 개념 사전, 자모 분해 + 편집 거리 오타 교정, 유형 선택 |
+| 2. Azure DevOps Wiki 검색 | 키워드 검색(proxy = 프록시 = 프락시), 의미 기반 검색(임베딩), 근거가 약하면 웹 검색 보완 | ✅ | BM25 + 문자 bigram + `text-embedding-3-large`, Tavily |
+| 3. RAG·LLM 분석·통합 | 관련 문서 선별, 중복·상충 정리, 단계별 구성 | 🟡 | 핵심 개념이 나오는 상위 15개 문서 전문을 LLM에 전달(청킹 없음) |
+| 4. 가이드 문서 생성 | 설정 방법·예제·주의사항, 단계마다 근거 문서, 웹 출처 따로 표시, 원문 다이어그램 유지 | ✅ | `OPENAI_MODEL`(gpt-6.1-sol) |
+| 5. 사용자 확인 | 미리보기, "Wiki에 등록" 또는 "다시 생성", Markdown 복사·다운로드 | 🟡 | 미리보기·복사·다운로드까지. 등록·다시 생성 버튼 없음 |
+| 6. Wiki 문서 등록 | 정해진 폴더에 등록, 같은 제목이면 갱신(버전 이력), Wiki 문서 규칙(채번·`.order`·인코딩) 준수, 머리에 "AI 생성 · 근거 문서 · 생성 일시" | ⬜ | |
+| 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | ⬜ | 지금은 근거 문서 링크만 |
 
 ### 시나리오 2. 프록시 현황 Wiki 현행화
 
-Wiki의 프록시 현황을 Azure Portal의 실제 VM과 비교하고, 차이가 있으면 Teams 승인 후 문서를 업데이트합니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#시나리오-2-실행-proxy_status_syncpy))
+Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다. 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다. 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**하므로, 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#시나리오-2-실행-proxy_status_syncpy))
 
-| 단계 | 내용 | 상태 | 구현 |
+| 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
-| 1. 점검 트리거 | 직접 실행, 스케줄러(확장) | 🟡 | 직접 실행. 스케줄러 등록은 안 됨(`--yes`로 승인 없이 실행 가능) |
-| 2. Wiki 프록시 현황 조회 | 현황 문서 파싱(LLM), VM명·IP·용도·상태 추출 | 🟡 | 표 머리글 기준 규칙 파싱(LLM 아님). 형식이 정해진 표만 읽음 |
-| 3. Azure Portal VM 조회 | 이름이 'xy'로 끝나는 VM, prxy·pxy 판별(LLM), IP·상태·리전 | 🟡 | `az vm list` + 이름 규칙(proxy·prxy·pxy + 숫자로 끝남, 정규식이며 LLM 아님) |
-| 4. 비교 분석 | 신규·삭제 VM, IP·상태·스펙 변경, 차이 없으면 종료 | ✅ | 규칙 비교. 테스트 정답과 대조(`--verify`) |
-| 5. Teams 알림·승인 요청 | 달라진 항목 요약(LLM), "현행화할까요?" Yes/No, No → 기록 후 종료 | ✅ | Teams 웹후크 카드 + AI 요약(참고용) + Yes/No 버튼(로컬 승인 서버). No·시간 초과 기록 |
-| 6. Azure DevOps Task 생성(확장) | 변경 내역 기록, 담당자 지정 | ✅ | Epic → Feature → 월별 PBI 아래 Task, 담당자 지정 |
-| 7. Wiki 현행화 | 현황 문서 갱신(LLM 작성), 변경 이력·버전 관리 | 🟡 | 표와 변경 이력을 규칙으로 갱신(LLM 아님), git 커밋, `--push`로 Azure DevOps Wiki 반영 |
-| 8. 완료 보고 | Task 완료 처리(확장), Teams 결과 알림 | ✅ | Task Done, Teams 결과 카드, 승인 화면에 진행·결과 표시 |
+| 1. 점검 트리거 | 직접 실행, 스케줄러(매일 정해진 시각) | 🟡 | 직접 실행. 스케줄러 등록 안 됨(`--yes`로 무인 실행 가능) |
+| 2. Wiki 현황 조회 | 표준 표는 규칙으로 파싱, 형식이 다른 문서는 LLM이 표준 형식으로 바꾸고 원문 대조로 검증 | 🟡 | 규칙 파싱(표 머리글 기준). LLM 파싱 없음 |
+| 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | ✅ | `az vm list` + 이름 규칙(태그 판별은 없음) |
+| 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | ✅ | 테스트 정답 대조(`--verify`) |
+| 5. Teams 알림·승인 요청 | 이상 징후 + AI 요약(참고용) + 변경 목록 + Wiki 문서 링크, "현행화할까요?" Yes/No, No·시간 초과는 기록 후 종료 | ✅ | Teams 웹후크 카드, 로컬 승인 서버, 진행 화면 |
+| 6. DevOps Task 생성 | Epic → Feature → 월별 PBI 아래 Task, 변경 내역, 담당자 | ✅ | |
+| 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | ✅ | `--push`일 때 반영 |
+| 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | ✅ | |
 
 ### 시나리오 3. 장애 감지 및 자동 조치
 
@@ -498,11 +499,12 @@ flowchart LR
 python test\scenario2\setup_env.py            # 점검 + Wiki 문서를 '현행화 전'으로 초기화 (시나리오 실행 전마다)
 python test\scenario2\setup_env.py --check    # 점검만
 python test\scenario2\setup_env.py --reseed   # VM이 바뀌었을 때(시작·중지 포함) 표와 정답을 다시 만듦
+python test\scenario2\setup_env.py --start-vms   # 꺼진 Proxy VM을 켜고(실제 운영 가정: 항상 켜짐) 표와 정답을 다시 만듦
 python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신규: wjy-proxy03"   # 승인 화면만 시험
 ```
 
 - 점검 항목: az 로그인과 Proxy VM 3대 이상, 스냅샷과 실제 VM 일치, Azure DevOps PAT, 승인 화면 모듈.
-- VM 전원 상태도 비교 대상이라 VM을 켜거나 끄면 정답이 틀어집니다. 이때 `--check`가 실패하므로 `--reseed`로 다시 만듭니다.
+- VM 전원 상태도 비교 대상이라 VM을 켜거나 끄면 정답이 틀어집니다. 이때 `--check`가 실패하므로 `--reseed`로 다시 만듭니다. 실제 운영처럼 VM이 켜진 상태로 시험하려면 `--start-vms`를 씁니다(테스트 VM은 비용 때문에 매일 01:00 자동 종료).
 - Wiki 문서는 wiki-repo에 로컬 커밋만 하고 Azure DevOps Wiki로 push하지 않습니다.
 - Teams 연동(Workflows 웹후크·승인 카드·Graph API)에는 회사·학교용 Microsoft 365 계정이 필요합니다(무료 개인 Teams 불가, 가장 싼 선택지는 Microsoft 365 Business Basic). Teams 카드의 응답을 이 PC 스크립트로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다.
 

@@ -139,7 +139,14 @@ def describe(d: dict) -> str:
         return f"신규(Azure 에만 있음): {d['name']}"
     if d["type"] == "removed":
         return f"삭제(Wiki 에만 있음): {d['name']}"
-    return f"{COMPARE[d['field']]} 변경: {d['name']} ({d['wiki']} → {d['azure']})"
+    alert = " ⚠ 이상 징후: VM 중지" if d["field"] == "state" and d["azure"] == "중지" else ""
+    return f"{COMPARE[d['field']]} 변경: {d['name']} ({d['wiki']} → {d['azure']}){alert}"
+
+
+def stopped_alert(azure: list[dict]) -> str:
+    """실제 운영에서 Proxy VM 은 항상 켜져 있어야 하므로, 꺼진 VM 은 문서 갱신과 별도로 알린다."""
+    off = [v["name"] for v in azure if v["state"] != "운영"]
+    return f"⚠ 이상 징후: 중지된 Proxy VM {len(off)}대 ({', '.join(off)}) — 장애·의도 여부를 확인해 주세요." if off else ""
 
 
 def verify(diffs: list[dict]) -> bool:
@@ -174,7 +181,8 @@ def ai_summary(diffs: list[dict], wiki: list[dict], azure: list[dict]) -> dict |
     prompt = ("아래는 사내 Wiki 의 Proxy VM 현황 표와 Azure 의 실제 VM 을 비교한 결과다. 운영자가 Wiki 현행화 승인을 "
               "판단하도록 핵심만 한국어 존댓말(~습니다, ~해 주세요)로 요약하라.\n"
               "- summary: 2문장 이내, 120자 이내. 가장 중요한 변경과 승인 전에 확인할 것 하나.\n"
-              "- 상태 '운영'=실행 중, '중지'=중지·할당 해제. 신규=Azure 에만 있음, 삭제=Wiki 에만 있음.\n"
+              "- 상태 '운영'=실행 중, '중지'=중지·할당 해제. Proxy VM 은 항상 켜져 있어야 하므로 중지는 이상 징후로 먼저 언급하라.\n"
+              "- 신규=Azure 에만 있음, 삭제=Wiki 에만 있음.\n"
               "- 주어진 데이터에 없는 사실(사용 서비스, 원인 등)은 지어내지 마라.\n"
               'JSON 으로만 답하라: {"summary": str}\n\n'
               + json.dumps(payload, ensure_ascii=False))
@@ -237,17 +245,21 @@ def wiki_links(dv) -> list[tuple[str, str]]:
     return links
 
 
-def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple[str, str]], ai: dict | None = None):
+def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple[str, str]], ai: dict | None = None,
+                 alert: str = ""):
     """Teams 카드(또는 브라우저)로 승인을 받는다. 승인 서버는 처리가 끝날 때까지 열어 두고 진행 상황을 보여 준다.
-    돌려주는 값: (결정 True/False/None, Approval)."""
+    alert: 중지된 VM 같은 이상 징후(맨 위에 보인다). 돌려주는 값: (결정 True/False/None, Approval)."""
     from teams_tools import teams_notify
     from teams_tools.approval_local import Approval
 
     items = explained(diffs, ai)
     head = (f"AI 요약 ({ai['model']}, 참고용): {ai['summary']}" if ai
             else "AI 요약 없음 (규칙 비교 결과만 표시)")
+    if alert:
+        head = alert + "\n\n" + head
     webhook = bool(os.environ.get("TEAMS_WEBHOOK_URL"))
-    ap = Approval(f"Proxy 현황 변경 {len(diffs)}건", [head] + items, "Wiki 현행화와 Task 등록을 진행할까요?", links)
+    ap = Approval(f"Proxy 현황 변경 {len(diffs)}건", ([alert] if alert else []) + [head.split("\n\n")[-1]] + items,
+                  "Wiki 현행화와 Task 등록을 진행할까요?", links)
     with span("approval", channel="teams" if webhook else "local", timeout_s=timeout) as s:
         page_url, yes_url, no_url = ap.start(open_browser=not webhook)
         if webhook:
@@ -455,8 +467,15 @@ def run(args) -> int:
         s.set(diffs=len(diffs), summary=[describe(d) for d in diffs][:6])
     if args.verify:
         verify(diffs)
+    alert = stopped_alert(azure)  # 실제 운영 가정: Proxy VM 은 항상 켜져 있어야 한다
+    if alert:
+        print(f"\n{alert}")
     if not diffs:
         print("Wiki 와 Azure 가 같습니다. 종료합니다.")
+        if alert and not args.dry_run and os.environ.get("TEAMS_WEBHOOK_URL"):
+            from teams_tools import teams_notify
+            with span("teams_notify", kind="stopped_alert"):  # 문서는 맞아도 VM 이 꺼져 있으면 알린다
+                teams_notify.send(alert, "[Proxy 현황] 이상 징후", facts=[("리소스 그룹", RESOURCE_GROUP), ("감지 시각", when)])
         return 0
     ai = None if args.no_ai else ai_summary(diffs, wiki, azure)
     if ai:
@@ -468,7 +487,7 @@ def run(args) -> int:
 
     dv = devops()
     links = wiki_links(dv)
-    decision, ap = (True, None) if args.yes else ask_approval(diffs, when, args.timeout, links, ai)
+    decision, ap = (True, None) if args.yes else ask_approval(diffs, when, args.timeout, links, ai, alert)
     try:
         return apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai)
     except Exception as exc:

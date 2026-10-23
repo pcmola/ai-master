@@ -22,6 +22,7 @@ data/scenario2/
     python test/scenario2/setup_env.py            # 점검 + 문서 초기화(시나리오 실행 전마다)
     python test/scenario2/setup_env.py --check    # 점검만
     python test/scenario2/setup_env.py --reseed   # VM 이 바뀌었을 때 표·정답을 다시 만든다
+    python test/scenario2/setup_env.py --start-vms   # Proxy VM 을 켜고(실제 운영 가정: 항상 켜짐) 표·정답을 다시 만든다
 """
 
 from __future__ import annotations
@@ -168,14 +169,47 @@ def save(name: str, value):
     (OUT / name).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def start_vms(timeout: float = 420) -> bool:
+    """꺼진 Proxy VM 을 켠다. 실제 운영에서는 항상 켜져 있다고 가정하지만, 테스트 VM 은 비용 때문에 매일 01:00 자동 종료된다."""
+    import shutil
+    import time
+    exe = shutil.which("az") or shutil.which("az.cmd")
+    stopped = [v["name"] for v in proxy_vms() if v["state"] != "운영"]
+    if not stopped:
+        print("  [유지] Proxy VM 이 모두 켜져 있습니다.")
+        return True
+    print(f"  [시작] 꺼진 VM {len(stopped)}대를 켭니다: {', '.join(stopped)}", flush=True)
+    for name in stopped:
+        res = subprocess.run([exe, "vm", "start", "-g", RESOURCE_GROUP, "-n", name, "--no-wait"],
+                             capture_output=True, text=True, encoding="utf-8", timeout=120)
+        if res.returncode != 0:
+            print(f"  [실패] {name} 시작: {res.stderr.strip()[:200]}")
+            return False
+    started = time.monotonic()
+    while time.monotonic() - started < timeout:
+        left = [v["name"] for v in proxy_vms() if v["state"] != "운영"]
+        if not left:
+            print(f"  [통과] 모든 Proxy VM 이 켜졌습니다 ({time.monotonic() - started:.0f}초).")
+            return True
+        time.sleep(10)
+    print(f"  [실패] {timeout:.0f}초 안에 켜지지 않은 VM: {', '.join(left)}")
+    return False
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="시나리오 2 테스트 환경 점검·초기화")
     p.add_argument("--check", action="store_true", help="점검만 하고 문서·정답은 바꾸지 않음")
     p.add_argument("--reseed", action="store_true", help="실제 VM 으로 '현행화 전' 표와 정답을 다시 만든다")
+    p.add_argument("--start-vms", action="store_true", help="꺼진 Proxy VM 을 켠 뒤 표·정답을 다시 만든다(--reseed 포함)")
     args = p.parse_args()
 
     print("시나리오 2 테스트 환경 점검")
     OUT.mkdir(parents=True, exist_ok=True)
+    if args.start_vms:
+        if not start_vms():
+            print("결과: 준비 안 됨 (VM 시작 실패)")
+            return 1
+        args.reseed = True
     try:
         vms = proxy_vms()
     except Exception as exc:
