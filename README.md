@@ -94,6 +94,7 @@ flowchart LR
 | | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣음 | - |
 | | `squid_policy_monitor.py` | Squid 정책 변경 감지 (읽기 전용) | - |
 | | `squid_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki 현황 갱신 | - |
+| | `proxy_status_sync.py` | 시나리오 2: Wiki Proxy 현황 ↔ Azure VM 비교 → Teams 승인 → Task → Wiki 현행화 → 완료 보고 | - |
 | teams_tools | `teams_notify.py`, `teams_graph.py` | Teams 알림 (Workflows 웹후크 / Graph API) | - |
 | | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | http://127.0.0.1:8771 (요청 중에만) |
 | test | `teams_test.py` | Teams 연동 테스트: 웹후크·Graph 를 차례로 시험하고 실패 원인을 안내 (`.env`의 `TEAMS_*`) | - |
@@ -412,7 +413,7 @@ flowchart LR
     setup["setup_env.py"] -- "실제 VM 조회" --> az[("Azure<br/>WJY-PROXY-RG")]
     setup -- "'현행화 전' 문서 쓰기<br/>로컬 커밋" --> wiki[("wiki-repo<br/>Proxy VM 현황 (테스트 구독)")]
     setup -- "스냅샷·정답 저장" --> data[("data/scenario2/")]
-    scenario["시나리오 2 실행"] --> az & wiki
+    scenario["proxy_status_sync.py<br/>(시나리오 2 실행)"] --> az & wiki
     scenario -- "Yes/No" --> approval["approval_local.py<br/>(Teams 대체)"]
     scenario -. "결과를 정답과 비교" .-> data
 
@@ -445,8 +446,30 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 - 점검 항목: az 로그인과 Proxy VM 3대 이상, 스냅샷과 실제 VM 일치, Azure DevOps PAT, 승인 화면 모듈.
 - VM 전원 상태도 비교 대상이라 VM을 켜거나 끄면 정답이 틀어집니다. 이때 `--check`가 실패하므로 `--reseed`로 다시 만듭니다.
 - Wiki 문서는 wiki-repo에 로컬 커밋만 하고 Azure DevOps Wiki로 push하지 않습니다.
-- Teams 승인은 아직 연결하지 않았습니다. `approval_local.py`의 `request_approval(title, items, question)`을 같은 인자의 Teams 승인 함수로 바꾸면 됩니다.
 - Teams 연동(Workflows 웹후크·승인 카드·Graph API)에는 회사·학교용 Microsoft 365 계정이 필요합니다(무료 개인 Teams 불가, 가장 싼 선택지는 Microsoft 365 Business Basic). Teams 카드의 응답을 이 PC 스크립트로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다.
+
+### 시나리오 2 실행 (proxy_status_sync.py)
+
+| 단계 | 하는 일 |
+|---|---|
+| 1. trigger | 직접 실행 또는 스케줄러(`--yes`면 승인 생략) |
+| 2. wiki_read | Wiki 문서의 `## VM 목록` 표를 읽음 (머리글 이름으로 칸을 찾음) |
+| 3. azure_read | 리소스 그룹에서 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM의 IP·상태·SIZE·리전 |
+| 4. compare | 신규·삭제·변경(사설/공인 IP, 상태, SIZE, LOCATION, RESOURCE GROUP). 차이 없으면 종료. Proxy(용도) 칸은 사람이 관리하므로 비교하지 않음 |
+| 5. approval | Teams 채널에 요약 카드와 **Yes · 현행화 / No · 기록만** 버튼을 보내고 이 PC의 승인 서버에서 답을 기다림(기본 15분). 웹후크가 없으면 승인 화면을 브라우저로 엶. No·시간 초과는 Teams에 알리고 종료 |
+| 6. task_create | Azure DevOps Task(변경 내역, 담당자 = `SCENARIO2_ASSIGNEE` 또는 PAT 소유자, 태그 `proxy-status; scenario2`) |
+| 7. wiki_update | 표를 Azure 값으로 고치고 `## 변경 이력`에 행 추가, 최종 수정일 갱신 → wiki-repo 커밋 (`--push`일 때만 push) |
+| 8. report | Task를 완료 상태(프로세스의 Completed 범주, 예: Done)로 바꾸고 댓글, Teams에 결과 카드 |
+
+```powershell
+python proxy_tools\proxy_status_sync.py --dry-run --verify   # 1~4단계 + 테스트 정답 대조, 아무것도 바꾸지 않음
+python proxy_tools\proxy_status_sync.py                      # Teams 승인 후 Task·Wiki 반영
+python proxy_tools\proxy_status_sync.py --yes --push         # 승인 없이 진행하고 Azure DevOps Wiki로 push
+```
+
+- Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
+- 노드별 기록은 콘솔과 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
+- 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
 
 ## 실행 예시
 

@@ -31,7 +31,6 @@ import base64
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import urllib.parse
@@ -48,41 +47,11 @@ except ImportError:
     pass
 
 OUT = DATA_DIR / "scenario2"
-RESOURCE_GROUP = os.environ.get("SCENARIO2_RESOURCE_GROUP", "WJY-PROXY-RG")
-# 단계 3: 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM 만 Proxy 로 본다.
-NAME_PATTERN = r"(?i)(proxy|prxy|pxy)\d*$"
-WIKI_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06-네트워크-및-Proxy"
-             / "01-네트워크-및-Proxy-현황-파악" / "Proxy-VM-현황-(테스트-구독).md")
-COLUMNS = ["NAME", "RESOURCE GROUP", "LOCATION", "사설 IP", "공인 IP", "SIZE", "Proxy", "상태"]
-FIELDS = ["name", "resource_group", "location", "private_ip", "public_ip", "size", "proxy", "state"]
-LOCATIONS = {"koreacentral": "Korea Central", "eastus": "East US"}
-
-
-def az(*args: str):
-    exe = shutil.which("az") or shutil.which("az.cmd")
-    if not exe:
-        raise RuntimeError("az CLI 를 찾지 못했습니다.")
-    out = subprocess.run([exe, *args, "-o", "json"], capture_output=True, text=True, encoding="utf-8", timeout=180)
-    if out.returncode != 0:
-        raise RuntimeError(out.stderr.strip() or f"az {' '.join(args)} 실패 (az login 필요할 수 있음)")
-    return json.loads(out.stdout)
-
-
-def proxy_vms() -> list[dict]:
-    """Wiki 표와 같은 모양으로 정리한 Proxy VM 목록(이름순)."""
-    raw = az("vm", "list", "-d", "-g", RESOURCE_GROUP, "--query",
-             "[].{name:name,rg:resourceGroup,loc:location,priv:privateIps,pub:publicIps,"
-             "size:hardwareProfile.vmSize,power:powerState,tags:tags}")
-    vms = []
-    for v in raw:
-        if not re.search(NAME_PATTERN, v["name"]):
-            continue
-        tags = v.get("tags") or {}
-        vms.append({"name": v["name"], "resource_group": v["rg"], "location": LOCATIONS.get(v["loc"], v["loc"]),
-                    "private_ip": v.get("priv") or "-", "public_ip": v.get("pub") or "-", "size": v["size"],
-                    "proxy": f"{tags.get('proxy', '-')} ({tags.get('install', '-')})",
-                    "state": "운영" if v.get("power") == "VM running" else "중지"})
-    return sorted(vms, key=lambda v: v["name"])
+# Azure 조회·표 형식·이름 규칙은 시나리오 2 실행기와 같아야 하므로 실행기에서 가져온다.
+sys.path.insert(0, str(PROJECT_ROOT / "proxy_tools"))
+from proxy_status_sync import (  # noqa: E402,F401
+    COLUMNS, FIELDS, NAME_PATTERN, RESOURCE_GROUP, WIKI_PAGE, proxy_vms,
+)
 
 
 def make_seed(vms: list[dict]) -> tuple[list[dict], list[dict]]:

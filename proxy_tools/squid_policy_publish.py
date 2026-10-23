@@ -101,7 +101,8 @@ class DevOps:
         self.base = f"https://dev.azure.com/{quote(self.org)}/{quote(self.project)}"
 
     def request(self, method: str, path: str, body, content_type: str = "application/json") -> dict:
-        req = Request(self.base + path, method=method, data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None  # GET 은 본문 없이
+        req = Request(self.base + path, method=method, data=data,
                       headers={"Authorization": self.auth, "Content-Type": content_type})
         try:
             with urlopen(req, timeout=30) as res:

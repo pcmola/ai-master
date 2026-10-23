@@ -30,31 +30,39 @@ except ImportError:
     pass
 
 
-def build_card(text: str, title: str | None = None) -> dict:
+def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]] | None = None,
+               buttons: list[tuple[str, str]] | None = None) -> dict:
+    """facts: (이름, 값) 표. buttons: (글자, URL) — 누르면 그 URL 을 브라우저로 연다(Action.OpenUrl)."""
     body = []
     if title:
         body.append({"type": "TextBlock", "text": title, "weight": "Bolder", "size": "Medium", "wrap": True})
     body.append({"type": "TextBlock", "text": text, "wrap": True})
+    if facts:
+        body.append({"type": "FactSet", "facts": [{"title": k, "value": v} for k, v in facts]})
+    content = {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": body,
+    }
+    if buttons:
+        content["actions"] = [{"type": "Action.OpenUrl", "title": label, "url": url} for label, url in buttons]
     return {
         "type": "message",
         "attachments": [{
             "contentType": "application/vnd.microsoft.card.adaptive",
             "contentUrl": None,
-            "content": {
-                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                "type": "AdaptiveCard",
-                "version": "1.4",
-                "body": body,
-            },
+            "content": content,
         }],
     }
 
 
-def send(text: str, title: str | None = None, url: str | None = None) -> int:
+def send(text: str, title: str | None = None, url: str | None = None,
+         facts: list[tuple[str, str]] | None = None, buttons: list[tuple[str, str]] | None = None) -> int:
     url = url or os.environ.get("TEAMS_WEBHOOK_URL")
     if not url:
         raise SystemExit("TEAMS_WEBHOOK_URL 이 설정되지 않았습니다. .env 에 Workflows 웹후크 URL 을 넣으세요.")
-    data = json.dumps(build_card(text, title), ensure_ascii=False).encode("utf-8")
+    data = json.dumps(build_card(text, title, facts, buttons), ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST",
                                  headers={"Content-Type": "application/json; charset=utf-8"})
     try:
