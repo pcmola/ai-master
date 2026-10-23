@@ -308,15 +308,28 @@ class Embeddings:
         self.vectors: list[list[float]] = []
         self.docs = docs
         self._last: tuple[str, list[float]] | None = None
+        self.cache_model = None
+        self.cache_reused = 0
+        self.cache_new = 0
+        self.cache_status = "client unavailable"
         if not self.client:
+            print(f"Embeddings: off model={self.model} reason=client unavailable", flush=True)
             return
         try:
             cache = json.loads(CACHE.read_text(encoding="utf-8")) if CACHE.is_file() else {}
+            self.cache_model = cache.get("model")
             if cache.get("model") != self.model:
                 cache = {"model": self.model, "vectors": {}}
+                self.cache_status = f"model changed ({self.cache_model or 'none'} -> {self.model})"
+            else:
+                self.cache_status = "same model"
             keys = [hashlib.sha1((d.title + d.text).encode("utf-8")).hexdigest() for d in docs]
             missing = [(k, d) for k, d in zip(keys, docs) if k not in cache["vectors"]]
-            print(f"Embeddings: 캐시 {len(docs) - len(missing)}건, 새로 계산 {len(missing)}건", flush=True)
+            self.cache_reused = len(docs) - len(missing)
+            self.cache_new = len(missing)
+            print(f"Embeddings: model={self.model} cache_model={self.cache_model or '-'} "
+                  f"재사용 {self.cache_reused}건, 새로 계산 {self.cache_new}건, "
+                  f"전체 {len(docs)}건 ({self.cache_status})", flush=True)
             for start in range(0, len(missing), 100):
                 batch = missing[start:start + 100]
                 res = self.client.embeddings.create(model=self.model,
@@ -327,6 +340,9 @@ class Embeddings:
                 CACHE.write_text(json.dumps(cache), encoding="utf-8")
                 print(f"  embedding {start + len(batch)}/{len(missing)}", flush=True)
             self.vectors = [cache["vectors"][k] for k in keys]
+            dimensions = len(self.vectors[0]) if self.vectors else 0
+            print(f"Embeddings ready: model={self.model} dims={dimensions} "
+                  f"cache_reused={self.cache_reused} cache_new={self.cache_new}", flush=True)
         except Exception as exc:  # 네트워크·키 오류 시 오프라인 검색만 사용
             print(f"[embeddings disabled] {exc}")
             self.vectors = []
@@ -942,7 +958,12 @@ def main():
     INDEX = Index(ROOT)
     _index_sig = wiki_signature(ROOT)
     print(f"Indexed {len(INDEX.docs)} documents from {ROOT}")
-    print(f"Embeddings: {'on' if INDEX.embeddings.vectors else 'off (offline semantic search)'}")
+    if INDEX.embeddings.vectors:
+        dims = len(INDEX.embeddings.vectors[0])
+        print(f"Embeddings: on model={INDEX.embeddings.model} dims={dims} "
+              f"cache_reused={INDEX.embeddings.cache_reused} cache_new={INDEX.embeddings.cache_new}")
+    else:
+        print(f"Embeddings: off model={INDEX.embeddings.model} (offline semantic search)")
     server = local_server(port, Handler, "wiki-search.local")
     print(f"Wiki guide search: {server.url}")
     if "--no-browser" not in sys.argv:

@@ -7,13 +7,13 @@ Azure DevOps Wiki를 관리하고, 사내 Azure OpenAI 게이트웨이와 Azure 
 ```
 ai-master/
 ├─ hub.py          로컬 웹서버 허브: 한 화면에서 서버 시작·중지·재시작, 로그 보기
-├─ common/         공통 모듈: 프로젝트 경로(paths.py), 로컬 웹서버·크롬 열기(server.py)
+├─ common/         공통 모듈: 프로젝트 경로(paths.py), 로컬 웹서버·크롬 열기(server.py), 노드별 트레이싱(trace.py)
 ├─ wiki_tools/     Wiki 검색·가이드 생성, 로컬 뷰어, Azure DevOps Wiki 문서 관리
 ├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, Squid 정책 변경 감지·Task/Wiki 반영
-├─ teams_tools/    Microsoft Teams 알림
-├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 가상 로그, 정책 스냅샷, Teams 토큰
-├─ test/           Azure OpenAI 채팅, 임베딩, 스트리밍 테스트
-└─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git)
+├─ teams_tools/    Microsoft Teams 알림, 로컬 승인 화면(Teams 대체)
+├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
+├─ test/           Azure OpenAI 채팅·임베딩·스트리밍 테스트, 시나리오 2 테스트 환경(scenario2/)
+└─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git, ai-master 에서는 추적하지 않음)
 ```
 
 ```mermaid
@@ -85,18 +85,19 @@ flowchart LR
 | 폴더 | 파일 | 용도 | 주소 (hosts 미등록 시) |
 |---|---|---|---|
 | (루트) | `hub.py` | 로컬 웹서버 허브 | http://ai-master.local (8764) |
-| wiki_tools | `wiki_search.py` | Wiki 의미 검색·가이드 생성 | http://wiki-search.local (8766) |
+| wiki_tools | `wiki_search.py` | Wiki 의미 검색·가이드 생성 (오타 교정, 웹 검색 보완, 노드별 트레이스) | http://wiki-search.local (8766) |
 | | `wiki_viewer.py` | Wiki 로컬 읽기 전용 뷰어 (Azure DevOps 문법 렌더링) | http://wiki.local (8765) |
 | | `wiki_documents.py` | Azure DevOps Wiki 문서 목록·생성·삭제 (REST API) | - |
-| proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/nginx, podman) | - |
-| | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 | http://proxy-log.local (8768) |
+| proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/nginx, podman·docker). Squid 로그는 VM 디스크 `/var/log/proxy`에 남김 | - |
+| | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, nginx는 journald) | http://proxy-log.local (8768) |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
 | | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣음 | - |
 | | `squid_policy_monitor.py` | Squid 정책 변경 감지 (읽기 전용) | - |
 | | `squid_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki 현황 갱신 | - |
 | teams_tools | `teams_notify.py`, `teams_graph.py` | Teams 알림 (Workflows 웹후크 / Graph API) | - |
 | | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | http://127.0.0.1:8771 (요청 중에만) |
-| test | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
+| test | `teams_test.py` | Teams 연동 테스트: 웹후크·Graph 를 차례로 시험하고 실패 원인을 안내 (`.env`의 `TEAMS_*`) | - |
+| | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
 
 ## 설정
 
@@ -118,12 +119,16 @@ Copy-Item .env.sample .env
 | `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다. 비우면 웹 검색 안 함 |
 | `WEB_SEARCH_MIN_SIM` | `0.5` | 위키 최고 임베딩 유사도가 이보다 낮으면 웹 검색. 2026-10-20 측정에서 위키에 있는 질의는 0.59 이상, 없는 질의는 0.46 이하였다 |
 | `WEB_SEARCH_MIN_VARIANT_SIM` | `0.45` | 유형(포워드/리버스 등)을 골랐을 때 유형 이름의 위키 최고 유사도가 이보다 낮으면 웹 검색. 2026-10-23 측정: 포워드 프록시 0.499, 리버스 프록시 0.41 |
+| `WEB_SEARCH_MAX` | `5` | 웹 검색 결과를 몇 건까지 가져올지 |
+| `TRACE_KEEP_DAYS` | `14` | `data/traces/`의 요청별 트레이스 보관 일수 |
 | `SQUID_HOST` | - | 정책 감지 대상 프록시 VM의 공용 IP |
 | `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
 | `SQUID_CONTAINER` / `SQUID_RUNTIME` | `squid` / `podman` | VM에서 Squid가 도는 컨테이너 이름과 런타임 |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
 
 임베딩 모델을 바꾸면 처음 실행할 때 문서 전체 임베딩을 다시 계산한다(약 2분). 결과는 `data/wiki_search_cache.json`에 캐시된다.
+
+서버는 시작할 때만 `.env`를 읽는다. 값을 바꾸면 허브에서 해당 서버를 재시작해야 적용된다.
 
 ### data 폴더
 
@@ -178,6 +183,7 @@ flowchart TD
 127.0.87.68 proxy-log.local
 ```
 
+hosts의 주석(`#` 뒤)은 영문(ASCII)으로만 씁니다. Windows는 hosts를 UTF-8로 읽지 않아 한글 주석이 있으면 이름 해석이 깨집니다(2026-10-21 확인).
 hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다. 127.0.87.67·69·70은 ai-monitor(사용량·비용 모니터와 그 허브)가 같은 규칙으로 씁니다.
 
 ### 허브 (hub.py)
@@ -233,12 +239,13 @@ Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | For
 ```mermaid
 flowchart TD
     q(["질의 입력"]) --> analyze["질의 분석<br/>개념·동의어 묶음, 키워드"]
-    analyze --> rank["혼합 검색<br/>키워드 점수 + 임베딩 유사도 × EMBED_WEIGHT"]
+    analyze --> typo["오타 교정<br/>자모 분해 + 편집 거리<br/>(프록실 → 프록시)"]
+    typo --> rank["혼합 검색 (고친 질의)<br/>키워드 점수 + 임베딩 유사도 × EMBED_WEIGHT"]
     cache[("data/wiki_search_cache.json<br/>문서 임베딩")] --> rank
     repo[("wiki-repo 문서")] --> rank
     rank --> filter["핵심 개념이 나오는 문서만<br/>상위 15개 선택"]
-    filter --> weak{"위키 근거 약함?<br/>유사도 &lt; 0.5 또는 0건"}
-    weak -- "예 (TAVILY_API_KEY 있을 때)" --> web["Tavily 웹 검색<br/>상위 5건"]
+    filter --> weak{"위키 근거 약함?<br/>유사도 &lt; 0.5, 0건, 또는<br/>고른 유형 유사도 &lt; 0.45"}
+    weak -- "예 (TAVILY_API_KEY 있을 때)" --> web["Tavily 웹 검색<br/>핵심어 검색어<br/>관련 없는 결과 제거"]
     weak -- "아니오" --> llm{"Azure OpenAI<br/>설정 있음?"}
     web -- "위키 + 웹 결과" --> llm
     llm -- "있음" --> openai["Azure OpenAI 게이트웨이<br/>gpt-5.4로 가이드 작성"]
@@ -256,7 +263,7 @@ flowchart TD
     classDef fallback fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#334155
     classDef done fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
     class q io
-    class analyze,rank,filter step
+    class analyze,typo,rank,filter step
     class cache,repo store
     class weak decide
     class web webq
@@ -265,6 +272,32 @@ flowchart TD
     class tpl fallback
     class out done
 ```
+
+#### 검색어 해석
+
+| 기능 | 방식 | AI 여부 |
+|---|---|---|
+| 동의어 묶기 (프록시 = proxy = 프락시) | 개념 사전 `CONCEPTS` | 규칙 기반 |
+| 오타 교정 (프록실·프롤시 → 프록시, porxy → proxy) | 한글 자모 분해 + 편집 거리(Damerau–Levenshtein) + 개념 사전 매칭 | 규칙 기반 |
+| 의미가 비슷한 문서 찾기 | 임베딩 `text-embedding-3-large` 유사도 | AI (머신러닝) |
+| 가이드 작성 | LLM `gpt-5.4` | AI (LLM) |
+
+- 오타 교정은 한글 3음절 이상·영문 5글자 이상만 고칩니다. 2음절은 `설정`↔`결정`처럼 다른 실제 단어와 거리가 1이라 고치지 않습니다.
+- 고친 단어는 화면 해석 칩(`오타 교정: 프록실 → 프록시`)과 트레이스 `analyze` 줄(`typo_fixes=`)에 나옵니다. 검색은 고친 질의로 하므로 결과가 정상 질의와 같습니다.
+
+#### 웹 검색 (TAVILY_API_KEY 있을 때)
+
+- 조건: 위키 최고 유사도 < `WEB_SEARCH_MIN_SIM`(0.5), 핵심 개념이 나오는 위키 문서 0건, 또는 고른 유형(예: 리버스 프록시)의 이름 유사도 < `WEB_SEARCH_MIN_VARIANT_SIM`(0.45). 주제(프록시)는 위키에 많아도 그 유형은 없을 수 있기 때문입니다.
+- 검색어는 질의 문장이 아니라 핵심 한글어로 만듭니다(예: `리버스 프록시 설정`). 말투·영문 동의어·`가이드` 같은 일반어를 섞으면 게임·주식·코인 기사가 걸렸습니다.
+- 결과에 핵심 개념(유형이면 `리버스 프록시`·`reverse proxy` 같은 붙은 문구)이 없으면 버립니다.
+- 가이드는 위키를 우선 근거로 하고, 웹에서 가져온 문장 끝에 `(웹: URL)`을 붙이며, 끝에 "웹 참고 링크"와 "사내 기준이 아님" 주의 문구가 들어갑니다.
+
+#### 화면
+
+- 가이드 위에 생성 방식 배지(`LLM 작성 · gpt-5.4 · 소요 N초` 또는 `문서 조합 템플릿`)가 나옵니다.
+- 가이드는 스트리밍(`/api/guide/stream`)으로 받도록 되어 있지만, 사내 게이트웨이가 응답을 모았다가 한꺼번에 보내서 실제로는 끝날 때 한 번에 나타납니다(트레이스 `first_line_ms`가 전체 시간과 거의 같음). 게이트웨이 버퍼링이 꺼지면 코드 수정 없이 글이 흘러나옵니다.
+
+#### 트레이스
 
 요청마다 노드별 소요 시간과 결과가 허브 로그(`data/logs/wiki-search.log`)와 `data/traces/`에 남습니다(`common/trace.py`).
 
@@ -278,7 +311,7 @@ flowchart TD
 10:41:52 [2d15573c] ■ guide/stream ok 38.6s | llm_generate 37.9s · hybrid_search 0.4s … | mode=llm model=gpt-5.4
 ```
 
-- 노드: `refresh_index` → `analyze` → `hybrid_search`(안에 `embed_query`) → `select_sources` → `web_decision` → `web_search` → `llm_generate` 또는 `template`.
+- 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
 - 줄 앞 표시: `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
@@ -345,6 +378,31 @@ flowchart LR
     class report,viewer done
 ```
 
+## 프록시 VM 운영
+
+리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트를 허용 클라이언트 IP 한 곳에만 엽니다.
+
+| VM | 종류 | 접속 로그 위치 | 재시작·VM 중지 후 |
+|---|---|---|---|
+| wjy-proxy01, wjy-proxy02 | Squid 포워드 프록시 (3128) | VM 디스크 `/var/log/proxy/access.log` (컨테이너 `/var/log/squid`에 연결) | 남음 |
+| wjy-proxy03 | nginx 리버스 프록시 (80) | journald (`journalctl CONTAINER_NAME=nginx`) | 남음 |
+
+- 컨테이너는 `--rm`이라 재시작할 때마다 새로 만들어집니다. 그래서 Squid 로그는 VM 디스크 폴더에 연결하고(2026-10-21 적용, `azure_proxy_vm.py`도 같이 만듦), nginx 로그는 `podman logs`(지금 컨테이너만) 대신 journald에서 읽습니다.
+- 매일 01:00(KST)에 자동 종료(`shutdown-computevm-*`)됩니다. 꺼져 있는 동안 보낸 요청은 기록되지 않습니다.
+- Squid 로그는 정리(logrotate) 없이 쌓입니다. 디스크 여유는 약 25GB입니다.
+
+시험 요청 보내기 (허용 클라이언트 IP에서):
+
+```powershell
+curl.exe -x http://<VM_IP>:3128 https://www.data.go.kr/        # 포워드 프록시: 허용 도메인 → 200
+curl.exe -x http://<VM_IP>:3128 https://www.google.com/         # 허용 목록 밖 → 터널 거부(403)
+curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프록시: Host 머리글로 가상 도메인 선택
+```
+
+리버스 프록시의 `data.wjy.test`·`law.wjy.test`는 nginx 설정(`server_name`)에만 있는 이름입니다. 요청은 IP로 보내고 이름은 `Host` 머리글에만 실으므로 hosts·DNS가 필요 없습니다.
+
+로그 뷰어(http://proxy-log.local)는 새로고침하는 동안 상단 진행 막대·회전 아이콘·흐린 표를 보여 주고, 끝나면 `갱신 HH:MM:SS · 새 로그 N건`(또는 `변경 없음`)을 잠깐 강조합니다. 로그 소스가 "실제 로그"면 VM의 진짜 로그이고, "가상 로그"일 때만 만들어 낸 데이터입니다.
+
 ## 시나리오 2 테스트 환경
 
 시나리오 2는 Wiki의 Proxy 현황 문서와 Azure의 실제 VM을 비교해, 차이가 있으면 승인을 받아 Task를 만들고 문서를 현행화합니다. 테스트 환경은 Azure를 바꾸지 않고 Wiki 쪽에 일부러 차이를 넣어 만듭니다.
@@ -388,6 +446,7 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 - VM 전원 상태도 비교 대상이라 VM을 켜거나 끄면 정답이 틀어집니다. 이때 `--check`가 실패하므로 `--reseed`로 다시 만듭니다.
 - Wiki 문서는 wiki-repo에 로컬 커밋만 하고 Azure DevOps Wiki로 push하지 않습니다.
 - Teams 승인은 아직 연결하지 않았습니다. `approval_local.py`의 `request_approval(title, items, question)`을 같은 인자의 Teams 승인 함수로 바꾸면 됩니다.
+- Teams 연동(Workflows 웹후크·승인 카드·Graph API)에는 회사·학교용 Microsoft 365 계정이 필요합니다(무료 개인 Teams 불가, 가장 싼 선택지는 Microsoft 365 Business Basic). Teams 카드의 응답을 이 PC 스크립트로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다.
 
 ## 실행 예시
 
@@ -405,8 +464,8 @@ python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --dry-run
 
 ## 주의사항
 
-- `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`, `TAVILY_API_KEY`를 소스에 직접 작성하지 마세요.
+- `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`, `TAVILY_API_KEY`를 소스에 직접 작성하지 마세요. `.env.sample`에도 실제 값을 넣지 않습니다(공개 저장소에 올라감).
 - 이미 노출된 인증정보는 폐기하고 재발급하세요.
 - 이 저장소는 공개입니다. 실제 VM IP, 허용 클라이언트 IP, 구독 ID, 사내 게이트웨이 주소는 소스·README에 쓰지 말고 `.env` 또는 `data/`(Git 제외)에만 둡니다. 예시에는 `<VM_IP>`나 문서용 IP(`203.0.113.x`)를 씁니다.
-- `wiki-repo`, `wiki-backup`, `wiki/AI-Master.wiki`는 별도 Git 저장소를 포함합니다.
+- `wiki-repo`는 별도 Git 저장소(Azure DevOps Wiki)이며 ai-master의 `.gitignore`에 들어 있습니다. Wiki 변경은 `wiki-repo` 안에서 따로 커밋·push합니다. Wiki 문서를 만들거나 고칠 때는 `WIKI_DOCUMENT_RULES.md`를 먼저 따릅니다.
 - 같은 주소로 서버를 두 번 띄우면 두 번째 실행은 "이미 사용 중" 메시지로 끝납니다. 코드를 바꾼 뒤에는 기존 서버를 끄고 다시 실행하세요(허브의 재시작 버튼).
