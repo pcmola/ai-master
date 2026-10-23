@@ -59,6 +59,8 @@ def hint(message: str) -> str:
 def masked(value: str | None) -> str:
     if not value:
         return "(비어 있음)"
+    if value.startswith("http"):  # 웹후크 URL 은 서명(sig=)이 비밀번호 역할이라 호스트만 보인다
+        return value.split("/")[2][:24] + "/… (설정됨)"
     return value[:6] + "…" + value[-4:] if len(value) > 14 else "(설정됨)"
 
 
