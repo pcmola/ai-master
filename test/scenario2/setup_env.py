@@ -211,7 +211,7 @@ def main() -> int:
             return 1
         args.reseed = True
     try:
-        vms = proxy_vms()
+        vms = [{k: v for k, v in x.items() if k != "matched_by"} for x in proxy_vms()]  # 기록용 값은 정답에서 뺀다
     except Exception as exc:
         print(f"  [실패] Azure VM 조회: {exc}")
         vms = None

@@ -3,8 +3,11 @@ Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 �
 
 단계(노드별 트레이스는 data/traces/scenario2-YYYYMMDD.jsonl 과 콘솔에 남는다)
 1. trigger      직접 실행 또는 스케줄러(--yes 로 승인 생략 가능)
-2. wiki_read    Wiki 문서의 'VM 목록' 표를 읽는다
-3. azure_read   리소스 그룹에서 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM 의 IP·상태·SIZE·리전을 읽는다
+2. wiki_read    Wiki 문서의 'VM 목록' 표를 규칙으로 읽는다. 그 형식이 아니면 wiki_parse_llm: LLM 이 표준 형식으로
+                바꾸고, VM 이름이 원문에 실제로 있는지 대조한다(없으면 버림, IP 도 원문에 없으면 비움).
+                LLM 으로 읽은 문서는 형식이 제각각이라 7단계에서 표를 자동으로 고치지 않고 Task 에 수동 반영을 남긴다
+3. azure_read   리소스 그룹의 VM 중 태그 SCENARIO2_TAG(기본 role=proxy)가 있거나, 이름이 proxy·prxy·pxy(+숫자)로
+                끝나는 VM 의 IP·상태·SIZE·리전을 읽는다
 4. compare      신규·삭제·변경(사설/공인 IP, 상태, SIZE, 리전). 차이가 없으면 여기서 끝난다
    llm_summary  (AI) 차이 전체를 LLM(OPENAI_MODEL)으로 2문장 이내로 요약해 승인 카드·화면·Task 맨 위에 '참고용'으로 붙인다.
                 비교 자체는 규칙으로 하고 AI 는 설명만 한다. 실패하면 규칙 목록만 쓴다. --no-ai 로 끈다
@@ -26,6 +29,7 @@ Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 �
     python proxy_tools/proxy_status_sync.py --verify      # 4단계 결과를 테스트 정답(data/scenario2)과 비교
     python proxy_tools/proxy_status_sync.py --yes --push  # 승인 없이 진행하고 Azure DevOps Wiki 로 push
     python proxy_tools/proxy_status_sync.py --dry-run --no-ai   # AI 요약 없이
+    python proxy_tools/proxy_status_sync.py --dry-run --wiki-page "AI-Master-프로젝트/…/Proxy-VM-정리-('26.09.17-기준).md"
 """
 
 from __future__ import annotations
@@ -77,20 +81,33 @@ def az(*args: str):
     return json.loads(out.stdout)
 
 
+def tag_match(tags: dict | None) -> bool:
+    """SCENARIO2_TAG 와 맞는 태그가 있는가. 'key=value' 또는 'key'(값 상관없음). 대소문자 무시."""
+    spec = os.environ.get("SCENARIO2_TAG", "role=proxy").strip()
+    if not spec or not tags:
+        return False
+    key, _, value = spec.partition("=")
+    lowered = {k.lower(): str(v).lower() for k, v in tags.items()}
+    return key.lower() in lowered and (not value or lowered[key.lower()] == value.lower())
+
+
 def proxy_vms(resource_group: str = RESOURCE_GROUP) -> list[dict]:
-    """Wiki 표와 같은 모양으로 정리한 Proxy VM 목록(이름순)."""
+    """Wiki 표와 같은 모양으로 정리한 Proxy VM 목록(이름순). 태그가 맞거나 이름 규칙이 맞으면 Proxy 로 본다.
+    matched_by: 'tag' | 'name' (비교 대상 칸이 아니라 기록용)."""
     raw = az("vm", "list", "-d", "-g", resource_group, "--query",
              "[].{name:name,rg:resourceGroup,loc:location,priv:privateIps,pub:publicIps,"
              "size:hardwareProfile.vmSize,power:powerState,tags:tags}")
     vms = []
     for v in raw:
-        if not re.search(NAME_PATTERN, v["name"]):
+        by_tag, by_name = tag_match(v.get("tags")), bool(re.search(NAME_PATTERN, v["name"]))
+        if not (by_tag or by_name):
             continue
         tags = v.get("tags") or {}
         vms.append({"name": v["name"], "resource_group": v["rg"], "location": LOCATIONS.get(v["loc"], v["loc"]),
                     "private_ip": v.get("priv") or "-", "public_ip": v.get("pub") or "-", "size": v["size"],
                     "proxy": f"{tags.get('proxy', '-')} ({tags.get('install', '-')})",
-                    "state": "운영" if v.get("power") == "VM running" else "중지"})
+                    "state": "운영" if v.get("power") == "VM running" else "중지",
+                    "matched_by": "tag" if by_tag else "name"})
     return sorted(vms, key=lambda v: v["name"])
 
 
@@ -121,6 +138,51 @@ def read_wiki(text: str) -> list[dict]:
     return rows
 
 
+def llm_client():
+    from openai import AzureOpenAI, OpenAI
+    if os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY"):
+        return AzureOpenAI(api_version=os.environ.get("OPENAI_API_VERSION", "2024-12-01-preview"), timeout=120, max_retries=1)
+    if os.environ.get("OPENAI_API_KEY"):
+        return OpenAI(timeout=120, max_retries=1)
+    raise RuntimeError("LLM 설정 없음(AZURE_OPENAI_* 또는 OPENAI_API_KEY)")
+
+
+def llm_parse(text: str) -> list[dict]:
+    """정해진 표 형식이 아닌 현황 문서를 LLM 으로 표준 형식(FIELDS)으로 바꾼다. 결과는 원문 대조로 검증한다:
+    VM 이름이 원문에 없으면 버리고, IP·SIZE 가 원문에 없으면 비운다(LLM 이 값을 지어내거나 잘못 옮기는 것을 막는다)."""
+    model = os.environ.get("OPENAI_MODEL", "gpt-6.1-sol")
+    prompt = ("아래 Wiki 문서에서 Proxy VM 목록을 뽑아 JSON 으로만 답하라.\n"
+              '형식: {"rows": [{"name": str, "resource_group": str, "location": str, "private_ip": str, '
+              '"public_ip": str, "size": str, "proxy": str, "state": str, "note": str}]}\n'
+              "- name 은 VM 이름만(괄호 속 설명 제외), 문서에 적힌 글자 그대로.\n"
+              "- private_ip 는 사설 IP 숫자만(예: 'LB 10.20.40.10' → '10.20.40.10'). 없으면 빈 문자열.\n"
+              "- location 은 'Korea Central'·'East US'처럼 문서 표기 그대로. proxy 는 용도 칸 내용.\n"
+              "- state 는 '운영' | '중지' | '폐기 예정' | '확인 필요' 중 하나로 정규화하고, 원래 설명(예: 'IP 변경', '2026-11')은 note 에.\n"
+              "- 문서에 없는 값은 지어내지 말고 빈 문자열.\n\n" + text)
+    with span("wiki_parse_llm", model=model, chars=len(text)) as s:
+        res = llm_client().chat.completions.create(model=model, response_format={"type": "json_object"},
+                                                   messages=[{"role": "user", "content": prompt}])
+        s.set(prompt_tokens=res.usage.prompt_tokens, completion_tokens=res.usage.completion_tokens)
+        raw = json.loads(res.choices[0].message.content or "{}").get("rows", [])
+        flat = re.sub(r"\*\*", "", text)
+        rows, dropped = [], []
+        for r in raw:
+            row = {f: str(r.get(f) or "").strip() for f in FIELDS}
+            if not row["name"] or row["name"] not in flat:
+                dropped.append(row["name"] or "?")
+                continue
+            for f in ("private_ip", "public_ip", "size"):
+                if row[f] and row[f] not in flat:
+                    row[f] = ""  # 원문에 없는 값은 쓰지 않는다
+            if row["state"] not in ("운영", "중지", "폐기 예정", "확인 필요"):
+                row["state"] = ""
+            rows.append(row)
+        s.set(rows=len(rows), dropped=dropped)
+        if not rows:
+            raise RuntimeError("LLM 이 문서에서 VM 을 찾지 못했습니다(또는 모두 원문 대조에 실패).")
+        return rows
+
+
 # ---------------------------------------------------------------- 4 비교
 
 def compare(wiki: list[dict], azure: list[dict]) -> list[dict]:
@@ -129,7 +191,9 @@ def compare(wiki: list[dict], azure: list[dict]) -> list[dict]:
     diffs += [{"type": "removed", "name": n} for n in sorted(set(w) - set(a))]
     for n in sorted(set(w) & set(a)):
         for f in COMPARE:
-            if f in w[n] and w[n][f] != a[n][f]:
+            if not w[n].get(f) or (f == "state" and w[n][f] not in ("운영", "중지")):
+                continue  # Wiki 에 값이 없거나(LLM 파싱 문서) 상태가 '폐기 예정' 같은 설명이면 비교하지 않는다
+            if w[n][f] != a[n][f]:
                 diffs.append({"type": "changed", "name": n, "field": f, "wiki": w[n][f], "azure": a[n][f]})
     return diffs
 
@@ -457,11 +521,18 @@ def run(args) -> int:
             raise RuntimeError(f"Wiki 현황 문서가 없습니다: {WIKI_PAGE.relative_to(WIKI_REPO)}. "
                                "테스트라면 python test/scenario2/setup_env.py 로 만드세요.")
         text = WIKI_PAGE.read_text(encoding="utf-8-sig")
-        wiki = read_wiki(text)
-        s.set(rows=len(wiki), names=[r["name"] for r in wiki])
+        try:
+            wiki, parsed_by = read_wiki(text), "rule"
+        except RuntimeError as exc:  # 정해진 표 형식이 아님 → LLM 파싱
+            s.set(rule_failed=str(exc))
+            wiki, parsed_by = llm_parse(text), "llm"
+        s.set(parsed_by=parsed_by, rows=len(wiki), names=[r["name"] for r in wiki])
+    if parsed_by == "llm":
+        print(f"Wiki 문서를 LLM 으로 읽었습니다(정해진 표 형식이 아님): VM {len(wiki)}대. 이 문서는 7단계에서 자동으로 고치지 않습니다.")
     with span("azure_read", resource_group=RESOURCE_GROUP, pattern=NAME_PATTERN) as s:
         azure = proxy_vms()
-        s.set(vms=len(azure), names=[v["name"] for v in azure])
+        s.set(vms=len(azure), names=[v["name"] for v in azure], tag=os.environ.get("SCENARIO2_TAG", "role=proxy"),
+              by_tag=sum(v["matched_by"] == "tag" for v in azure), by_name=sum(v["matched_by"] == "name" for v in azure))
     with span("compare") as s:
         diffs = compare(wiki, azure)
         s.set(diffs=len(diffs), summary=[describe(d) for d in diffs][:6])
@@ -482,14 +553,15 @@ def run(args) -> int:
         print(f"\nAI 요약 ({ai['model']}, 참고용): {ai['summary']}")
     print(f"\n차이 {len(diffs)}건" + "".join(f"\n  - {line}" for line in explained(diffs, ai)))
     if args.dry_run:
-        print(f"[dry-run] Teams 승인 요청 → Task 생성 → Wiki 표 {len(azure)}행으로 갱신 → 완료 보고 (아무것도 바꾸지 않음)")
+        print("[dry-run] Teams 승인 요청 → Task 생성 → " + (f"Wiki 표 {len(azure)}행으로 갱신 → 완료 보고" if parsed_by == "rule"
+              else "문서 수동 반영 요청(형식이 달라 자동 수정 안 함)") + " (아무것도 바꾸지 않음)")
         return 0
 
     dv = devops()
     links = wiki_links(dv)
     decision, ap = (True, None) if args.yes else ask_approval(diffs, when, args.timeout, links, ai, alert)
     try:
-        return apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai)
+        return apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai, parsed_by)
     except Exception as exc:
         if ap:
             ap.step(f"실패: {exc}", "fail")
@@ -500,7 +572,7 @@ def run(args) -> int:
             ap.close()
 
 
-def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None) -> int:
+def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None, parsed_by="rule") -> int:
     """5단계 이후: 거절이면 알리고 끝, 승인이면 Task → Wiki → 완료 보고. ap 가 있으면 승인 화면에 진행 상황을 보인다."""
     step = ap.step if ap else (lambda *a, **k: None)
     viewer = links[0][1]  # 로컬 뷰어 링크(wiki_links 첫 항목)
@@ -534,6 +606,23 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
         s.set(task_id=task_id, parent_pbi=parent["pbi"], number=parent["next"], assigned_to=owner)
     print(f"Task #{task_id} 생성 (PBI #{parent['pbi']} 아래 {parent['next']:02d}번, 담당 {owner or '-'}): {dv.task_url(task_id)}")
     step(f"Task #{task_id} 생성 ({parent['next']:02d}번, 담당 {owner or '-'})", "ok", (f"Task #{task_id} 열기", dv.task_url(task_id)))
+    if parsed_by == "llm":  # 형식이 제각각인 문서는 자동으로 고치지 않는다
+        with span("wiki_update", skipped="LLM 으로 읽은 문서(정해진 표 형식 아님)"):
+            dv.add_comment(task_id, "<p><b>문서 수동 반영 필요</b>: 이 현황 문서는 정해진 표 형식이 아니어서(LLM 으로 읽음) "
+                                    "자동으로 고치지 않았습니다. 위 변경 내역을 문서에 반영한 뒤 이 Task 를 완료 처리해 주세요.</p>")
+        step("Wiki 문서는 형식이 달라 자동으로 고치지 않음 → Task 에 수동 반영 요청을 남김", "ok", (f"Task #{task_id} 열기", dv.task_url(task_id)))
+        if os.environ.get("TEAMS_WEBHOOK_URL"):
+            from teams_tools import teams_notify
+            with span("teams_notify", kind="manual_update"):
+                teams_notify.send(f"Proxy 현황 변경 {len(diffs)}건으로 Task 를 만들었습니다. 이 문서는 형식이 달라 자동으로 고치지 않았으니 "
+                                  "Task 를 보고 문서를 고쳐 주세요.", "[Proxy 현황] 문서 수동 반영 필요",
+                                  facts=[("Wiki 문서", wiki_fact(links)), ("Task", f"[#{task_id}]({dv.task_url(task_id)})"), ("담당", owner or "-")],
+                                  buttons=[("Task 열기", dv.task_url(task_id))])
+        print(f"Wiki 문서는 자동으로 고치지 않았습니다(LLM 파싱 문서). Task #{task_id} 에 수동 반영 요청을 남겼습니다.")
+        if ap:
+            ap.finish("Task 를 만들었습니다. 이 문서는 형식이 달라 자동으로 고치지 않았으니 Task 를 보고 문서를 고쳐 주세요.",
+                      [(f"Task #{task_id} 열기", dv.task_url(task_id)), ("Wiki 문서 보기", viewer)])
+        return 0
     step("Wiki 문서 현행화 중…")
 
     with span("wiki_update", push=args.push) as s:
@@ -574,7 +663,11 @@ def main() -> int:
     p.add_argument("--push", action="store_true", help="Wiki 커밋을 Azure DevOps Wiki 로 push")
     p.add_argument("--timeout", type=float, default=900, help="승인 대기 시간(초, 기본 900)")
     p.add_argument("--no-ai", action="store_true", help="AI 요약(llm_summary)을 쓰지 않음")
+    p.add_argument("--wiki-page", help="비교할 Wiki 문서(wiki-repo 기준 경로). 기본은 테스트 문서")
     args = p.parse_args()
+    if args.wiki_page:
+        global WIKI_PAGE
+        WIKI_PAGE = WIKI_REPO / args.wiki_page
     try:
         with trace("scenario2", "proxy_status_sync", resource_group=RESOURCE_GROUP, dry_run=args.dry_run) as t:
             code = run(args)

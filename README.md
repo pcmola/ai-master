@@ -27,9 +27,9 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 | 2. Azure DevOps Wiki 검색 | 키워드 검색(proxy = 프록시 = 프락시), 의미 기반 검색(임베딩), 근거가 약하면 웹 검색 보완 | ✅ | BM25 + 문자 bigram + `text-embedding-3-large`, Tavily |
 | 3. RAG·LLM 분석·통합 | 관련 문서 선별, 중복·상충 정리, 단계별 구성 | 🟡 | 핵심 개념이 나오는 상위 15개 문서 전문을 LLM에 전달(청킹 없음) |
 | 4. 가이드 문서 생성 | 설정 방법·예제·주의사항, 단계마다 근거 문서, 웹 출처 따로 표시, 원문 다이어그램 유지 | ✅ | `OPENAI_MODEL`(gpt-6.1-sol) |
-| 5. 사용자 확인 | 미리보기, "Wiki에 등록" 또는 "다시 생성", Markdown 복사·다운로드 | 🟡 | 미리보기·복사·다운로드까지. 등록·다시 생성 버튼 없음 |
-| 6. Wiki 문서 등록 | 정해진 폴더에 등록, 같은 제목이면 갱신(버전 이력), Wiki 문서 규칙(채번·`.order`·인코딩) 준수, 머리에 "AI 생성 · 근거 문서 · 생성 일시" | ⬜ | |
-| 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | ⬜ | 지금은 근거 문서 링크만 |
+| 5. 사용자 확인 | 미리보기, "Wiki에 등록" 또는 "다시 생성", Markdown 복사·다운로드 | ✅ | "Wiki에 등록"은 확인 창(팀원 공개·같은 제목 갱신 안내) 후 진행 |
+| 6. Wiki 문서 등록 | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목`으로 등록, 같은 제목이면 갱신(번호 유지, 이력은 git), Wiki 문서 규칙(채번·`.order`·인코딩·프록시 표기) 준수, 머리에 "AI 생성 · 모델 · 생성 일시 · 질의 · 근거 수" | ✅ | `wiki_tools/wiki_register.py`. 로컬 뷰어 링크를 Wiki 안 링크로 바꾸고 push |
+| 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | 🟡 | 등록 후 "Wiki에서 열기"·로컬 뷰어 링크. 추가 질문·수정 요청은 없음 |
 
 ### 시나리오 2. 프록시 현황 Wiki 현행화
 
@@ -38,8 +38,8 @@ Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으
 | 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
 | 1. 점검 트리거 | 직접 실행, 스케줄러(매일 정해진 시각) | 🟡 | 직접 실행. 스케줄러 등록 안 됨(`--yes`로 무인 실행 가능) |
-| 2. Wiki 현황 조회 | 표준 표는 규칙으로 파싱, 형식이 다른 문서는 LLM이 표준 형식으로 바꾸고 원문 대조로 검증 | 🟡 | 규칙 파싱(표 머리글 기준). LLM 파싱 없음 |
-| 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | ✅ | `az vm list` + 이름 규칙(태그 판별은 없음) |
+| 2. Wiki 현황 조회 | 표준 표는 규칙으로 파싱, 형식이 다른 문서는 LLM이 표준 형식으로 바꾸고 원문 대조로 검증 | ✅ | `wiki_parse_llm`: VM 이름이 원문에 없으면 버리고, IP·SIZE가 원문에 없으면 비움. 실제 문서 `Proxy VM 정리 ('26.09.17 기준)` 11행 확인. LLM으로 읽은 문서는 7단계에서 자동 수정하지 않고 Task에 수동 반영 요청 |
+| 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | ✅ | 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있으면 이름과 상관없이 대상, 없으면 이름 규칙. 트레이스에 `by_tag`·`by_name` |
 | 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | ✅ | 테스트 정답 대조(`--verify`) |
 | 5. Teams 알림·승인 요청 | 이상 징후 + AI 요약(참고용) + 변경 목록 + Wiki 문서 링크, "현행화할까요?" Yes/No, No·시간 초과는 기록 후 종료 | ✅ | Teams 웹후크 카드, 로컬 승인 서버, 진행 화면 |
 | 6. DevOps Task 생성 | Epic → Feature → 월별 PBI 아래 Task, 변경 내역, 담당자 | ✅ | |
@@ -145,7 +145,8 @@ flowchart LR
 |---|---|---|---|
 | (루트) | `hub.py` | 로컬 웹서버 허브 | http://ai-master.local (8764) |
 | wiki_tools | `wiki_search.py` | Wiki 의미 검색·가이드 생성 (오타 교정, 웹 검색 보완, 노드별 트레이스) | http://wiki-search.local (8766) |
-| | `wiki_viewer.py` | Wiki 로컬 읽기 전용 뷰어 (Azure DevOps 문법 렌더링) | http://wiki.local (8765) |
+| | `wiki_register.py` | 시나리오 1: 가이드를 `02. 운영 > 00. AI 문서 생성` 아래에 등록(같은 제목 갱신, 문서 규칙 준수, push) | - |
+| | `wiki_viewer.py` | Wiki 로컬 읽기 전용 뷰어 (Azure DevOps 문법 렌더링, 코드 구문 강조, 첫 화면은 AI Master 프로젝트 문서) | http://wiki.local (8765) |
 | | `wiki_documents.py` | Azure DevOps Wiki 문서 목록·생성·삭제 (REST API) | - |
 | proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/nginx, podman·docker). Squid 로그는 VM 디스크 `/var/log/proxy`에 남김 | - |
 | | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, nginx는 journald) | http://proxy-log.local (8768) |
@@ -181,6 +182,8 @@ Copy-Item .env.sample .env
 | `WEB_SEARCH_MIN_VARIANT_SIM` | `0.45` | 유형(포워드/리버스 등)을 골랐을 때 유형 이름의 위키 최고 유사도가 이보다 낮으면 웹 검색. 2026-10-23 측정: 포워드 프록시 0.499, 리버스 프록시 0.41 |
 | `WEB_SEARCH_MAX` | `5` | 웹 검색 결과를 몇 건까지 가져올지 |
 | `TRACE_KEEP_DAYS` | `14` | `data/traces/`의 요청별 트레이스 보관 일수 |
+| `SCENARIO2_TAG` | `role=proxy` | 시나리오 2에서 이 태그가 있는 VM은 이름과 상관없이 Proxy로 봄(`key=value` 또는 `key`) |
+| `WIKI_REGISTER_PUSH` | `1` | 시나리오 1 "Wiki에 등록" 때 Azure DevOps Wiki로 push(`0`이면 로컬 커밋만) |
 | `SQUID_HOST` | - | 정책 감지 대상 프록시 VM의 공용 IP |
 | `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
 | `SQUID_CONTAINER` / `SQUID_RUNTIME` | `squid` / `podman` | VM에서 Squid가 도는 컨테이너 이름과 런타임 |
@@ -248,7 +251,7 @@ hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다.
 
 ### 허브 (hub.py)
 
-http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그와 화면을 봅니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
+http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 서버 화면은 "화면" 버튼으로 새 창에서 엽니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
 
 ```powershell
 python hub.py                # 허브를 켜고 크롬으로 연다
@@ -289,8 +292,10 @@ flowchart LR
 허브가 이미 떠 있으면 다시 실행할 때 "이미 사용 중"과 함께 PID가 나옵니다. 떠 있는 허브는 브라우저로 열면 되고, 끄려면 다음을 실행합니다.
 
 ```powershell
-Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | ForEach-Object { taskkill /PID $_.OwningProcess /T /F }
+Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | ForEach-Object { taskkill /PID $_.OwningProcess /F }
 ```
+
+`/T`(프로세스 트리)를 붙이면 허브가 띄운 서버까지 함께 꺼지므로 붙이지 않습니다.
 
 ## 주요 흐름
 
@@ -527,6 +532,7 @@ python proxy_tools\proxy_status_sync.py --dry-run --verify   # 1~4단계 + 테�
 python proxy_tools\proxy_status_sync.py                      # Teams 승인 후 Task·Wiki 반영
 python proxy_tools\proxy_status_sync.py --yes --push         # 승인 없이 진행하고 Azure DevOps Wiki로 push
 python proxy_tools\proxy_status_sync.py --dry-run --no-ai     # AI 요약 없이
+python proxy_tools\proxy_status_sync.py --dry-run --wiki-page "AI-Master-프로젝트/…/Proxy-VM-정리-('26.09.17-기준).md"   # 다른 형식의 문서(LLM 파싱)
 ```
 
 - 버튼을 누르면 열린 브라우저 창이 진행 화면으로 바뀌어 단계(Task 생성 → Wiki 현행화 → 완료 처리)를 실시간으로 보여 주고, 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다. 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있고, 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.

@@ -352,7 +352,6 @@ tr.sel td{background:var(--soft)}
 .tabs{display:flex;gap:4px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--soft)}
 .tabs button.on{background:var(--blue);border-color:var(--blue);color:#fff}.tabs .name{margin-left:8px;font-weight:600}
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
-iframe{width:100%;height:640px;border:0;background:#fff;display:block}
 .err{color:var(--bad);padding:12px}
 @media(max-width:820px){.hide-sm{display:none}main{padding:12px}}
 </style></head><body>
@@ -362,13 +361,12 @@ iframe{width:100%;height:640px;border:0;background:#fff;display:block}
 <main>
 <div class="card"><table><thead><tr><th>상태</th><th>서버</th><th>주소</th><th class="hide-sm">PID · 실행 시간</th><th>관리</th></tr></thead>
 <tbody id="rows"><tr><td colspan="5" class="muted">불러오는 중…</td></tr></tbody></table><div id="err" class="err" hidden></div></div>
-<div class="card" id="panel" hidden><div class="tabs"><button id="tab-log" onclick="show('log')">로그</button>
-<button id="tab-view" onclick="show('view')">화면</button><span class="name" id="pname"></span>
+<div class="card" id="panel" hidden><div class="tabs"><button id="tab-log" class="on">로그</button><span class="name" id="pname"></span>
 <span class="muted" style="margin-left:auto" id="phint"></span></div>
-<pre id="log"></pre><iframe id="view" hidden></iframe></div>
+<pre id="log"></pre></div>
 </main>
 <script>
-let servers=[], selected=null, tab='log';
+let servers=[], selected=null;
 const LABEL={running:'실행 중',starting:'시작 중',stopped:'꺼짐'};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function since(iso){if(!iso)return'';const s=Math.max(0,(Date.now()-new Date(iso))/1000);
@@ -391,21 +389,17 @@ function render(){
 <td><div class="acts"><button ${busy||n?'disabled':''} onclick="act('${s.key}','start')">시작</button>
 <button ${busy?'disabled':''} onclick="act('${s.key}','restart')">재시작</button>
 <button ${busy||!n?'disabled':''} onclick="act('${s.key}','stop')">중지</button>
-<button onclick="pick('${s.key}','log')">로그</button><button ${s.state!=='running'?'disabled':''} onclick="pick('${s.key}','view')">화면</button></div></td></tr>`}).join('')}
+<button onclick="pick('${s.key}')">로그</button><button ${s.state!=='running'?'disabled':''} onclick="window.open('${esc(s.url)}','_blank','noopener')" title="새 창으로 열기">화면</button></div></td></tr>`}).join('')}
 async function refresh(){
   try{const r=await fetch('/api/status');const d=await r.json();if(d.error)throw new Error(d.error);
     servers=d.servers;document.getElementById('time').textContent='갱신 '+d.time.slice(11);
-    document.getElementById('err').hidden=true;render();if(selected&&tab==='log')loadLog()}
+    document.getElementById('err').hidden=true;render();if(selected)loadLog()}
   catch(e){const el=document.getElementById('err');el.hidden=false;el.textContent='상태를 읽지 못했습니다: '+e.message}}
 async function loadLog(){const pre=document.getElementById('log');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
   pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(selected))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
-function pick(key,t){selected=key;document.getElementById('panel').hidden=false;show(t);render()}
-function show(t){tab=t;const s=servers.find(x=>x.key===selected);if(!s)return;
-  document.getElementById('pname').textContent=s.title;
-  document.getElementById('tab-log').classList.toggle('on',t==='log');document.getElementById('tab-view').classList.toggle('on',t==='view');
-  document.getElementById('log').hidden=t!=='log';const v=document.getElementById('view');v.hidden=t!=='view';
-  document.getElementById('phint').textContent=t==='log'?'data/logs/'+s.key+'.log':s.url;
-  if(t==='log')loadLog();else if(v.dataset.src!==s.url){v.src=s.url;v.dataset.src=s.url}}
+// 하단 패널은 로그만 보여 준다. 서버 화면은 '화면' 버튼으로 새 창에서 연다.
+function pick(key){selected=key;const s=servers.find(x=>x.key===key);if(!s)return;document.getElementById('panel').hidden=false;
+  document.getElementById('pname').textContent=s.title;document.getElementById('phint').textContent='data/logs/'+s.key+'.log';loadLog();render()}
 refresh();setInterval(refresh,3000);
 </script></body></html>"""
 

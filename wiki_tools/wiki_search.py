@@ -808,7 +808,7 @@ mark{background:var(--hl);padding:0 1px;border-radius:2px}
 .guide h1{font-size:26px;margin:0 0 8px}.guide h2{font-size:19px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-top:28px}.guide h3{font-size:16px;margin-top:20px}.guide blockquote{margin:0;padding:8px 14px;background:var(--soft);border-left:4px solid var(--blue);color:#4a5568}.guide a{color:var(--blue);text-decoration:none}.guide ul{padding-left:22px}.guide table{border-collapse:collapse;width:100%;font-size:12px;display:block;overflow-x:auto}.guide td,.guide th{border:1px solid var(--line);padding:5px 8px;text-align:left}.guide th{background:var(--soft)}
 .wait{text-align:center;padding:36px 0;color:var(--muted)}.wait b{color:var(--ink);font-variant-numeric:tabular-nums}.prog{height:6px;max-width:320px;margin:14px auto 0;background:#e5eaf0;border-radius:3px;overflow:hidden}.prog i{display:block;width:35%;height:100%;background:var(--blue);border-radius:3px;animation:slide 1.4s ease-in-out infinite}@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(290%)}}
 .guide pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow-x:auto;font:12.5px/1.55 Consolas,monospace}.guide .mermaid{margin:14px 0;text-align:center;overflow-x:auto}
-.tools{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-bottom:8px}.gen{margin-right:auto;font-size:12px;font-weight:600;border-radius:999px;padding:4px 12px;background:#f1f5f9;color:#475569}.gen.llm{background:#dcfce7;color:#166534}.gen.live{background:#dbeafe;color:#1e40af}.tools[hidden]{display:none}.muted{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px 0}
+.tools{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-bottom:8px;flex-wrap:wrap}.regok{background:#e3f5ec;color:#1e7a4f;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px}.regerr{background:#fdecec;color:#9b2c2c;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px}.gen{margin-right:auto;font-size:12px;font-weight:600;border-radius:999px;padding:4px 12px;background:#f1f5f9;color:#475569}.gen.llm{background:#dcfce7;color:#166534}.gen.live{background:#dbeafe;color:#1e40af}.tools[hidden]{display:none}.muted{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px 0}
 @media(max-width:820px){.grid{grid-template-columns:1fr}.opts{grid-template-columns:1fr}}
 </style></head><body>
 <header class="top"><div class="mark">G</div><div class="brand">Wiki Guide Search</div><div class="crumb">wiki-repo 의미 검색 · 가이드 생성</div></header>
@@ -816,7 +816,7 @@ mark{background:var(--hl);padding:0 1px;border-radius:2px}
 <form class="search" id="form"><input id="q" placeholder="예: 프록시 설정 가이드 알려줘" autocomplete="off" autofocus><button id="go">검색</button></form>
 <div class="steps"><span class="step" id="s1">1. 문서 검색</span><span class="step" id="s2">2. 유형 확인</span><span class="step" id="s3">3. 관련 문서 재검색</span><span class="step" id="s4">4. 가이드 생성</span></div>
 <div class="grid"><section class="card"><h2>검색 결과</h2><div id="analysis"></div><div id="results"><div class="empty">질문을 입력하세요.</div></div></section>
-<section><div id="ask"></div><div class="card" id="guideCard"><div class="tools" id="tools" hidden><span class="gen" id="gen"></span><button class="ghost" id="copy">Markdown 복사</button><button class="ghost" id="dl">.md 다운로드</button></div><div class="guide" id="guide"><div class="empty">검색 후 가이드가 여기에 생성됩니다.</div></div></div></section></div>
+<section><div id="ask"></div><div class="card" id="guideCard"><div class="tools" id="tools" hidden><span class="gen" id="gen"></span><button class="ghost" id="regen" title="같은 질의·유형으로 가이드를 다시 만든다">다시 생성</button><button class="ghost" id="copy">Markdown 복사</button><button class="ghost" id="dl">.md 다운로드</button><button id="reg" title="02. 운영 > 00. AI 문서 생성 아래에 등록">Wiki에 등록</button></div><div id="regResult"></div><div class="guide" id="guide"><div class="empty">검색 후 가이드가 여기에 생성됩니다.</div></div></div></section></div>
 </div>
 <script>
 const $=s=>document.querySelector(s);let state={q:'',md:'',title:'guide'};
@@ -839,21 +839,29 @@ if(d.clarify){steps(2);$('#guide').innerHTML='<div class="empty">위에서 유�
 $('#ask').innerHTML=`<div class="card ask" style="margin-bottom:16px"><h2>${esc(d.clarify.question)}</h2><div class="opts">${d.clarify.options.map(o=>`<button class="opt" data-k="${esc(d.clarify.key)}" data-v="${esc(o.id)}"><b>${esc(o.label)}</b><span>${esc(o.desc)}</span></button>`).join('')}</div></div>`;
 document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>guide(b.dataset.k,b.dataset.v,b.querySelector('b').textContent))}
 else guide(d.variant&&d.variant.key,d.variant&&d.variant.id,d.variant&&d.variant.label)}
-async function guide(key,variant,label){steps(3);if(label)$('#ask').innerHTML=`<div class="card" style="margin-bottom:16px">선택한 유형: <b>${esc(label)}</b> <button class="ghost" style="float:right;padding:3px 10px" id="re">다시 선택</button></div>`;const re=$('#re');if(re)re.onclick=()=>search(state.q);
+async function guide(key,variant,label){steps(3);Object.assign(state,{key,variant,label,done:null});$('#regResult').innerHTML='';if(label)$('#ask').innerHTML=`<div class="card" style="margin-bottom:16px">선택한 유형: <b>${esc(label)}</b> <button class="ghost" style="float:right;padding:3px 10px" id="re">다시 선택</button></div>`;const re=$('#re');if(re)re.onclick=()=>search(state.q);
 const t0=Date.now(),sec=()=>Math.floor((Date.now()-t0)/1000);
 $('#guide').innerHTML='<div class="wait">관련 문서를 다시 검색해 가이드를 만드는 중… <b id="elapsed">0초</b><div class="prog"><i></i></div></div>';
 const tick=setInterval(()=>{const e=$('#elapsed');if(e)e.textContent=sec()+'초';const g=$('#gen');if(g.classList.contains('live'))g.textContent=g.textContent.replace(/\d+초$/,sec()+'초')},1000);
 if(state.ctl)state.ctl.abort();const ctl=state.ctl=new AbortController();const g=$('#gen');let model=null,text='',drawn=0,timer=null;
 const draw=()=>{timer=null;if(drawn!==text.length){drawn=text.length;$('#guide').innerHTML=md(text)}};
-const on=e=>{if(e.type==='meta'){model=e.model;state.title=e.title;showResults(e,label?label+' 기준 재검색':'')}
+const on=e=>{if(e.type==='meta'){model=e.model;state.title=e.title;state.meta={sources:e.results.length,web:(e.web||[]).length};showResults(e,label?label+' 기준 재검색':'')}
 else if(e.type==='delta'){if(!text){steps(4);g.className='gen live';g.textContent=`작성 중 · ${model||'LLM'} · ${sec()}초`;$('#tools').hidden=false}text+=e.text;if(!timer)timer=setTimeout(draw,120)}
-else if(e.type==='done'){clearTimeout(timer);steps(4,true);state.md=e.markdown;$('#guide').innerHTML=md(e.markdown);g.className='gen'+(e.mode==='llm'?' llm':'');g.textContent=`생성 방식: ${e.mode==='llm'?'LLM 작성'+(e.model?' · '+e.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams()}};
+else if(e.type==='done'){clearTimeout(timer);steps(4,true);state.md=e.markdown;state.done=e;$('#guide').innerHTML=md(e.markdown);g.className='gen'+(e.mode==='llm'?' llm':'');g.textContent=`생성 방식: ${e.mode==='llm'?'LLM 작성'+(e.model?' · '+e.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams()}};
 try{const r=await fetch('/api/guide/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:state.q,key,variant}),signal:ctl.signal});if(!r.ok)throw new Error(await r.text());
 const rd=r.body.getReader(),dec=new TextDecoder();let buf='';for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(line.trim())on(JSON.parse(line))}}}
 catch(err){if(err.name==='AbortError')return;$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+' ('+sec()+'초)</div>'}finally{clearInterval(tick)}}
 $('#form').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)search(q).catch(err=>{$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+'</div>'})};
 $('#copy').onclick=()=>navigator.clipboard.writeText(state.md).then(()=>{$('#copy').textContent='복사됨';setTimeout(()=>$('#copy').textContent='Markdown 복사',1200)});
 $('#dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([state.md],{type:'text/markdown'}));a.download=state.title.replace(/\s+/g,'-')+'.md';a.click()};
+$('#regen').onclick=()=>guide(state.key,state.variant,state.label);
+// 시나리오 1의 가벼운 승인: 미리보기를 확인한 사람이 눌러야 등록한다(같은 제목이면 갱신).
+$('#reg').onclick=async()=>{if(!state.done)return;if(!confirm(`'${state.title}'을(를) Azure DevOps Wiki의 '02. 운영 > 00. AI 문서 생성' 아래에 등록할까요?\n팀원에게 공개되며, 같은 제목이 있으면 갱신됩니다.`))return;
+const b=$('#reg'),r=$('#regResult');b.disabled=true;b.textContent='등록 중…';r.innerHTML='';
+try{const d=await post('/api/register',{q:state.q,title:state.title,markdown:state.md,model:state.done.model,mode:state.done.mode,sources:(state.meta||{}).sources||0,web:(state.meta||{}).web||0});
+if(d.error)throw new Error(d.error);
+r.innerHTML=`<div class="regok">${d.updated?'갱신':'등록'}했습니다: <b>${esc(d.title)}</b> (커밋 ${esc(d.commit)}${d.pushed?', Azure DevOps Wiki 반영':''}) · <a href="${esc(d.url)}" target="_blank" rel="noopener">Wiki에서 열기</a> · <a href="${esc(d.local)}" target="_blank" rel="noopener">로컬 뷰어</a>${d.warnings.length?'<br>확인: '+esc(d.warnings.join(', ')):''}</div>`;b.textContent='등록됨'}
+catch(err){r.innerHTML='<div class="regerr">등록 실패: '+esc(err.message)+'</div>';b.disabled=false;b.textContent='Wiki에 등록'}};
 </script></body></html>'''
 
 
@@ -900,6 +908,8 @@ class Handler(BaseHTTPRequestHandler):
             if not q:
                 self.send_json({"error": "empty query"}, 400); return
             path = urlparse(self.path).path
+            if path == "/api/register":
+                self.send_json(do_register(q, body)); return
             if path not in ("/api/search", "/api/guide", "/api/guide/stream"):
                 self.send_error(404); return
             name = path.removeprefix("/api/")
@@ -924,6 +934,26 @@ class Handler(BaseHTTPRequestHandler):
 INDEX: Index
 _index_sig: str | None = None
 _index_lock = threading.Lock()
+
+
+def do_register(q: str, body: dict) -> dict:
+    """시나리오 1 5·6단계: 사용자가 미리보기를 보고 'Wiki에 등록'을 누르면 02. 운영 > 00. AI 문서 생성 아래에 등록한다."""
+    from wiki_register import register
+    title, markdown = str(body.get("title", "")).strip(), str(body.get("markdown", ""))
+    if not title or not markdown.strip():
+        return {"error": "등록할 가이드가 없습니다. 먼저 가이드를 생성하세요."}
+    with trace("wiki-search", "register", q=q, title=title) as t, span("wiki_register", chars=len(markdown)) as s:
+        try:
+            r = register(title, markdown, q, body.get("model") or ("템플릿" if body.get("mode") == "template" else None),
+                         int(body.get("sources") or 0), int(body.get("web") or 0),
+                         push=os.environ.get("WIKI_REGISTER_PUSH", "1") != "0")
+        except Exception as exc:
+            s.fail(f"{type(exc).__name__}: {exc}")
+            return {"error": str(exc)}
+        r["local"] = view_link(r["path"].removesuffix(".md"))
+        s.set(number=r["number"], updated=r["updated"], commit=r["commit"], pushed=r["pushed"])
+        t.set(path=r["path"])
+    return r
 
 
 def wiki_signature(root: Path) -> str:
