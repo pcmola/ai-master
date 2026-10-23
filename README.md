@@ -117,6 +117,7 @@ Copy-Item .env.sample .env
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮는다 |
 | `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다. 비우면 웹 검색 안 함 |
 | `WEB_SEARCH_MIN_SIM` | `0.5` | 위키 최고 임베딩 유사도가 이보다 낮으면 웹 검색. 2026-10-20 측정에서 위키에 있는 질의는 0.59 이상, 없는 질의는 0.46 이하였다 |
+| `WEB_SEARCH_MIN_VARIANT_SIM` | `0.45` | 유형(포워드/리버스 등)을 골랐을 때 유형 이름의 위키 최고 유사도가 이보다 낮으면 웹 검색. 2026-10-23 측정: 포워드 프록시 0.499, 리버스 프록시 0.41 |
 | `SQUID_HOST` | - | 정책 감지 대상 프록시 VM의 공용 IP |
 | `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
 | `SQUID_CONTAINER` / `SQUID_RUNTIME` | `squid` / `podman` | VM에서 Squid가 도는 컨테이너 이름과 런타임 |
@@ -133,6 +134,7 @@ Copy-Item .env.sample .env
 | `proxy_policy_state/` | squid_policy_publish.py (정책 기준 스냅샷, 변경 이력) |
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
+| `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py (요청별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
 ## 로컬 웹서버
@@ -263,6 +265,22 @@ flowchart TD
     class tpl fallback
     class out done
 ```
+
+요청마다 노드별 소요 시간과 결과가 허브 로그(`data/logs/wiki-search.log`)와 `data/traces/`에 남습니다(`common/trace.py`).
+
+```text
+10:41:14 [2d15573c] ▶ guide/stream  q=프록시 설정 가이드 알려줘 key=proxy variant=forward
+10:41:14 [2d15573c]     04 embed_query          354ms  model=text-embedding-3-large best_sim=0.601 …
+10:41:14 [2d15573c]   03 hybrid_search        366ms  docs=1026 results=20 top=6.37 top_doc=…
+10:41:14 [2d15573c]   05 select_sources         4ms  sources=15 statements=35 top3=…
+10:41:14 [2d15573c]   06 web_decision           0ms  result=꺼짐 (TAVILY_API_KEY 없음)
+10:41:52 [2d15573c]   07 llm_generate      37,917ms  model=gpt-5.4 prompt_tokens=8364 completion_tokens=5692 first_line_ms=36749 …
+10:41:52 [2d15573c] ■ guide/stream ok 38.6s | llm_generate 37.9s · hybrid_search 0.4s … | mode=llm model=gpt-5.4
+```
+
+- 노드: `refresh_index` → `analyze` → `hybrid_search`(안에 `embed_query`) → `select_sources` → `web_decision` → `web_search` → `llm_generate` 또는 `template`.
+- 줄 앞 표시: `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
+- JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
 ### Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
 

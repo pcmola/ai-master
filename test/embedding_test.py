@@ -1,15 +1,10 @@
 import os
 
-from openai import AzureOpenAI
+from azure_openai_rest import embeddings, load_project_env
 
-client = AzureOpenAI(
-    azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-    api_key=os.environ["AZURE_OPENAI_API_KEY"],
-    api_version=os.getenv("OPENAI_API_VERSION", "2024-12-01-preview"),
-)
 
-r = client.embeddings.create(
-    model=os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small"),
-    input=["hello world", "안녕하세요"],
-)
-print(r.data, len(r.data), len(r.data[0].embedding))
+load_project_env()
+model = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+response = embeddings(model, ["hello world", "안녕하세요"])
+items = response["data"]
+print(f"model={model} items={len(items)} dimensions={len(items[0]['embedding'])}")

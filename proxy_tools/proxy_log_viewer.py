@@ -116,15 +116,17 @@ REMOTE_SIM = "sim_access.log"  # simulate --upload 로 올린 VM 의 ~/sim_acces
 
 def read_logs(ip: str, lines: int, source: str = "real", kind: str = "squid") -> dict:
     """source: real(VM 의 실제 로그) | sim(VM 의 가상 로그) | local(이 PC 의 가상 로그 파일)
-    kind: squid | nginx. nginx 는 접속 로그를 표준 출력으로 내므로 podman logs 로 읽는다(가상 로그는 squid 형식만)."""
+    kind: squid | nginx. nginx 는 접속 로그를 표준 출력(journald)으로 내므로 journalctl 로 읽는다(가상 로그는 squid 형식만)."""
     lines = max(1, min(lines, MAX_LINES))
     parser = parse_line
     if kind == "nginx":
         if source != "real":
             return {"error": "가상 로그는 squid 형식만 있습니다. nginx 프록시는 '실제 로그'로 보세요."}
         parser = parse_nginx
-        # 표준 오류(nginx error log)는 버리고 접속 로그만 읽는다. 알림 줄이 섞이므로 넉넉히 가져온다.
-        remote = f"sudo {RUNTIME} logs --tail {lines * 2} nginx 2>/dev/null"
+        # podman logs 는 지금 컨테이너 것만 보여 준다. 컨테이너는 --rm 이라 재시작·VM 중지마다 새로 만들어지므로,
+        # 이전 컨테이너 로그까지 남아 있는 journald 에서 이름으로 읽는다. PRIORITY=6 은 표준 출력(접속 로그)만,
+        # 표준 오류(nginx error log, PRIORITY=3)는 뺀다. 알림 줄이 섞이므로 넉넉히 가져온다.
+        remote = f"sudo journalctl CONTAINER_NAME=nginx PRIORITY=6 -o cat --no-pager -n {lines * 2} 2>/dev/null"
         try:
             res = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
                                   "-o", "StrictHostKeyChecking=accept-new", f"{SSH_USER}@{ip}", remote],
@@ -214,8 +216,13 @@ td.host{white-space:normal;word-break:break-all}td.num,th.num{text-align:right}
 .tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600}.tag.ok{background:#e3f5ec;color:#1e7a4f}.tag.bad{background:#fdecec;color:#b42318}
 .scroll{max-height:calc(100vh - 230px);overflow:auto}
 .err{background:#fdecec;color:#9b2c2c;border-radius:8px;padding:10px 12px;font-size:13px;margin-top:12px}.empty{color:var(--muted);text-align:center;padding:30px 0}
+.loadbar{position:fixed;top:0;left:0;right:0;height:3px;overflow:hidden;z-index:10;visibility:hidden}.loadbar i{display:block;width:30%;height:100%;background:var(--blue);animation:slide 1s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}@keyframes spin{to{transform:rotate(360deg)}}
+body.loading .loadbar{visibility:visible}.grid{transition:opacity .2s}body.loading .grid{opacity:.55}
+#refresh .ic{display:inline-block;margin-right:5px}body.loading #refresh .ic{animation:spin .8s linear infinite}
+.stamp{margin-left:6px;padding:1px 6px;border-radius:4px;transition:background .6s,color .6s}.stamp.fresh{background:#e3f5ec;color:#1e7a4f;font-weight:600}
 @media(max-width:900px){.grid{grid-template-columns:1fr}}
-</style></head><body>
+</style></head><body><div class="loadbar"><i></i></div>
 <header class="top"><div class="mark">P</div><div class="brand">Proxy Log Viewer</div><div class="crumb">Squid · nginx 접속 로그 · 읽기 전용</div></header>
 <div class="wrap">
 <div class="bar">
@@ -225,7 +232,7 @@ td.host{white-space:normal;word-break:break-all}td.num,th.num{text-align:right}
 <div class="seg" id="seg"><button data-f="all" class="on">전체</button><button data-f="ok">허용</button><button data-f="bad">차단</button></div>
 <input type="search" id="q" placeholder="도메인·클라이언트 IP·결과 코드 검색">
 <label class="auto"><input type="checkbox" id="auto"> 5초 자동 새로고침</label>
-<button id="refresh">새로고침</button>
+<button id="refresh"><span class="ic">↻</span><span id="rlabel">새로고침</span></button>
 </div>
 <div id="err"></div>
 <div class="summary" id="summary">불러오는 중…</div>
@@ -236,23 +243,29 @@ td.host{white-space:normal;word-break:break-all}td.num,th.num{text-align:right}
 <div class="card"><h2>도메인별</h2><table><thead><tr><th>도메인</th><th class="num">요청</th><th class="num">차단</th></tr></thead><tbody id="domains"></tbody></table></div></div>
 </div></div>
 <script>
-const $=s=>document.querySelector(s);let data=[],findings=[],filter='all',timer=null;
+const $=s=>document.querySelector(s);let data=[],findings=[],filter='all',timer=null,loading=false,lastKey='',stamp='',flash=null;
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const size=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?(n/1024).toFixed(1)+' KB':n+' B';
 const when=iso=>new Date(iso).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
 function render(){const q=$('#q').value.trim().toLowerCase();
 const rows=data.filter(r=>(filter==='all'||(filter==='bad')===r.denied)&&(!q||[r.host,r.client,r.code,r.status,r.url].join(' ').toLowerCase().includes(q)));
 const denied=data.filter(r=>r.denied).length,bytes=data.reduce((a,r)=>a+r.bytes,0);
-$('#summary').innerHTML=`최근 <b>${data.length}</b>건 중 허용 <b>${data.length-denied}</b> · <span class="bad">차단 <b>${denied}</b></span> · 전송 <b>${size(bytes)}</b>`+(rows.length!==data.length?` · 표시 <b>${rows.length}</b>건`:'');
+$('#summary').innerHTML=`최근 <b>${data.length}</b>건 중 허용 <b>${data.length-denied}</b> · <span class="bad">차단 <b>${denied}</b></span> · 전송 <b>${size(bytes)}</b>`+(rows.length!==data.length?` · 표시 <b>${rows.length}</b>건`:'')+(stamp?`<span class="stamp" id="stamp">${esc(stamp)}</span>`:'');
 $('#rows').innerHTML=rows.length?rows.map(r=>`<tr><td>${when(r.time)}</td><td>${esc(r.client)}</td><td><span class="tag ${r.denied?'bad':'ok'}">${esc(r.code)}/${esc(r.status)}</span></td><td>${esc(r.method)}</td><td class="host" title="${esc(r.url)}">${esc(r.host)}</td><td class="num">${size(r.bytes)}</td><td class="num">${r.ms}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">로그가 없습니다.</td></tr>';
 const dom={};for(const r of data){const d=dom[r.host]||(dom[r.host]={n:0,bad:0});d.n++;if(r.denied)d.bad++}
 $('#domains').innerHTML=Object.entries(dom).sort((a,b)=>b[1].n-a[1].n).slice(0,30).map(([h,d])=>`<tr><td class="host"><a href="#" data-h="${esc(h)}">${esc(h)}</a></td><td class="num">${d.n}</td><td class="num" style="color:${d.bad?'var(--bad)':'inherit'}">${d.bad}</td></tr>`).join('')||'<tr><td colspan="3" class="empty">-</td></tr>';
 const lbl={high:'HIGH',medium:'MED',low:'LOW'};$('#findings').innerHTML=findings.length?findings.map(f=>`<div class="f"><b><span class="sev ${f.severity}">${lbl[f.severity]}</span>${esc(f.title)}</b>${esc(f.detail)}<br><small>${esc(f.first===f.last?f.first:f.first+' ~ '+f.last)} · 관련 ${f.count}건</small></div>`).join(''):'<div class="empty" style="padding:10px 0">탐지된 이상 징후가 없습니다.</div>';
 document.querySelectorAll('#domains a').forEach(a=>a.onclick=e=>{e.preventDefault();$('#q').value=a.dataset.h;render()})}
-async function load(){const host=$('#host').value;if(!host)return;$('#refresh').disabled=true;
+// 갱신 중에는 진행 막대·회전 아이콘을 보이고, 끝나면 갱신 시각과 새 로그 건수를 잠깐 강조한다. 이전 요청이 끝나기 전에는 다시 부르지 않는다.
+async function load(){const host=$('#host').value;if(!host||loading)return;loading=true;document.body.classList.add('loading');$('#refresh').disabled=true;$('#rlabel').textContent='불러오는 중…';
+const key=host+'|'+$('#src').value+'|'+$('#lines').value,top=data.length?data[0].time:'';
 try{const r=await fetch(`/api/logs?host=${encodeURIComponent(host)}&lines=${$('#lines').value}&source=${$('#src').value}`);const d=await r.json();
-if(d.error){$('#err').innerHTML=`<div class="err">${esc(d.error)}</div>`;data=[];findings=[];render();return}$('#err').innerHTML='';data=d.rows;findings=d.findings||[];render()}
-catch(e){$('#err').innerHTML=`<div class="err">${esc(e.message)}</div>`}finally{$('#refresh').disabled=false}}
+const t=new Date().toLocaleTimeString('en-GB',{hour12:false});
+if(d.error){$('#err').innerHTML=`<div class="err">${esc(d.error)}</div>`;data=[];findings=[];stamp=`· 갱신 ${t} (오류)`;render();return}$('#err').innerHTML='';
+const fresh=key===lastKey&&top?d.rows.filter(r=>r.time>top).length:null;lastKey=key;data=d.rows;findings=d.findings||[];
+stamp=`· 갱신 ${t}`+(fresh===null?'':fresh?` · 새 로그 ${fresh}건`:' · 변경 없음');render();
+const s=$('#stamp');if(s){s.classList.add('fresh');clearTimeout(flash);flash=setTimeout(()=>{const x=$('#stamp');if(x)x.classList.remove('fresh')},1500)}}
+catch(e){$('#err').innerHTML=`<div class="err">${esc(e.message)}</div>`}finally{loading=false;document.body.classList.remove('loading');$('#refresh').disabled=false;$('#rlabel').textContent='새로고침'}}
 document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{filter=b.dataset.f;document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x===b));render()});
 async function loadPolicy(){const host=$('#host').value;if(!host)return;const el=$('#policy');
 try{const p=await (await fetch(`/api/policy?host=${encodeURIComponent(host)}`)).json();

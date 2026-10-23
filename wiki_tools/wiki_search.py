@@ -8,6 +8,8 @@
   OPENAI_API_KEY 면 OpenAI. 이 클라이언트가 있으면 임베딩 재순위화도 사용한다.
 - 웹 검색: TAVILY_API_KEY 가 있고 위키 근거가 약하면(최고 임베딩 유사도 < WEB_SEARCH_MIN_SIM, 또는 근거 문서 0건)
   Tavily 검색 결과를 가이드 근거에 보탠다. 사내 게이트웨이는 내장 web_search 도구(Responses API)를 지원하지 않는다.
+- 트레이싱: 요청마다 노드(refresh_index → analyze → hybrid_search(embed_query) → select_sources → web_decision →
+  web_search → llm_generate | template)별 소요 시간과 결과를 콘솔(허브 로그)과 data/traces/wiki-search-YYYYMMDD.jsonl 에 남긴다.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from urllib.parse import quote, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR, ENV_FILE, WIKI_REPO  # noqa: E402
 from common.server import local_server, open_chrome, site_url  # noqa: E402,F401  (다른 도구가 여기서 가져다 쓰던 이름 유지)
+from common.trace import span, trace  # noqa: E402
 
 ROOT = WIKI_REPO.resolve()
 CACHE = DATA_DIR / "wiki_search_cache.json"
@@ -40,9 +43,27 @@ VIEWER = os.environ.get("WIKI_VIEWER_URL") or site_url("wiki.local", 8765)[2]
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(ENV_FILE)
 except ImportError:
-    pass
+    def load_dotenv(path: Path):
+        """Load the project's simple KEY=VALUE .env file without an optional dependency."""
+        if not path.is_file():
+            return False
+        loaded = False
+        for raw in path.read_text(encoding="utf-8-sig").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            name, value = name.strip(), value.strip()
+            if not name or name in os.environ:
+                continue
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            os.environ[name] = value
+            loaded = True
+        return loaded
+
+load_dotenv(ENV_FILE)
 
 
 # 개념 → 동의어(소문자). 질의와 문서 모두 같은 개념으로 묶어 표기 차이를 흡수한다.
@@ -151,6 +172,64 @@ def analyze(query: str) -> tuple[list[str], list[str]]:
     return concepts, terms
 
 
+WEB_GENERIC = {"guide"}  # 웹 검색어에 넣으면 잡음만 늘리는 일반 개념
+
+
+def jamo(word: str) -> str:
+    """한글 음절을 초성·중성·종성으로 풀어 쓴다(프록실 → ㅍㅡㄹㅗㄱㅅㅣㄹ). 받침 하나 차이도 편집 거리 1이 된다."""
+    out = []
+    for ch in word:
+        code = ord(ch) - 0xAC00
+        if 0 <= code < 11172:
+            out += [chr(0x1100 + code // 588), chr(0x1161 + code % 588 // 28)]
+            if code % 28:
+                out.append(chr(0x11A7 + code % 28))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def edit_distance(a: str, b: str, limit: int) -> int:
+    """글자 넣기·빼기·바꾸기·이웃 두 글자 뒤바꿈(porxy→proxy)을 1로 센다. limit 를 넘으면 limit+1."""
+    if abs(len(a) - len(b)) > limit:
+        return limit + 1
+    prev2, prev = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+            if prev2 and i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        if min(cur) > limit:
+            return limit + 1
+        prev2, prev = prev, cur
+    return prev[-1]
+
+
+def fix_typos(concepts: list[str], terms: list[str]) -> tuple[list[str], list[str], list[dict]]:
+    """사전에 없는 단어가 개념 사전의 단어와 거의 같으면(오타) 그 개념으로 고친다.
+    허용 거리: 한글은 3음절 이상(풀어 쓴 길이 7 이상)만 1, 영문은 5글자 이상만 1, 풀어 쓴 길이 10 이상은 2.
+    두 음절 말(설정·결정, 로그·로고)은 서로 다른 실제 단어와 거리 1 이라 잘못 고치므로 고치지 않는다."""
+    fixes, rest = [], []
+    for term in terms:
+        tj, best = jamo(term), None
+        for concept, syns in CONCEPTS.items():
+            for syn in syns:
+                sj = jamo(syn)
+                short = len(sj) < (7 if sj != syn else 5)  # sj != syn 이면 한글이 들어 있다
+                limit = 0 if short else 1 if len(sj) < 10 else 2
+                d = edit_distance(tj, sj, limit) if limit else limit + 1
+                if d <= limit and (best is None or d < best[0]):
+                    best = (d, concept, syn)
+        if best:
+            fixes.append({"from": term, "to": best[2], "concept": best[1]})
+            if best[1] not in concepts:
+                concepts = concepts + [best[1]]
+        else:
+            rest.append(term)
+    return concepts, rest, fixes
+
+
 def detect_variant(query: str, concepts: list[str]) -> tuple[str | None, str | None]:
     low = query.lower()
     for key in concepts:
@@ -227,6 +306,7 @@ class Embeddings:
         self.client = openai_client()
         self.model = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
         self.vectors: list[list[float]] = []
+        self.docs = docs
         self._last: tuple[str, list[float]] | None = None
         if not self.client:
             return
@@ -256,14 +336,17 @@ class Embeddings:
             return []
         if self._last and self._last[0] == query:
             return self._last[1]
-        try:
-            q = self.client.embeddings.create(model=self.model, input=[query]).data[0].embedding
-        except Exception as exc:
-            print(f"[embeddings query failed] {exc}")
-            return []
-        qn = math.sqrt(sum(x * x for x in q)) or 1.0
-        sims = [sum(a * b for a, b in zip(q, v)) / (qn * (math.sqrt(sum(x * x for x in v)) or 1.0))
-                for v in self.vectors]
+        with span("embed_query", model=self.model) as s:
+            try:
+                q = self.client.embeddings.create(model=self.model, input=[query]).data[0].embedding
+            except Exception as exc:
+                s.fail(f"임베딩 질의 실패 → 키워드 검색만 사용: {exc}")
+                return []
+            qn = math.sqrt(sum(x * x for x in q)) or 1.0
+            sims = [sum(a * b for a, b in zip(q, v)) / (qn * (math.sqrt(sum(x * x for x in v)) or 1.0))
+                    for v in self.vectors]
+            best = max(range(len(sims)), key=sims.__getitem__)
+            s.set(dims=len(q), best_sim=round(sims[best], 3), best_doc=self.docs[best].title)
         self._last = (query, sims)
         return sims
 
@@ -328,19 +411,43 @@ def build_groups(concepts: list[str], terms: list[str]) -> list[list[str]]:
     return [CONCEPTS[c] for c in concepts] + [[t] for t in terms]
 
 
+def traced_analyze(query: str) -> tuple[list[str], list[str], list[list[str]], list[dict]]:
+    with span("analyze") as s:
+        concepts, terms = analyze(query)
+        concepts, terms, fixes = fix_typos(concepts, terms)
+        groups = build_groups(concepts, terms)
+        s.set(concepts=concepts, terms=terms, groups=len(groups),
+              typo_fixes=[f"{f['from']}→{f['to']}" for f in fixes])
+    return concepts, terms, groups, fixes
+
+
+def corrected(query: str, fixes: list[dict]) -> str:
+    """오타를 고친 질의. 키워드(bigram)·임베딩 검색에 원문 대신 쓴다."""
+    for f in fixes:
+        query = re.sub(re.escape(f["from"]), f["to"], query, flags=re.I)
+    return query
+
+
+def traced_search(groups, query: str, boost=()) -> list[tuple[Doc, float]]:
+    with span("hybrid_search", docs=len(INDEX.docs), embeddings="on" if INDEX.embeddings.vectors else "off") as s:
+        ranked = INDEX.search(groups, query, boost)
+        s.set(results=len(ranked), top=round(ranked[0][1], 2) if ranked else None,
+              top_doc=ranked[0][0].title if ranked else None)
+    return ranked
+
+
 def do_search(query: str) -> dict:
-    concepts, terms = analyze(query)
-    groups = build_groups(concepts, terms)
+    concepts, terms, groups, fixes = traced_analyze(query)
     highlights = sorted({w for g in groups for w in g}, key=len, reverse=True)
     key, variant = detect_variant(query, concepts)
-    results = INDEX.search(groups, query)
+    results = traced_search(groups, corrected(query, fixes))
     clarify = None
     if key and not variant:
         spec = CLARIFY[key]
         clarify = {"key": key, "question": spec["question"],
                    "options": [{"id": i, "label": o["label"], "desc": o["desc"]} for i, o in spec["options"].items()]}
     return {
-        "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms},
+        "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms, "fixes": fixes},
         "highlights": highlights,
         "clarify": clarify,
         "variant": {"key": key, "id": variant, "label": CLARIFY[key]["options"][variant]["label"]} if variant else None,
@@ -368,32 +475,37 @@ def do_guide(query: str, key: str | None, variant: str | None) -> dict:
 
 def guide_events(query: str, key: str | None, variant: str | None):
     """가이드 생성 과정을 이벤트로 낸다: meta(검색 결과) → delta(LLM 이 쓴 완성된 줄, 여러 번) → done(최종 Markdown)."""
-    concepts, terms = analyze(query)
-    groups = build_groups(concepts, terms)
+    concepts, terms, groups, fixes = traced_analyze(query)
     option = CLARIFY[key]["options"][variant] if key in CLARIFY and variant in CLARIFY[key]["options"] else None
     boost = option["terms"] if option else []
-    search_query = f"{query} {option['label']} {' '.join(boost)}" if option else query
-    ranked = INDEX.search(groups, search_query, boost)
+    fixed = corrected(query, fixes)
+    search_query = f"{fixed} {option['label']} {' '.join(boost)}" if option else fixed
+    ranked = traced_search(groups, search_query, boost)
 
-    # 핵심 개념(가장 드문 동의어 묶음)이 실제로 나오는 문서만 가이드 재료로 쓴다.
-    core = min(groups, key=lambda g: sum(1 for d in INDEX.docs if any(s in d.low for s in g))) if groups else []
-    sources = [(d, s) for d, s in ranked if not core or any(w in d.low for w in core)][:15]
+    with span("select_sources", candidates=len(ranked)) as sp:
+        # 핵심 개념(가장 드문 동의어 묶음)이 실제로 나오는 문서만 가이드 재료로 쓴다.
+        core = min(groups, key=lambda g: sum(1 for d in INDEX.docs if any(s in d.low for s in g))) if groups else []
+        sources = [(d, s) for d, s in ranked if not core or any(w in d.low for w in core)][:15]
 
-    statements: dict[str, list[Doc]] = {}
-    for d, _ in sources:
-        for line in matching_lines(d, [(core, 1.0)] if core else group_weights(groups), limit=5):
-            statements.setdefault(line, []).append(d)
+        statements: dict[str, list[Doc]] = {}
+        for d, _ in sources:
+            for line in matching_lines(d, [(core, 1.0)] if core else group_weights(groups), limit=5):
+                statements.setdefault(line, []).append(d)
+        sp.set(core=core[:3], sources=len(sources), statements=len(statements),
+               top3=[f"{d.title}({s:.2f})" for d, s in sources[:3]])
 
     title = f"{option['label'] if option else query.strip()} 가이드"
-    web_reason = web_search_reason(sources, search_query)
-    web = web_search(f"{query} {option['label']}" if option else query) if web_reason else []
+    web_reason = web_search_reason(sources, search_query, option)
+    # 유형을 골랐으면 그 유형이 속한 개념(예: proxy)을 기준으로 검색어를 만들고 결과를 거른다.
+    base = key if option and key in CONCEPTS else None
+    web = web_search(web_query(concepts, terms, option, base), web_must(option, base, core)) if web_reason else []
     client = (claude_client() or openai_client()) if statements or web else None
     model = llm_model(client) if client else None
     highlights = sorted({w for g in groups for w in g} | set(boost), key=len, reverse=True)
     weighted = group_weights(groups) + [([b], 0.3) for b in boost]
     yield {"type": "meta", "title": title, "model": model,
            "web": [{"title": w["title"], "url": w["url"]} for w in web], "web_reason": web_reason,
-           "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms},
+           "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms, "fixes": fixes},
            "highlights": highlights,
            "results": [{"path": d.path, "title": d.title, "link": view_link(d.path), "score": round(s, 3),
                         "snippets": matching_lines(d, weighted)} for d, s in sources]}
@@ -408,41 +520,90 @@ def guide_events(query: str, key: str | None, variant: str | None):
             markdown = stop.value
     if markdown:
         yield {"type": "done", "mode": "llm", "model": model, "markdown": markdown}
-    else:  # LLM 이 없거나 도중에 실패하면 템플릿으로 바꿔 낸다(화면은 받은 글을 이 내용으로 갈아 끼운다)
+        return
+    # LLM 이 없거나 도중에 실패하면 템플릿으로 바꿔 낸다(화면은 받은 글을 이 내용으로 갈아 끼운다)
+    with span("template", reason="LLM 실패" if client else ("근거 없음" if not (statements or web) else "LLM 설정 없음")) as s:
         markdown = template_guide(query, title, option, statements, sources)
         if web:
             markdown += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
-        yield {"type": "done", "mode": "template", "model": None, "markdown": markdown}
+        s.set(chars=len(markdown))
+    yield {"type": "done", "mode": "template", "model": None, "markdown": markdown}
 
 
-def web_search_reason(sources, query: str) -> str | None:
+def web_search_reason(sources, query: str, option: dict | None = None) -> str | None:
     """위키 근거가 약해 웹 검색이 필요하면 그 이유를, 아니면 None 을 돌려준다.
-    2026-10-20 측정: 위키에 있는 질의 5개는 최고 유사도 0.587~0.648, 없는 질의 5개는 0.248~0.463 이라 0.5 를 기준으로 둔다."""
-    if not os.environ.get("TAVILY_API_KEY"):
-        return None
-    if not sources:
-        return "관련 위키 문서 없음"
-    sims = INDEX.embeddings.similarity(query)
+    2026-10-20 측정: 위키에 있는 질의 5개는 최고 유사도 0.587~0.648, 없는 질의 5개는 0.248~0.463 이라 0.5 를 기준으로 둔다.
+    유형(포워드/리버스 등)을 골랐으면 유형 이름만으로도 비교한다. 주제(프록시)는 위키에 많아도 그 유형은 없을 수 있다.
+    2026-10-23 측정: '포워드 프록시' 0.499, '리버스 프록시' 0.412(위키 1,026건 중 리버스 언급 2건) 라 0.45 를 기준으로 둔다."""
     limit = float(os.environ.get("WEB_SEARCH_MIN_SIM", "0.5"))
-    if sims and max(sims) < limit:
-        return f"위키 최고 유사도 {max(sims):.2f} < {limit}"
-    return None
+    with span("web_decision", enabled=bool(os.environ.get("TAVILY_API_KEY")), threshold=limit) as s:
+        if not os.environ.get("TAVILY_API_KEY"):
+            s.set(result="꺼짐 (TAVILY_API_KEY 없음)")
+            return None
+        if not sources:
+            s.set(result="웹 검색", reason="관련 위키 문서 없음")
+            return "관련 위키 문서 없음"
+        sims = INDEX.embeddings.similarity(query)
+        best = max(sims) if sims else None
+        s.set(best_sim=round(best, 3) if best is not None else None)
+        if best is not None and best < limit:
+            s.set(result="웹 검색")
+            return f"위키 최고 유사도 {best:.2f} < {limit}"
+        if option:
+            v_limit = float(os.environ.get("WEB_SEARCH_MIN_VARIANT_SIM", "0.45"))
+            v_sims = INDEX.embeddings.similarity(option["label"])
+            v_best = max(v_sims) if v_sims else None
+            s.set(variant=option["label"], variant_sim=round(v_best, 3) if v_best is not None else None,
+                  variant_threshold=v_limit)
+            if v_best is not None and v_best < v_limit:
+                s.set(result="웹 검색")
+                return f"위키에 '{option['label']}' 내용 부족 (유형 유사도 {v_best:.2f} < {v_limit})"
+        s.set(result="위키만 사용")
+        return None
 
 
-def web_search(query: str) -> list[dict]:
-    """Tavily 검색 결과(제목·URL·본문 요약)를 돌려준다. 실패하면 빈 목록(가이드는 위키만으로 만든다)."""
+def web_query(concepts: list[str], terms: list[str], option: dict | None, base: str | None = None) -> str:
+    """웹 검색어: 유형 이름 + 질의의 고유어 + 개념의 한글 대표어(예: 리버스 프록시 장애). '알려줘' 같은 말투와
+    '가이드' 같은 일반어, 영문 동의어는 넣지 않는다. 2026-10-23 Tavily 비교: 섞으면 게임·주식·코인 기사가 걸렸다."""
+    words: list[str] = [option["label"]] if option else []
+    words += terms
+    words += [CONCEPTS[c][0] for c in concepts if c not in WEB_GENERIC and not (option and c == base)]
+    seen: list[str] = []
+    for w in " ".join(words).split():
+        if w.lower() not in (s.lower() for s in seen):
+            seen.append(w)
+    return " ".join(seen)
+
+
+def web_must(option: dict | None, base: str | None, core: list[str]) -> list[str]:
+    """웹 결과에 하나라도 있어야 남기는 문구. 유형이면 붙은 문구 그대로(리버스 프록시, reverse proxy)."""
+    if option and base:
+        eng = next((s for s in option["detect"] if s.isascii()), "")
+        return [option["label"], f"{eng} {next((s for s in CONCEPTS[base] if s.isascii()), '')}".strip()]
+    return core
+
+
+def web_search(query: str, must: list[str] = ()) -> list[dict]:
+    """Tavily 검색 결과(제목·URL·본문 요약)를 돌려준다. must(핵심 개념 동의어)가 하나도 없는 결과는 버린다.
+    실패하면 빈 목록(가이드는 위키만으로 만든다)."""
     body = {"query": query, "search_depth": "basic", "max_results": int(os.environ.get("WEB_SEARCH_MAX", "5"))}
+    if not os.environ.get("TAVILY_API_KEY"):
+        return []
     req = urllib.request.Request("https://api.tavily.com/search", json.dumps(body).encode("utf-8"),
                                  {"Content-Type": "application/json",
                                   "Authorization": f"Bearer {os.environ['TAVILY_API_KEY']}"})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as res:
-            results = json.load(res).get("results", [])
-    except Exception as exc:
-        print(f"[web search failed] {exc}", flush=True)
-        return []
-    return [{"title": r.get("title") or r["url"], "url": r["url"], "content": (r.get("content") or "")[:2000]}
-            for r in results if r.get("url")]
+    with span("web_search", provider="tavily", query=query, max_results=body["max_results"]) as s:
+        try:
+            with urllib.request.urlopen(req, timeout=20) as res:
+                results = json.load(res).get("results", [])
+        except Exception as exc:
+            s.fail(f"웹 검색 실패 → 위키만 사용: {exc}")
+            return []
+        found = [{"title": r.get("title") or r["url"], "url": r["url"], "content": (r.get("content") or "")[:2000]}
+                 for r in results if r.get("url")]
+        kept = [w for w in found if not must or any(m.lower() in (w["title"] + " " + w["content"]).lower() for m in must)]
+        s.set(results=len(kept), dropped=len(found) - len(kept), domains=sorted({urlparse(w["url"]).netloc for w in kept})[:5])
+        return kept
 
 
 def llm_model(client) -> str:
@@ -533,27 +694,48 @@ def llm_guide(client, query, title, option, statements, sources, web=()):
               "다이어그램을 글·표·ASCII 로 풀어 쓰지 말고 '[[DIAGRAM-n]]' 한 줄만 단독으로 적어라. 괄호 속 설명은 옮기지 마라.\n"
               f"- 첫 줄은 '# {title}'로 시작하고, Markdown 본문만 출력하라.")
     system = "너는 사내 위키 문서를 근거로 운영 가이드를 작성하는 기술 문서 작성자다."
+    with span("llm_generate", model=llm_model(client), docs=len(sources), web=len(web), diagrams=len(diagrams),
+              prompt_chars=len(system) + len(prompt)) as s:
+        result = yield from _llm_run(client, system, prompt, diagrams, sources, web, s)
+    return result
+
+
+def _llm_run(client, system, prompt, diagrams, sources, web, s):
+    """llm_guide 의 호출부. s(llm_generate 노드)에 첫 응답 시각, 줄 수, 토큰 사용량, 실패 이유를 남긴다."""
     text, pending = "", ""
+    started, first, n_lines = time.perf_counter(), None, 0
 
     def lines(chunk: str):
         # 자리표시자가 한 줄에 단독으로 오므로, 줄이 끝난 부분만 복원해 내보낸다.
-        nonlocal pending
+        nonlocal pending, first, n_lines
         pending += chunk
         cut = pending.rfind("\n") + 1
         if cut:
             done, pending = pending[:cut], pending[cut:]
+            if first is None:
+                first = (time.perf_counter() - started) * 1000
+            n_lines += done.count("\n")
             yield DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), done)
 
     try:
         if hasattr(client, "chat"):  # OpenAI / Azure OpenAI 게이트웨이
             stream = client.chat.completions.create(
-                model=llm_model(client), stream=True,
+                model=llm_model(client), stream=True, stream_options={"include_usage": True},
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
+            chunks, finish = 0, None
             for chunk in stream:
+                if getattr(chunk, "usage", None):  # include_usage: 마지막 조각에 토큰 사용량이 온다
+                    u = chunk.usage
+                    s.set(prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
+                          reasoning_tokens=getattr(u.completion_tokens_details, "reasoning_tokens", None))
+                if chunk.choices:
+                    finish = chunk.choices[0].finish_reason or finish
                 piece = chunk.choices[0].delta.content if chunk.choices else None
                 if piece:
+                    chunks += 1
                     text += piece
                     yield from lines(piece)
+            s.set(chunks=chunks, finish=finish)
             if pending:
                 yield from lines("\n")
             text = text.strip()
@@ -565,13 +747,16 @@ def llm_guide(client, query, title, option, statements, sources, web=()):
             res = client.beta.messages.create(
                 model=model, max_tokens=16000, output_config={"effort": "medium"},
                 system=system, messages=[{"role": "user", "content": prompt}], **extra)
+            s.set(prompt_tokens=res.usage.input_tokens, completion_tokens=res.usage.output_tokens, finish=res.stop_reason)
             if res.stop_reason == "refusal":
-                print(f"[llm guide refused] {res.stop_details}")
+                s.fail(f"LLM 거절 → 템플릿 사용: {res.stop_details}")
                 return None
             text = "".join(b.text for b in res.content if b.type == "text").strip()
             yield from lines(text + "\n")
         text = DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text)
+        s.set(first_line_ms=round(first) if first is not None else None, lines=n_lines, out_chars=len(text))
         if not text:
+            s.fail("빈 응답 → 템플릿 사용")
             return None
         if sources:
             text += "\n\n## 원문 링크\n\n" + "\n".join(f"- [{d.title}]({view_link(d.path)}) — {d.path}" for d, _ in sources)
@@ -579,7 +764,7 @@ def llm_guide(client, query, title, option, statements, sources, web=()):
             text += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
         return text
     except Exception as exc:
-        print(f"[llm guide failed] {exc}")
+        s.fail(f"LLM 호출 실패 → 템플릿 사용: {type(exc).__name__}: {exc}")
         return None
 
 
@@ -628,7 +813,7 @@ for(const raw of src.replace(/\r/g,'').split('\n')){const line=raw.trimEnd();let
 if(m=line.match(/^(#{1,4})\s+(.*)$/)){fl();out+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`}else if(m=line.match(/^\s{2,}(\S.*)$/)){out=out.replace(/<\/li>$/,'<br><span class="muted">'+inline(m[1])+'</span></li>')}else if(m=line.match(/^[-*]\s+(.*)$/)){if(!list){out+='<ul>';list=true}out+='<li>'+inline(m[1])+'</li>'}else if(m=line.match(/^>\s?(.*)$/)){fl();out+='<blockquote>'+inline(m[1])+'</blockquote>'}else if(line.trim()){fl();out+='<p>'+inline(line)+'</p>'}else if(!list)fl()}if(code)out+=`<pre><code>${esc(code.lines.join('\n'))}</code></pre>`;fl();return out}
 let mermaidLib;async function diagrams(){const els=[...document.querySelectorAll('#guide .mermaid')];if(!els.length)return;try{mermaidLib=mermaidLib||(await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs')).default;mermaidLib.initialize({startOnLoad:false,securityLevel:'strict'});await mermaidLib.run({nodes:els,suppressErrors:true})}catch(e){console.warn('mermaid',e)}els.filter(el=>!el.querySelector('svg')).forEach(el=>{el.outerHTML='<pre><code>'+esc(el.textContent)+'</code></pre><p class="muted" style="font-size:11px">다이어그램을 그리지 못해 원문을 표시합니다.</p>'})}
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()}
-function showResults(d,label){const a=d.analysis;$('#analysis').innerHTML='<div class="chips">해석: '+a.concepts.map(c=>`<span class="chip" title="${esc(c.words.join(', '))}">${esc(c.words[0])} ≈ ${esc(c.words.slice(1).join(' · '))}</span>`).join('')+a.terms.map(t=>`<span class="chip">${esc(t)}</span>`).join('')+(label?`<span class="chip" style="background:#d9f5e6;color:#11643c">${esc(label)}</span>`:'')+((d.web||[]).length?`<span class="chip" style="background:#fef3c7;color:#92400e" title="${esc(d.web_reason||'')}">웹 검색 ${d.web.length}건</span>`:'')+` <span>· ${d.results.length}건</span></div>`;
+function showResults(d,label){const a=d.analysis;$('#analysis').innerHTML='<div class="chips">해석: '+a.concepts.map(c=>`<span class="chip" title="${esc(c.words.join(', '))}">${esc(c.words[0])} ≈ ${esc(c.words.slice(1).join(' · '))}</span>`).join('')+a.terms.map(t=>`<span class="chip">${esc(t)}</span>`).join('')+(a.fixes||[]).map(f=>`<span class="chip" style="background:#fef3c7;color:#92400e" title="오타로 보고 고쳐서 검색">오타 교정: ${esc(f.from)} → ${esc(f.to)}</span>`).join('')+(label?`<span class="chip" style="background:#d9f5e6;color:#11643c">${esc(label)}</span>`:'')+((d.web||[]).length?`<span class="chip" style="background:#fef3c7;color:#92400e" title="${esc(d.web_reason||'')}">웹 검색 ${d.web.length}건</span>`:'')+` <span>· ${d.results.length}건</span></div>`;
 const web=(d.web||[]).length?`<h2 style="margin-top:18px">웹 검색 결과 <span class="muted" style="font-size:12px;font-weight:400">${esc(d.web_reason||'')}</span></h2>`+d.web.map(w=>`<div class="res"><a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a><div class="p">${esc(w.url)}</div></div>`).join(''):'';
 if(!d.results.length){$('#results').innerHTML='<div class="empty">관련 위키 문서가 없습니다.</div>'+web;return}const max=d.results[0].score||1;
 $('#results').innerHTML=d.results.map(r=>`<div class="res"><a href="${esc(r.link)}" target="_blank" rel="noopener">${hl(r.title,d.highlights)}</a><div class="p">${esc(r.path)}</div>${r.snippets.map(s=>`<div class="s">${hl(s,d.highlights)}</div>`).join('')}<div class="bar"><i style="width:${Math.round(r.score/max*100)}%"></i></div></div>`).join('')+web}
@@ -665,7 +850,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def send_stream(self, events):
+    def send_stream(self, events, t=None):
         """이벤트를 한 줄에 JSON 하나(NDJSON)로 바로바로 보낸다. 길이를 모르므로 연결을 닫아 끝을 알린다."""
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
@@ -674,10 +859,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         try:
             for event in events:
+                if t and event["type"] == "done":
+                    t.set(mode=event["mode"], model=event["model"], chars=len(event["markdown"]))
                 self.wfile.write(json.dumps(event, ensure_ascii=False).encode("utf-8") + b"\n")
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-            pass  # 새 검색을 해서 브라우저가 이전 요청을 끊은 경우
+            if t:
+                t.set(disconnected=True)  # 새 검색을 해서 브라우저가 이전 요청을 끊은 경우
+        finally:
+            events.close()  # 끊긴 경우에도 열린 노드를 지금 닫아 cancelled 로 남긴다
         self.close_connection = True
 
     def do_GET(self):
@@ -694,14 +884,20 @@ class Handler(BaseHTTPRequestHandler):
             if not q:
                 self.send_json({"error": "empty query"}, 400); return
             path = urlparse(self.path).path
-            refresh_index()
-            if path == "/api/search":
-                self.send_json(do_search(q)); return
-            if path == "/api/guide":
-                self.send_json(do_guide(q, body.get("key"), body.get("variant"))); return
-            if path == "/api/guide/stream":
-                self.send_stream(guide_events(q, body.get("key"), body.get("variant"))); return
-            self.send_error(404)
+            if path not in ("/api/search", "/api/guide", "/api/guide/stream"):
+                self.send_error(404); return
+            name = path.removeprefix("/api/")
+            with trace("wiki-search", name, q=q, key=body.get("key"), variant=body.get("variant")) as t:
+                refresh_index()
+                if path == "/api/search":
+                    d = do_search(q)
+                    t.set(results=len(d["results"]), clarify=bool(d["clarify"]))
+                    self.send_json(d); return
+                if path == "/api/guide":
+                    d = do_guide(q, body.get("key"), body.get("variant"))
+                    t.set(mode=d.get("mode"), model=d.get("model"), chars=len(d.get("markdown") or ""))
+                    self.send_json(d); return
+                self.send_stream(guide_events(q, body.get("key"), body.get("variant")), t)
         except (ValueError, json.JSONDecodeError):
             self.send_json({"error": "bad request"}, 400)
 
@@ -727,14 +923,14 @@ def wiki_signature(root: Path) -> str:
 def refresh_index():
     """검색 요청마다 wiki-repo 변경 여부를 보고, 바뀌었으면 인덱스를 다시 만든다(임베딩은 바뀐 문서만 새로 계산)."""
     global INDEX, _index_sig
-    with _index_lock:
+    with _index_lock, span("refresh_index") as s:
         sig = wiki_signature(ROOT)
         if sig == _index_sig:
+            s.set(changed=False, docs=len(INDEX.docs))
             return
-        started = time.monotonic()
         INDEX = Index(ROOT)
         _index_sig = sig
-        print(f"Re-indexed {len(INDEX.docs)} documents ({time.monotonic() - started:.1f}s)", flush=True)
+        s.set(changed=True, docs=len(INDEX.docs))
 
 
 def main():

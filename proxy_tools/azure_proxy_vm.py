@@ -253,20 +253,27 @@ write_files:
         conf, inner = squid_conf(allow, 3128, bool(wl)), 3128
         # 목록 파일은 디렉터리째 마운트해야 VM 에서 고친 내용이 'squid -k reconfigure' 로 바로 반영된다.
         volumes = [("/etc/proxy/proxy.conf", "/etc/squid/squid.conf"), ("/etc/proxy/lists", "/etc/squid/lists")]
+        # 로그는 VM 디스크에 둔다. 컨테이너는 --rm 이라 재시작·VM 중지 때 컨테이너 안 로그가 함께 지워진다.
+        # 이미지의 squid 는 uid 13(proxy) 으로 쓰므로 디렉터리 소유자를 맞춘다.
+        logs = ("/var/log/proxy", "/var/log/squid", "13:13")
         check_cmd = "squid -k parse"
     elif args.proxy == "nginx":
         # 공식 nginx 이미지는 master 가 root 라 80 을 그대로 쓸 수 있다. 기본 사이트 설정을 대체한다.
         conf, inner = nginx_conf(80, args.backend, allow, args.vhost), 80
         volumes = [("/etc/proxy/proxy.conf", "/etc/nginx/conf.d/default.conf")]
+        logs = None  # 공식 이미지는 로그를 stdout 으로 보낸다(journald)
         check_cmd = "nginx -t"
     else:
         # 공식 haproxy 이미지는 root 가 아닌 haproxy 사용자로 돌아 1024 미만 포트를 못 열므로 8080 에서 받는다.
         conf, inner = haproxy_cfg(8080, args.backend, "stdout format raw local0"), 8080
         volumes = [("/etc/proxy/proxy.conf", "/usr/local/etc/haproxy/haproxy.cfg")]
+        logs = None  # stdout 으로 보낸다(journald)
         check_cmd = "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg"
     cli = args.install  # docker | podman
     image = qualify_image(args.docker_image) if cli == "podman" else args.docker_image
     mounts = " ".join(f"-v {src}:{dst}:ro" for src, dst in volumes)
+    run_mounts = mounts + (f" -v {logs[0]}:{logs[1]}" if logs else "")
+    log_dir = f"  - mkdir -p {logs[0]} && chown {logs[2]} {logs[0]} && chmod 750 {logs[0]}\n" if logs else ""
     login = (f"  - echo '{args.registry_password}' | {cli} login {args.registry} "
              f"-u '{args.registry_user}' --password-stdin\n") if args.registry else ""
     files = f"""write_files:
@@ -287,13 +294,14 @@ packages: [docker.io]
   - systemctl enable --now docker
 {login}  - docker pull {image}
   - docker run --rm {mounts} {image} {check_cmd}
-  - docker run -d --name {args.proxy} --restart=always -p {port}:{inner} {mounts} {image}
+{log_dir}  - docker run -d --name {args.proxy} --restart=always -p {port}:{inner} {run_mounts} {image}
 """
     # podman: 데몬이 없으므로 Quadlet(systemd 서비스 <proxy>.service)으로 부팅 시 자동 시작·재시작을 맡긴다.
     unit = "\n".join([
         "[Unit]", f"Description={args.proxy} proxy (podman)", "Wants=network-online.target",
         "After=network-online.target", "", "[Container]", f"ContainerName={args.proxy}", f"Image={image}",
-        f"PublishPort={port}:{inner}", *[f"Volume={src}:{dst}:ro" for src, dst in volumes], "",
+        f"PublishPort={port}:{inner}", *[f"Volume={src}:{dst}:ro" for src, dst in volumes],
+        *([f"Volume={logs[0]}:{logs[1]}"] if logs else []), "",
         "[Service]", "Restart=always", "", "[Install]", "WantedBy=multi-user.target", ""])
     return f"""#cloud-config
 package_update: true
@@ -305,7 +313,7 @@ packages: [podman]
 runcmd:
 {login}  - podman pull {image}
   - podman run --rm {mounts} {image} {check_cmd}
-  - systemctl daemon-reload
+{log_dir}  - systemctl daemon-reload
   - systemctl start {args.proxy}
 """
 
