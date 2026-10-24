@@ -260,6 +260,13 @@ JOBS = {
                   "options": {}},
     "scenario3": {"title": "시나리오 3 · 장애 감지 및 조치", "script": "proxy_tools/incident_response.py", "log": "scenario3",
                   "self_log": True, "options": {"dry_run": "--dry-run"}},
+    # 시험용: proxy-config 에 잘못된 설정을 넣어 wjy-proxy01 에 배포(장애 재현), 그리고 되돌리기
+    "scenario3-fault": {"title": "시나리오 3 · 장애 재현(시험용)", "script": "proxy_tools/proxy_fault_inject.py", "log": "scenario3",
+                        "self_log": False, "options": {}, "base": ["apply"],
+                        "choice": ["whitelist-typo", "client-acl-typo", "bad-dns"],
+                        "tail": ["--push", "--deploy", "wjy-proxy01"]},
+    "scenario3-restore": {"title": "시나리오 3 · 장애 원상 복구", "script": "proxy_tools/proxy_fault_inject.py", "log": "scenario3",
+                          "self_log": False, "options": {}, "base": ["restore", "--push", "--deploy", "wjy-proxy01"]},
     "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
                         "self_log": False, "options": {}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
 }
@@ -276,6 +283,11 @@ def run_job(job: str, options: dict) -> dict:
         if busy:
             return {"error": f"이미 실행 중입니다: {JOBS[busy[0]]['title']}"}
         args = [flag for opt, flag in spec["options"].items() if options.get(opt)]
+        if "choice" in spec:  # 고정 목록에서만 고른다(화면에서 온 값을 그대로 명령에 넣지 않는다)
+            if options.get("choice") not in spec["choice"]:
+                return {"error": f"고를 수 있는 값: {', '.join(spec['choice'])}"}
+            args = [options["choice"], *args]
+        args = [*spec.get("base", []), *args, *spec.get("tail", [])]
         cmd = [sys.executable, spec["script"], *args]
         env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -467,6 +479,12 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="row"><button id="s3dry" onclick="runJob('scenario3',{dry_run:true})" title="감지·분석·수정안까지만 하고 아무것도 바꾸지 않음">분석만</button>
 <button class="main" id="s3run" onclick="runJob('scenario3')">실행</button>
 <button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')">로그</button></div>
+<div class="row" style="border-top:1px dashed var(--line);padding-top:10px"><span class="muted">시험용 (wjy-proxy01)</span>
+<select id="s3fault" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink)">
+<option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
+<option value="bad-dns">잘못된 DNS 서버</option></select>
+<button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="proxy_fault_inject.py apply … --push --deploy wjy-proxy01">장애 재현</button>
+<button id="s3restore" onclick="if(confirm('심어진 장애를 되돌리는 커밋을 push 하고 wjy-proxy01 에 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="proxy_fault_inject.py restore --push --deploy wjy-proxy01">원상 복구</button></div>
 <div class="jobstate" id="s3state"></div></div>
 </div>
 <div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span></div>
@@ -522,14 +540,15 @@ function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
 async function runJob(job,options={}){
   const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
   const d=await r.json();if(d.error){alert(d.error);return}const lk=JOBS_LOG[job];showLog(lk,lk==='scenario3'?'시나리오 3 로그':'시나리오 2 로그');setTimeout(refreshJobs,300)}
-const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3'};
+const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3'};
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11),arg=j.args.length?' '+j.args.join(' '):'';
   if(j.state==='running')return`<span class="jobstate running">● ${esc(j.title)} 실행 중 (PID ${j.pid}, ${since(j.started)}째)${esc(arg)}</span>`;
   return`<span class="jobstate ${j.code===0?'ok':'fail'}">${j.code===0?'✓':'✗'} ${esc(j.title)} 종료 코드 ${j.code} (${t} 시작${esc(arg)})</span>`}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
   const run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
-  const run3=jobs.scenario3&&jobs.scenario3.state==='running';document.getElementById('s3run').disabled=run3;document.getElementById('s3dry').disabled=run3;
-  document.getElementById('s3state').innerHTML=jobLine(jobs.scenario3)||'<span class="muted">아직 실행하지 않았습니다.</span>';
+  const s3=['scenario3','scenario3-fault','scenario3-restore'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
+  ['s3run','s3dry','s3inject','s3restore'].forEach(id=>document.getElementById(id).disabled=run3);
+  document.getElementById('s3state').innerHTML=s3.map(k=>jobLine(jobs[k])).filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';

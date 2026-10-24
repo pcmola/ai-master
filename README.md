@@ -192,7 +192,12 @@ flowchart TD
 | 8. 장애 대응 이력 Wiki | 대응 이력 문서, 원인·조치·PR 링크, Teams 결과 알림 | 🟡 | `02. 운영 > 01. 공통 > 04. 장애 대응 > 01. 프록시 장애 대응 이력` 맨 위에 한 건씩 추가(다른 로컬 커밋은 올리지 않음), Teams 결과 카드 (전 과정 실행 검증 전) |
 
 - 2026-10-24 시험: 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
-- 전 과정 시험: `python proxy_tools\proxy_fault_inject.py apply whitelist-typo --push --deploy wjy-proxy01`(VM 이름 또는 공용 IP)로 잘못된 설정을 배포한 뒤 실행하면 원인 커밋을 찾아 되돌리는 PR까지 갑니다. 끝나면 PR을 병합·배포하거나 저장소를 되돌려 정상 상태로 돌립니다.
+- 전 과정 시험(허브 시나리오 3 칸의 **시험용** 줄):
+  1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
+  2. 60분 안에 **실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
+  3. 끝나면 PR을 병합·배포하거나 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`: 심어진 장애를 되돌리는 커밋 push·배포·트래픽 확인).
+  - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
+  - 시험 트래픽은 이 PC에서 프록시 3128 포트로 보냅니다. 회사망처럼 3128이 막힌 네트워크에서는 `connect=000`으로 실패해 로그가 남지 않으므로, 3128이 열린 네트워크에서 시험합니다.
 
 **실행 화면** (공인 IP는 `x.x.x.x`로 가림)
 
@@ -296,7 +301,7 @@ flowchart LR
 | | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, NGINX는 journald) | http://proxy-log.local (8768) |
 | | `incident_response.py` | 시나리오 3: 로그 감지 → AI 분석 → Wiki 사례 → proxy-config 원인·수정안 → Teams 승인 → Task → 수정 PR → 장애 대응 이력 Wiki | - |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
-| | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣음 | - |
+| | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣고(`apply`) 되돌림(`restore`), 배포·시험 트래픽까지 | - |
 | | `proxy_policy_monitor.py` | 프록시 VM 전체(Squid·NGINX) 정책 변경 확인 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
 | | `proxy_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki '프록시 정책 현황' 갱신 | - |
 | | `proxy_status_sync.py` | 시나리오 2: Wiki Proxy 현황 ↔ Azure VM 비교 → Teams 승인 → Task → Wiki 현행화 → 완료 보고 | - |
@@ -505,7 +510,7 @@ http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 
 | 탭 | 내용 |
 |---|---|
 | 로컬 서버 | 서버 표(상태·주소·PID·가동 시간, 시작·중지·재시작·로그)와 로그 창. 주소를 누르면 서버 화면이 새 창으로 열림 |
-| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음 |
+| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음<br/>**시나리오 3**: "분석만"(감지·분석·수정안까지, 아무것도 바꾸지 않음)·"실행"(Teams 승인 후 Task·PR·이력 Wiki), 시험용 "장애 재현"(종류 선택)·"원상 복구", `scenario3.log` 실시간 표시 |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
 
@@ -852,7 +857,7 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 | `proxy_policy_publish.py` | `--dry-run` | `PROXY_SSH_*` |
 | `proxy_policy_monitor.py` | 없음 | `PROXY_SSH_*` |
 | `proxy_log_detect.py` | `simulate` / `detect` 하위 명령 | `PROXY_ALLOWED_CLIENTS` |
-| `proxy_fault_inject.py` (장애 재현) | `list` / `apply` / `status`, `apply`의 `--push`·`--deploy` | 외부(저장소·VM)를 바꾸는 동작이라 옵션으로 명시할 때만 함 |
+| `proxy_fault_inject.py` (장애 재현) | `list` / `status` / `apply` / `restore`, `--push`·`--deploy <VM 이름 또는 IP>` | 외부(저장소·VM)를 바꾸는 동작이라 옵션으로 명시할 때만 함 |
 
 ```powershell
 python wiki_tools\wiki_search.py

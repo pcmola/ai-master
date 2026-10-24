@@ -9,6 +9,7 @@
     python proxy_tools/proxy_fault_inject.py apply whitelist-typo                  # 로컬 커밋만
     python proxy_tools/proxy_fault_inject.py apply bad-dns --push --deploy wjy-proxy01   # VM 이름 또는 공용 IP
     python proxy_tools/proxy_fault_inject.py status                                 # 지금 심어진 장애가 있는지
+    python proxy_tools/proxy_fault_inject.py restore --push --deploy wjy-proxy01     # 심어진 장애 되돌리기(허브 '원상 복구')
 
 --deploy 는 proxy-config 의 scripts/deploy.sh 를 --restart 로 실행한 뒤 scripts/traffic.sh 로 로그를 만든다.
 Windows 에서는 Git Bash(bash.exe)가 필요하다.
@@ -106,10 +107,52 @@ def active() -> list[str]:
     return found
 
 
-def apply(name: str, push: bool, deploy: str | None):
-    s = SCENARIOS[name]
+def sync_main():
+    """작업 전 main 을 원격 최신으로 맞춘다(허브 버튼으로 여러 번 실행해도 어긋나지 않게)."""
     if git("status", "--porcelain"):
         raise RuntimeError(f"{REPO} 에 커밋하지 않은 변경이 있습니다. 정리한 뒤 다시 실행하세요.")
+    git("fetch", "-q", "origin")
+    if git("rev-parse", "--abbrev-ref", "HEAD") != "main":
+        git("switch", "-q", "main")
+    git("merge", "-q", "--ff-only", "origin/main")
+
+
+def deploy_and_check(target: str, expect_fail: bool):
+    ip = vm_ip(target)
+    print(f"배포: {target}")
+    bash("scripts/deploy.sh", ip, "--restart")
+    try:
+        bash("scripts/traffic.sh", ip)
+        print("테스트 트래픽 정상" + (" (장애가 나타나지 않았습니다. 네트워크에서 3128 이 막혔는지 확인하세요)" if expect_fail else ""))
+    except RuntimeError:
+        print("테스트 트래픽에서 실패가 나왔습니다" + ("(예상한 결과). 이제 시나리오 3 을 실행하세요." if expect_fail
+              else ". 결과의 connect=000 은 이 PC 네트워크에서 3128 이 막힌 경우입니다."))
+
+
+def restore(push: bool, deploy: str | None):
+    """심어진 장애를 되돌리는 커밋을 만든다(장애 문자열을 원래대로). 배포·확인까지 한다."""
+    sync_main()
+    found = active()
+    if not found:
+        print("심어진 장애 없음 (정상 상태). 되돌릴 것이 없습니다.")
+        return
+    for name in found:
+        s = SCENARIOS[name]
+        path = REPO / s["file"]
+        path.write_text(path.read_text(encoding="utf-8").replace(s["after"], s["before"]), encoding="utf-8", newline="\n")
+        git("add", "--", s["file"])
+    git("commit", "-q", "-m", f"장애 재현 되돌림: {', '.join(found)}")
+    print(f"커밋: {git('log', '-1', '--format=%h %s')}")
+    if push:
+        git("push", "-q", "origin", "HEAD")
+        print("push 완료")
+    if deploy:
+        deploy_and_check(deploy, expect_fail=False)
+
+
+def apply(name: str, push: bool, deploy: str | None):
+    s = SCENARIOS[name]
+    sync_main()
     path = REPO / s["file"]
     text = path.read_text(encoding="utf-8")
     if text.count(s["before"]) != 1:
@@ -123,13 +166,7 @@ def apply(name: str, push: bool, deploy: str | None):
         git("push", "-q", "origin", "HEAD")
         print("push 완료")
     if deploy:
-        deploy = vm_ip(deploy)
-        bash("scripts/deploy.sh", deploy, "--restart")
-        try:
-            bash("scripts/traffic.sh", deploy)
-        except RuntimeError:
-            print("테스트 트래픽에서 실패가 나왔습니다(예상한 결과). 이제 탐지를 실행하세요:")
-            print(f"  python proxy_tools/proxy_log_detect.py detect --host {deploy}")
+        deploy_and_check(deploy, expect_fail=True)
 
 
 def main() -> int:
@@ -141,6 +178,9 @@ def main() -> int:
     a.add_argument("scenario", choices=sorted(SCENARIOS))
     a.add_argument("--push", action="store_true", help="origin 으로 push")
     a.add_argument("--deploy", metavar="VM", help="VM 이름(예: wjy-proxy01) 또는 공용 IP. 배포하고 테스트 트래픽을 보낸다")
+    r = sub.add_parser("restore", help="심어진 장애를 되돌리는 커밋 생성")
+    r.add_argument("--push", action="store_true", help="origin 으로 push")
+    r.add_argument("--deploy", metavar="VM", help="VM 이름 또는 공용 IP. 배포하고 테스트 트래픽으로 확인한다")
     args = p.parse_args()
 
     if not (REPO / ".git").exists():
@@ -153,6 +193,8 @@ def main() -> int:
         elif args.cmd == "status":
             found = active()
             print(f"심어진 시나리오: {', '.join(found)}" if found else "심어진 시나리오 없음 (정상 상태)")
+        elif args.cmd == "restore":
+            restore(args.push, args.deploy)
         else:
             apply(args.scenario, args.push, args.deploy)
         return 0
