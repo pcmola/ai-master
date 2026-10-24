@@ -171,7 +171,7 @@ flowchart TD
     ap -- "Yes" --> task["6. 장애 조치 Task"]
     task --> pr["7. 수정 브랜치·PR"]
     pr --> hist(["8. 장애 대응 이력 Wiki<br/>+ Teams 결과"])
-    inj["장애 재현<br/>proxy_fault_inject.py"] -. "잘못된 설정 주입" .-> d
+    inj["장애 재현·원상 복구<br/>(허브 시험용 버튼)<br/>proxy_fault_inject.py"] -. "잘못된 설정 주입" .-> d
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
     classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
