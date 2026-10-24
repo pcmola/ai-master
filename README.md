@@ -95,6 +95,16 @@ flowchart TD
 | 6. Wiki 문서 등록 | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목`으로 등록, 같은 제목이면 갱신(번호 유지, 이력은 git), Wiki 문서 규칙(채번·`.order`·인코딩·프록시 표기) 준수, 머리에 "AI 생성 · 모델 · 생성 일시 · 질의 · 근거 수" | ✅ | `wiki_tools/wiki_register.py`. 로컬 뷰어 링크를 Wiki 안 링크로 바꾸고 push |
 | 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | ✅ | 등록 후 "Wiki에서 열기"·로컬 뷰어 링크. 가이드 아래 "수정 요청" 입력칸: 지금 가이드와 요청을 함께 보내 고친 판을 받음(요청과 관계없는 부분은 유지, 사용자가 적은 문구는 그대로 반영). 고친 판을 그대로 등록 가능 |
 
+**실행 화면** (공인 IP는 `x.x.x.x`로 가림)
+
+질의 → 유형 확인:
+
+![Wiki 검색 - 유형 확인](docs/images/wiki-search-type.png)
+
+유형 선택 → 근거 문서 재검색 → LLM 가이드 생성:
+
+![Wiki 검색 - 가이드 생성](docs/images/wiki-search-guide.png)
+
 ### 1.2 시나리오 2 · 프록시 현황 Wiki 현행화
 
 Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다. 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다. 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**하므로, 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#81-시나리오-2-실행-proxy_status_syncpy))
@@ -136,6 +146,18 @@ flowchart TD
 | 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | ✅ | `--push`일 때 반영 |
 | 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | ✅ | |
 
+**실행 화면**
+
+허브의 시나리오 실행 탭에서 실행하고 로그를 봅니다:
+
+![허브 - 시나리오 실행 탭](docs/images/hub-scenarios.png)
+
+Teams 카드의 Yes/No 버튼이 여는 로컬 승인 화면과, 승인 뒤 진행 화면(예시 데이터):
+
+![로컬 승인 화면](docs/images/approval.png)
+
+![승인 후 진행 화면](docs/images/approval-progress.png)
+
 ### 1.3 시나리오 3 · 장애 감지 및 자동 조치
 
 LLM이 장애 로그를 Wiki·DevOps 소스로 분석해 원인과 수정안을 도출하고 Teams 승인을 요청합니다(6~8단계는 확장 범위). 지금은 규칙 기반 로그 탐지와 장애 재현 도구까지 있습니다.
@@ -174,6 +196,12 @@ flowchart TD
 | 7. 소스 수정 및 PR(확장) | 브랜치 생성·AI 코드 수정, Pull Request, Task와 PR 연결 | ⬜ | |
 | 8. 장애 대응 이력 Wiki(확장) | 대응 이력 문서(LLM), 원인·조치·PR 링크, Teams 결과 알림 | ⬜ | |
 
+**실행 화면** (공인 IP는 `x.x.x.x`로 가림)
+
+프록시 로그 뷰어: 실제 Squid·nginx 접속 로그, 허용 목록, 탐지 결과:
+
+![프록시 로그 뷰어](docs/images/proxy-log.png)
+
 ## 2. 구성
 
 ```
@@ -183,6 +211,7 @@ ai-master/
 ├─ wiki_tools/     Wiki 검색·가이드 생성, 로컬 뷰어, Azure DevOps Wiki 문서 관리
 ├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, Squid 정책 변경 감지·Task/Wiki 반영
 ├─ teams_tools/    Microsoft Teams 알림, 로컬 승인 화면(Teams 대체)
+├─ docs/images/    README 실행 화면 캡처 (공인 IP 등은 가린 상태)
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
 ├─ test/           Azure OpenAI 채팅·임베딩·스트리밍 테스트, 시나리오 2 테스트 환경(scenario2/)
 └─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git, ai-master 에서는 추적하지 않음)
@@ -274,6 +303,10 @@ flowchart LR
 | | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | http://127.0.0.1:8771 (요청 중에만) |
 | test | `teams_test.py` | Teams 연동 테스트: 웹후크·Graph 를 차례로 시험하고 실패 원인을 안내 (`.env`의 `TEAMS_*`) | - |
 | | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
+
+**Wiki 뷰어** (wiki-repo를 Azure DevOps Wiki처럼 읽기 전용으로 보여 줌):
+
+![Wiki 뷰어](docs/images/wiki-viewer.png)
 
 ## 3. 사전 준비
 
@@ -506,6 +539,10 @@ Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | For
 ```
 
 `/T`(프로세스 트리)를 붙이면 허브가 띄운 서버까지 함께 꺼지므로 붙이지 않습니다.
+
+**허브 - 로컬 서버 탭:**
+
+![허브 - 로컬 서버 탭](docs/images/hub-servers.png)
 
 ## 6. 주요 흐름
 
