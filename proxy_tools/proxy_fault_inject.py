@@ -49,8 +49,8 @@ SCENARIOS = {
     },
     "client-acl-typo": {
         "file": "squid/proxy.conf",
-        "before": f"acl allowed_clients src {CLIENT}/32\n",
-        "after": f"acl allowed_clients src {CLIENT[:-1]}/32\n",  # 마지막 숫자 하나를 빠뜨린 오타
+        "before": f" {CLIENT}/32",  # allowed_clients 줄의 이 IP 만 바꾼다(같은 줄에 클라이언트가 여럿이어도 됨)
+        "after": f" {CLIENT[:-1]}/32",  # 마지막 숫자 하나를 빠뜨린 오타
         "message": "Update office egress IP for allowed_clients",
         "symptom": f"{CLIENT} 의 모든 요청이 TCP_DENIED/403 → whitelisted_denied, denied_burst",
     },
