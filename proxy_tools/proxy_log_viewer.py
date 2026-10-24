@@ -367,7 +367,7 @@ def main():
     else:
         print(f"{datetime.now():%Y-%m-%d %H:%M:%S} {args.resource_group} 에서 프록시 VM 을 찾는 중 (태그 proxy=squid|nginx) ...", flush=True)
         HOSTS = discover_hosts(args.resource_group)
-    print(f"  프록시 VM {len(HOSTS)}대 · Squid 런타임 {RUNTIME} · Squid 로그 {LOG_PATH} · nginx 로그 journald · 최대 {MAX_LINES}줄")
+    print(f"  프록시 VM {len(HOSTS)}대 · Squid 런타임 {RUNTIME} · Squid 로그 파일 {LOG_PATH} · nginx 로그 journald(VM 시스템 로그, journalctl 로 읽음) · 최대 {MAX_LINES}줄")
     for h in HOSTS:
         print(f"  {h['name']:<14} {h.get('kind') or 'squid':<6} {h['ip']:<16} {h.get('state', '')}")
 
