@@ -36,6 +36,11 @@ from common.trace import span, trace  # noqa: E402
 
 ROOT = WIKI_REPO.resolve()
 CACHE = DATA_DIR / "wiki_search_cache.json"
+CHUNK_CACHE = DATA_DIR / "wiki_search_chunks.json"  # 가이드 재료 조각(청크) 임베딩 캐시
+AI_DOC_PREFIX = "AI-Master-프로젝트/02.-운영/00.-AI-문서-생성"  # 시나리오 1 이 등록한 문서(가이드 재료에서 제외)
+GUIDE_CHUNKS = int(os.environ.get("GUIDE_CHUNKS", "24"))           # LLM 에 넘길 조각 수 상한
+GUIDE_CHUNK_CHARS = int(os.environ.get("GUIDE_CHUNK_CHARS", "1500"))  # 조각 하나의 대략적인 최대 길이
+GUIDE_CONTEXT_CHARS = int(os.environ.get("GUIDE_CONTEXT_CHARS", "16000"))  # 넘길 조각 전체 글자 수 상한
 EMBED_WEIGHT = float(os.environ.get("EMBED_WEIGHT", "8"))  # 혼합 검색에서 임베딩 유사도 가중치
 OPENAI_TIMEOUT = 120  # 초. 게이트웨이가 응답하지 않으면 오래 매달리지 않고 오프라인 검색으로 넘어간다.
 # 검색 결과의 문서 링크. 비우면 wiki_viewer.py 가 뜨는 주소(hosts 의 wiki.local 기준)를 쓴다.
@@ -352,12 +357,10 @@ class Embeddings:
             return []
         if self._last and self._last[0] == query:
             return self._last[1]
-        with span("embed_query", model=self.model) as s:
-            try:
-                q = self.client.embeddings.create(model=self.model, input=[query]).data[0].embedding
-            except Exception as exc:
-                s.fail(f"임베딩 질의 실패 → 키워드 검색만 사용: {exc}")
-                return []
+        q = self.vector(query)
+        if q is None:
+            return []
+        with span("doc_similarity", docs=len(self.vectors)) as s:
             qn = math.sqrt(sum(x * x for x in q)) or 1.0
             sims = [sum(a * b for a, b in zip(q, v)) / (qn * (math.sqrt(sum(x * x for x in v)) or 1.0))
                     for v in self.vectors]
@@ -365,6 +368,45 @@ class Embeddings:
             s.set(dims=len(q), best_sim=round(sims[best], 3), best_doc=self.docs[best].title)
         self._last = (query, sims)
         return sims
+
+    def vector(self, query: str) -> list[float] | None:
+        """질의 임베딩(같은 질의는 한 번만 계산)."""
+        if not self.client:
+            return None
+        cached = getattr(self, "_qvec", None)
+        if cached and cached[0] == query:
+            return cached[1]
+        with span("embed_query", model=self.model) as s:
+            try:
+                q = self.client.embeddings.create(model=self.model, input=[query]).data[0].embedding
+            except Exception as exc:
+                s.fail(f"임베딩 질의 실패 → 키워드 검색만 사용: {exc}")
+                return None
+            s.set(dims=len(q))
+        self._qvec = (query, q)
+        return q
+
+    def embed(self, texts: list[str]) -> list[list[float]] | None:
+        """조각 임베딩. CHUNK_CACHE 에 모델별로 저장해 같은 조각은 다시 계산하지 않는다."""
+        if not self.client or not texts:
+            return None
+        try:
+            cache = json.loads(CHUNK_CACHE.read_text(encoding="utf-8")) if CHUNK_CACHE.is_file() else {}
+        except ValueError:
+            cache = {}
+        if cache.get("model") != self.model:
+            cache = {"model": self.model, "vectors": {}}
+        keys = [hashlib.sha1(x.encode("utf-8")).hexdigest() for x in texts]
+        missing = [(k, x) for k, x in zip(keys, texts) if k not in cache["vectors"]]
+        for start in range(0, len(missing), 100):
+            batch = missing[start:start + 100]
+            res = self.client.embeddings.create(model=self.model, input=[x[:6000] for _, x in batch])
+            for (k, _), item in zip(batch, res.data):
+                cache["vectors"][k] = item.embedding
+        if missing:
+            CHUNK_CACHE.write_text(json.dumps(cache), encoding="utf-8")
+        self.chunk_new = len(missing)
+        return [cache["vectors"][k] for k in keys]
 
 
 def openai_client():
@@ -480,17 +522,18 @@ def categorize(sentence: str) -> str:
     return "기타"
 
 
-def do_guide(query: str, key: str | None, variant: str | None) -> dict:
+def do_guide(query: str, key: str | None, variant: str | None, revise: dict | None = None) -> dict:
     """guide_events 를 끝까지 받아 한 번에 돌려준다(스트리밍이 필요 없는 호출용)."""
     result: dict = {}
-    for event in guide_events(query, key, variant):
+    for event in guide_events(query, key, variant, revise):
         if event["type"] in ("meta", "done"):
             result.update({k: v for k, v in event.items() if k != "type"})
     return result
 
 
-def guide_events(query: str, key: str | None, variant: str | None):
-    """가이드 생성 과정을 이벤트로 낸다: meta(검색 결과) → delta(LLM 이 쓴 완성된 줄, 여러 번) → done(최종 Markdown)."""
+def guide_events(query: str, key: str | None, variant: str | None, revise: dict | None = None):
+    """가이드 생성 과정을 이벤트로 낸다: meta(검색 결과) → delta(LLM 이 쓴 완성된 줄, 여러 번) → done(최종 Markdown).
+    revise={"markdown": 지금 가이드, "request": 수정 요청} 이면 근거 조각을 요청까지 반영해 다시 고르고 가이드를 고쳐 쓴다."""
     concepts, terms, groups, fixes = traced_analyze(query)
     option = CLARIFY[key]["options"][variant] if key in CLARIFY and variant in CLARIFY[key]["options"] else None
     boost = option["terms"] if option else []
@@ -501,7 +544,9 @@ def guide_events(query: str, key: str | None, variant: str | None):
     with span("select_sources", candidates=len(ranked)) as sp:
         # 핵심 개념(가장 드문 동의어 묶음)이 실제로 나오는 문서만 가이드 재료로 쓴다.
         core = min(groups, key=lambda g: sum(1 for d in INDEX.docs if any(s in d.low for s in g))) if groups else []
-        sources = [(d, s) for d, s in ranked if not core or any(w in d.low for w in core)][:15]
+        # AI 가 만들어 등록한 문서(00. AI 문서 생성)는 재료에서 뺀다. 자기가 쓴 글을 근거로 다시 쓰면 틀린 내용이 이어진다.
+        sources = [(d, s) for d, s in ranked if (not core or any(w in d.low for w in core))
+                   and not d.path.startswith(AI_DOC_PREFIX)][:15]
 
         statements: dict[str, list[Doc]] = {}
         for d, _ in sources:
@@ -509,6 +554,8 @@ def guide_events(query: str, key: str | None, variant: str | None):
                 statements.setdefault(line, []).append(d)
         sp.set(core=core[:3], sources=len(sources), statements=len(statements),
                top3=[f"{d.title}({s:.2f})" for d, s in sources[:3]])
+    request = (revise or {}).get("request", "").strip()
+    chunks = select_chunks(sources, f"{search_query} {request}".strip(), [w for g in groups for w in g] + boost)
 
     title = f"{option['label'] if option else query.strip()} 가이드"
     web_reason = web_search_reason(sources, search_query, option)
@@ -528,7 +575,7 @@ def guide_events(query: str, key: str | None, variant: str | None):
 
     markdown = None
     if client:
-        gen = llm_guide(client, query, title, option, statements, sources, web)
+        gen = llm_guide(client, query, title, option, statements, sources, web, chunks, revise)
         try:
             while True:
                 yield {"type": "delta", "text": next(gen)}
@@ -537,6 +584,9 @@ def guide_events(query: str, key: str | None, variant: str | None):
     if markdown:
         yield {"type": "done", "mode": "llm", "model": model, "markdown": markdown}
         return
+    if revise:  # 수정 요청이 실패하면 지금 가이드를 그대로 돌려준다(템플릿으로 덮지 않는다)
+        yield {"type": "done", "mode": "llm", "model": model, "markdown": revise.get("markdown", ""), "revise_failed": True}
+        return
     # LLM 이 없거나 도중에 실패하면 템플릿으로 바꿔 낸다(화면은 받은 글을 이 내용으로 갈아 끼운다)
     with span("template", reason="LLM 실패" if client else ("근거 없음" if not (statements or web) else "LLM 설정 없음")) as s:
         markdown = template_guide(query, title, option, statements, sources)
@@ -544,6 +594,107 @@ def guide_events(query: str, key: str | None, variant: str | None):
             markdown += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
         s.set(chars=len(markdown))
     yield {"type": "done", "mode": "template", "model": None, "markdown": markdown}
+
+
+def split_chunks(doc: Doc) -> list[dict]:
+    """문서를 제목(#~####) 단위 조각으로 나눈다. 긴 절은 문단(빈 줄) 단위로 GUIDE_CHUNK_CHARS 안팎으로 더 나누되,
+    코드 블록(```)과 다이어그램(::: mermaid)은 중간에서 자르지 않는다. 각 조각에 상위 제목 경로를 붙인다."""
+    sections, heads, buf, fence = [], [], [], None
+
+    def close():
+        body = "\n".join(buf).strip()
+        if body:
+            sections.append((" > ".join(h for _, h in heads), body))
+        buf.clear()
+
+    for line in doc.text.split("\n"):
+        s = line.strip()
+        if fence:
+            buf.append(line)
+            if (fence == "```" and s.startswith("```")) or (fence == ":::" and s == ":::"):
+                fence = None
+            continue
+        if s.startswith("```"):
+            fence = "```"
+        elif re.match(r"^:::\s*mermaid", s, re.I):
+            fence = ":::"
+        m = re.match(r"^(#{1,4})\s+(.+)$", line) if not fence else None
+        if m:
+            close()
+            level = len(m.group(1))
+            heads[:] = [h for h in heads if h[0] < level] + [(level, m.group(2).strip())]
+            buf.append(line)
+            continue
+        buf.append(line)
+    close()
+
+    chunks = []
+    for heading, body in sections:
+        if len(body) <= GUIDE_CHUNK_CHARS:
+            chunks.append({"heading": heading, "text": body})
+            continue
+        part, size, fence = [], 0, None  # 문단 단위로 나눈다(코드 블록 안의 빈 줄에서는 자르지 않음)
+        for line in body.split("\n"):
+            s = line.strip()
+            if fence and ((fence == "```" and s.startswith("```")) or (fence == ":::" and s == ":::")):
+                fence = None
+            elif not fence and s.startswith("```"):
+                fence = "```"
+            elif not fence and re.match(r"^:::\s*mermaid", s, re.I):
+                fence = ":::"
+            if not s and not fence and size >= GUIDE_CHUNK_CHARS:
+                chunks.append({"heading": heading, "text": "\n".join(part).strip()})
+                part, size = [], 0
+                continue
+            part.append(line)
+            size += len(line) + 1
+        if "\n".join(part).strip():
+            chunks.append({"heading": heading, "text": "\n".join(part).strip()})
+    for i, c in enumerate(chunks):
+        c.update(doc=doc, order=i)
+    return chunks
+
+
+def select_chunks(sources, query: str, words: list[str]) -> list[dict]:
+    """후보 문서를 조각으로 나눠 질의와 가까운 조각만 고른다(RAG 의 Retrieval).
+    점수 = 질의 임베딩과의 코사인 + 0.08 × 문서 순위 점수(1위=1) + 0.05 × 핵심어 포함. 임베딩이 없으면 키워드 점수.
+    같은 글(공백 무시)이거나 거의 같은 조각(코사인 0.97 이상)은 하나만 남기고, 조각 수·글자 수 상한 안에서 고른다."""
+    with span("chunk_select", docs=len(sources)) as s:
+        chunks = [c for d, _ in sources for c in split_chunks(d)]
+        if not chunks:
+            s.set(chunks=0)
+            return []
+        top = sources[0][1] or 1.0
+        prior = {d.path: sc / top for d, sc in sources}
+        low_words = [w.lower() for w in words if w]
+        qv = INDEX.embeddings.vector(query)
+        vecs = INDEX.embeddings.embed([f"{c['doc'].title} > {c['heading']}\n{c['text']}" for c in chunks]) if qv else None
+        norm = lambda v: math.sqrt(sum(x * x for x in v)) or 1.0
+        cos = lambda a, b: sum(x * y for x, y in zip(a, b)) / (norm(a) * norm(b))
+        for i, c in enumerate(chunks):
+            hit = any(w in c["text"].lower() for w in low_words)
+            if vecs:
+                c["vec"] = vecs[i]
+                c["score"] = cos(qv, vecs[i]) + 0.08 * prior[c["doc"].path] + 0.05 * hit
+            else:  # 임베딩이 없으면 핵심어 출현 수로 고른다
+                c["score"] = sum(c["text"].lower().count(w) for w in low_words) / 10 + 0.08 * prior[c["doc"].path]
+        picked, seen, dup, used = [], set(), 0, 0
+        for c in sorted(chunks, key=lambda c: -c["score"]):
+            key = re.sub(r"\s+", "", c["text"])
+            if key in seen or (vecs and any(cos(c["vec"], p["vec"]) >= 0.97 for p in picked)):
+                dup += 1
+                continue
+            if len(picked) >= GUIDE_CHUNKS or used + len(c["text"]) > GUIDE_CONTEXT_CHARS:
+                continue
+            seen.add(key)
+            picked.append(c)
+            used += len(c["text"])
+        full = sum(len(d.text) for d, _ in sources)
+        s.set(chunks=len(chunks), selected=len(picked), duplicates=dup, embeddings="on" if vecs else "off",
+              new_chunk_vectors=getattr(INDEX.embeddings, "chunk_new", 0),
+              chars_full=full, chars_selected=used, reduction=f"{100 - round(100 * used / full) if full else 0}%",
+              docs_used=len({c["doc"].path for c in picked}))
+        return picked
 
 
 def web_search_reason(sources, query: str, option: dict | None = None) -> str | None:
@@ -674,7 +825,7 @@ def template_guide(query, title, option, statements, sources) -> str:
     return "\n".join(out)
 
 
-def llm_guide(client, query, title, option, statements, sources, web=()):
+def llm_guide(client, query, title, option, statements, sources, web=(), chunks=None, revise=None):
     """LLM 이 쓰는 가이드를 완성된 줄 단위로 낸다(다이어그램 자리표시자는 원문으로 되돌린 뒤). 최종 Markdown 은 return 값, 실패하면 None."""
     # mermaid 다이어그램은 LLM 이 글로 풀어 쓰거나 고치지 않도록 자리표시자로 바꿔 넘기고, 응답에서 원문으로 되돌린다.
     diagrams: list[str] = []
@@ -684,9 +835,17 @@ def llm_guide(client, query, title, option, statements, sources, web=()):
         labels = [re.sub(r"<br\s*/?>", " ", x) for x in re.findall(r'\["([^"]+)"\]', m.group(0))[:6]]
         return f"[[DIAGRAM-{len(diagrams)}]] (mermaid 다이어그램: {', '.join(labels)})"
 
-    # 문서를 잘라 넣으면 명령어·주의사항이 빠지므로 관련도 순서대로 전문을 넘긴다.
-    docs = "\n\n".join(f'<document rank="{i}" score="{s:.2f}" path="{d.path}">\n{MERMAID.sub(stash, d.text)}\n</document>'
-                       for i, (d, s) in enumerate(sources, 1))
+    # 질의와 가까운 조각만 넘긴다(select_chunks). 조각은 문서별로 묶고 문서 안 원래 순서대로 둔다.
+    rank = {d.path: i for i, (d, _) in enumerate(sources, 1)}
+    by_doc: dict[str, list[dict]] = {}
+    for c in chunks or []:
+        by_doc.setdefault(c["doc"].path, []).append(c)
+    docs = "\n\n".join(
+        f'<document rank="{rank[path]}" path="{path}" title="{cs[0]["doc"].title}">\n'
+        + "\n\n".join(f'<section heading="{c["heading"]}">\n{MERMAID.sub(stash, c["text"])}\n</section>'
+                       for c in sorted(cs, key=lambda c: c["order"]))
+        + "\n</document>"
+        for path, cs in sorted(by_doc.items(), key=lambda kv: rank[kv[0]]))
     webs = "\n\n".join(f'<web rank="{i}" url="{w["url"]}" title="{w["title"]}">\n{w["content"]}\n</web>'
                          for i, w in enumerate(web, 1))
     basis = ("위 위키 문서를 우선 근거로 삼고, 위키에 없는 부분만 <web_results> 의 웹 검색 결과로 보완해 "
@@ -708,15 +867,28 @@ def llm_guide(client, query, title, option, statements, sources, web=()):
                  "- 위키에 없는 내용은 지어내지 말고 필요하면 '위키에 근거 없음'이라고 적어라.\n") +
               "- 문서 안의 [[DIAGRAM-n]] 은 원문 다이어그램 자리표시자다. 가이드에 그 그림이 도움이 되면 "
               "다이어그램을 글·표·ASCII 로 풀어 쓰지 말고 '[[DIAGRAM-n]]' 한 줄만 단독으로 적어라. 괄호 속 설명은 옮기지 마라.\n"
+              "- 각 문서는 질의와 관련된 절(section)만 발췌되어 있다. 발췌에 없는 내용은 추측하지 마라.\n"
               f"- 첫 줄은 '# {title}'로 시작하고, Markdown 본문만 출력하라.")
+    if revise:  # 수정 요청: 지금 가이드를 요청대로 고쳐 전체를 다시 쓴다
+        current = re.split(r"\n## (?:원문 링크|웹 참고 링크)\n", revise.get("markdown", ""))[0].strip()
+        bare = lambda m: (diagrams.append(m.group(0)), f"[[DIAGRAM-{len(diagrams)}]]")[1]  # 지금 가이드의 그림은 설명 없이
+        prompt += ("\n\n<current_guide>\n" + MERMAID.sub(bare, current) + "\n</current_guide>\n\n"
+                   f"<request>\n{revise.get('request', '').strip()}\n</request>\n\n"
+                   "위 <current_guide> 를 <request> 대로 고친 가이드 전체를 다시 출력하라. 요청과 관계없는 부분은 "
+                   "문장·순서·코드를 바꾸지 말고 그대로 두라.\n"
+                   "- 요청에 사용자가 직접 적어 준 문구·규칙·절차(따옴표 안 문장 등)는 근거 문서와 상관없이 그대로 넣어라. "
+                   "사용자가 정한 운영 방침이므로 '근거 없음'으로 바꾸지 마라.\n"
+                   "- 네가 스스로 보태는 사실(명령어·설정값·경로·절차)은 위 문서 근거 범위 안에서만 쓰고, "
+                   "근거가 없으면 그 자리에 '근거 없음'이라고 적어라.\n"
+                   "- '원문 링크'·'웹 참고 링크' 절은 쓰지 마라(자동으로 붙는다).")
     system = "너는 사내 위키 문서를 근거로 운영 가이드를 작성하는 기술 문서 작성자다."
-    with span("llm_generate", model=llm_model(client), docs=len(sources), web=len(web), diagrams=len(diagrams),
-              prompt_chars=len(system) + len(prompt)) as s:
-        result = yield from _llm_run(client, system, prompt, diagrams, sources, web, s)
+    with span("llm_generate", model=llm_model(client), docs=len(by_doc), context_chunks=len(chunks or []), web=len(web),
+              diagrams=len(diagrams), revise=bool(revise), prompt_chars=len(system) + len(prompt)) as s:
+        result = yield from _llm_run(client, system, prompt, diagrams, sources, web, s, chunks)  # chunks → context
     return result
 
 
-def _llm_run(client, system, prompt, diagrams, sources, web, s):
+def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
     """llm_guide 의 호출부. s(llm_generate 노드)에 첫 응답 시각, 줄 수, 토큰 사용량, 실패 이유를 남긴다."""
     text, pending = "", ""
     started, first, n_lines = time.perf_counter(), None, 0
@@ -731,7 +903,7 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s):
             if first is None:
                 first = (time.perf_counter() - started) * 1000
             n_lines += done.count("\n")
-            yield DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), done)
+            yield unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), done))
 
     try:
         if hasattr(client, "chat"):  # OpenAI / Azure OpenAI 게이트웨이
@@ -769,19 +941,29 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s):
                 return None
             text = "".join(b.text for b in res.content if b.type == "text").strip()
             yield from lines(text + "\n")
-        text = DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text)
+        text = unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text))
         s.set(first_line_ms=round(first) if first is not None else None, lines=n_lines, out_chars=len(text))
         if not text:
             s.fail("빈 응답 → 템플릿 사용")
             return None
-        if sources:
-            text += "\n\n## 원문 링크\n\n" + "\n".join(f"- [{d.title}]({view_link(d.path)}) — {d.path}" for d, _ in sources)
+        used = {c["doc"].path for c in context or []}
+        cited = [(d, sc) for d, sc in sources if d.path in used] or sources
+        if cited:
+            text += "\n\n## 원문 링크\n\n" + "\n".join(f"- [{d.title}]({view_link(d.path)}) — {d.path}" for d, _ in cited)
         if web:
             text += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
         return text
     except Exception as exc:
         s.fail(f"LLM 호출 실패 → 템플릿 사용: {type(exc).__name__}: {exc}")
         return None
+
+
+BOX_NOTE = re.compile(r"[ 	]*\(mermaid 다이어그램:.*$", re.M)
+
+
+def unbox(text: str) -> str:
+    """LLM 이 자리표시자 옆의 '(mermaid 다이어그램: …)' 설명까지 옮겨 쓴 경우 지운다(그 줄의 나머지)."""
+    return BOX_NOTE.sub("", text)
 
 
 def restore(diagrams: list[str], m: re.Match) -> str:
@@ -808,7 +990,7 @@ mark{background:var(--hl);padding:0 1px;border-radius:2px}
 .guide h1{font-size:26px;margin:0 0 8px}.guide h2{font-size:19px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-top:28px}.guide h3{font-size:16px;margin-top:20px}.guide blockquote{margin:0;padding:8px 14px;background:var(--soft);border-left:4px solid var(--blue);color:#4a5568}.guide a{color:var(--blue);text-decoration:none}.guide ul{padding-left:22px}.guide table{border-collapse:collapse;width:100%;font-size:12px;display:block;overflow-x:auto}.guide td,.guide th{border:1px solid var(--line);padding:5px 8px;text-align:left}.guide th{background:var(--soft)}
 .wait{text-align:center;padding:36px 0;color:var(--muted)}.wait b{color:var(--ink);font-variant-numeric:tabular-nums}.prog{height:6px;max-width:320px;margin:14px auto 0;background:#e5eaf0;border-radius:3px;overflow:hidden}.prog i{display:block;width:35%;height:100%;background:var(--blue);border-radius:3px;animation:slide 1.4s ease-in-out infinite}@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(290%)}}
 .guide pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow-x:auto;font:12.5px/1.55 Consolas,"Cascadia Mono","D2Coding",monospace}.guide pre code{font:inherit}.guide pre code.hljs{background:none;padding:0}.guide .mermaid{margin:14px 0;text-align:center;overflow-x:auto}
-.tools{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-bottom:8px;flex-wrap:wrap}.regok{background:#e3f5ec;color:#1e7a4f;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px}.regerr{background:#fdecec;color:#9b2c2c;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px}.gen{margin-right:auto;font-size:12px;font-weight:600;border-radius:999px;padding:4px 12px;background:#f1f5f9;color:#475569}.gen.llm{background:#dcfce7;color:#166534}.gen.live{background:#dbeafe;color:#1e40af}.tools[hidden]{display:none}.muted{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px 0}
+.tools{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-bottom:8px;flex-wrap:wrap}.revise{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}.revise textarea{width:100%;margin:6px 0;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;resize:vertical}.revbar{display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:12px}.regok{background:#e3f5ec;color:#1e7a4f;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px}.regerr{background:#fdecec;color:#9b2c2c;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px}.gen{margin-right:auto;font-size:12px;font-weight:600;border-radius:999px;padding:4px 12px;background:#f1f5f9;color:#475569}.gen.llm{background:#dcfce7;color:#166534}.gen.live{background:#dbeafe;color:#1e40af}.tools[hidden]{display:none}.muted{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px 0}
 @media(max-width:820px){.grid{grid-template-columns:1fr}.opts{grid-template-columns:1fr}}
 </style></head><body>
 <header class="top"><div class="mark">G</div><div class="brand">Wiki Guide Search</div><div class="crumb">wiki-repo 의미 검색 · 가이드 생성</div></header>
@@ -816,7 +998,7 @@ mark{background:var(--hl);padding:0 1px;border-radius:2px}
 <form class="search" id="form"><input id="q" placeholder="예: 프록시 설정 가이드 알려줘" autocomplete="off" autofocus><button id="go">검색</button></form>
 <div class="steps"><span class="step" id="s1">1. 문서 검색</span><span class="step" id="s2">2. 유형 확인</span><span class="step" id="s3">3. 관련 문서 재검색</span><span class="step" id="s4">4. 가이드 생성</span></div>
 <div class="grid"><section class="card"><h2>검색 결과</h2><div id="analysis"></div><div id="results"><div class="empty">질문을 입력하세요.</div></div></section>
-<section><div id="ask"></div><div class="card" id="guideCard"><div class="tools" id="tools" hidden><span class="gen" id="gen"></span><button class="ghost" id="regen" title="같은 질의·유형으로 가이드를 다시 만든다">다시 생성</button><button class="ghost" id="copy">Markdown 복사</button><button class="ghost" id="dl">.md 다운로드</button><button id="reg" title="02. 운영 > 00. AI 문서 생성 아래에 등록">Wiki에 등록</button></div><div id="regResult"></div><div class="guide" id="guide"><div class="empty">검색 후 가이드가 여기에 생성됩니다.</div></div></div></section></div>
+<section><div id="ask"></div><div class="card" id="guideCard"><div class="tools" id="tools" hidden><span class="gen" id="gen"></span><button class="ghost" id="regen" title="같은 질의·유형으로 가이드를 다시 만든다">다시 생성</button><button class="ghost" id="copy">Markdown 복사</button><button class="ghost" id="dl">.md 다운로드</button><button id="reg" title="02. 운영 > 00. AI 문서 생성 아래에 등록">Wiki에 등록</button></div><div id="regResult"></div><div class="guide" id="guide"><div class="empty">검색 후 가이드가 여기에 생성됩니다.</div></div><div class="revise" id="revise" hidden><b>수정 요청</b> <span class="muted" id="revCount"></span><textarea id="revText" rows="2" placeholder="예: 3단계를 더 자세히 써 주세요 / nginx 예시를 추가해 주세요 / 주의사항을 표로 정리해 주세요"></textarea><div class="revbar"><span class="muted">지금 가이드와 요청을 함께 보내 고친 판을 만듭니다. 요청과 관계없는 부분은 그대로 둡니다.</span><button id="revBtn">수정 반영</button></div></div></div></section></div>
 </div>
 <script>
 const $=s=>document.querySelector(s);let state={q:'',md:'',title:'guide'};
@@ -841,22 +1023,24 @@ if(d.clarify){steps(2);$('#guide').innerHTML='<div class="empty">위에서 유�
 $('#ask').innerHTML=`<div class="card ask" style="margin-bottom:16px"><h2>${esc(d.clarify.question)}</h2><div class="opts">${d.clarify.options.map(o=>`<button class="opt" data-k="${esc(d.clarify.key)}" data-v="${esc(o.id)}"><b>${esc(o.label)}</b><span>${esc(o.desc)}</span></button>`).join('')}</div></div>`;
 document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>guide(b.dataset.k,b.dataset.v,b.querySelector('b').textContent))}
 else guide(d.variant&&d.variant.key,d.variant&&d.variant.id,d.variant&&d.variant.label)}
-async function guide(key,variant,label){steps(3);Object.assign(state,{key,variant,label,done:null});$('#regResult').innerHTML='';if(label)$('#ask').innerHTML=`<div class="card" style="margin-bottom:16px">선택한 유형: <b>${esc(label)}</b> <button class="ghost" style="float:right;padding:3px 10px" id="re">다시 선택</button></div>`;const re=$('#re');if(re)re.onclick=()=>search(state.q);
+async function guide(key,variant,label,revise){steps(3);Object.assign(state,{key,variant,label,done:null});state.rev=revise?(state.rev||0)+1:0;$('#regResult').innerHTML='';$('#revise').hidden=true;const prev=state.md;if(label)$('#ask').innerHTML=`<div class="card" style="margin-bottom:16px">선택한 유형: <b>${esc(label)}</b> <button class="ghost" style="float:right;padding:3px 10px" id="re">다시 선택</button></div>`;const re=$('#re');if(re)re.onclick=()=>search(state.q);
 const t0=Date.now(),sec=()=>Math.floor((Date.now()-t0)/1000);
-$('#guide').innerHTML='<div class="wait">관련 문서를 다시 검색해 가이드를 만드는 중… <b id="elapsed">0초</b><div class="prog"><i></i></div></div>';
+$('#guide').innerHTML='<div class="wait">'+(revise?'수정 요청을 반영하는 중… ('+esc(revise.request)+')':'관련 문서를 다시 검색해 가이드를 만드는 중…')+' <b id="elapsed">0초</b><div class="prog"><i></i></div></div>';
 const tick=setInterval(()=>{const e=$('#elapsed');if(e)e.textContent=sec()+'초';const g=$('#gen');if(g.classList.contains('live'))g.textContent=g.textContent.replace(/\d+초$/,sec()+'초')},1000);
 if(state.ctl)state.ctl.abort();const ctl=state.ctl=new AbortController();const g=$('#gen');let model=null,text='',drawn=0,timer=null;
 const draw=()=>{timer=null;if(drawn!==text.length){drawn=text.length;$('#guide').innerHTML=md(text)}};
 const on=e=>{if(e.type==='meta'){model=e.model;state.title=e.title;state.meta={sources:e.results.length,web:(e.web||[]).length};showResults(e,label?label+' 기준 재검색':'')}
 else if(e.type==='delta'){if(!text){steps(4);g.className='gen live';g.textContent=`작성 중 · ${model||'LLM'} · ${sec()}초`;$('#tools').hidden=false}text+=e.text;if(!timer)timer=setTimeout(draw,120)}
-else if(e.type==='done'){clearTimeout(timer);steps(4,true);state.md=e.markdown;state.done=e;$('#guide').innerHTML=md(e.markdown);g.className='gen'+(e.mode==='llm'?' llm':'');g.textContent=`생성 방식: ${e.mode==='llm'?'LLM 작성'+(e.model?' · '+e.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams();highlightCode()}};
-try{const r=await fetch('/api/guide/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:state.q,key,variant}),signal:ctl.signal});if(!r.ok)throw new Error(await r.text());
+else if(e.type==='done'){clearTimeout(timer);steps(4,true);if(e.revise_failed){state.rev--;$('#regResult').innerHTML='<div class="regerr">수정 요청을 반영하지 못해 이전 가이드를 그대로 보여 줍니다.</div>'}state.md=e.markdown;state.done=e;$('#revise').hidden=false;$('#revCount').textContent=state.rev?`(수정 ${state.rev}회 반영됨)`:'';$('#guide').innerHTML=md(e.markdown);g.className='gen'+(e.mode==='llm'?' llm':'');g.textContent=`생성 방식: ${e.mode==='llm'?'LLM 작성'+(e.model?' · '+e.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams();highlightCode()}};
+try{const r=await fetch('/api/guide/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:state.q,key,variant,revise}),signal:ctl.signal});if(!r.ok)throw new Error(await r.text());
 const rd=r.body.getReader(),dec=new TextDecoder();let buf='';for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(line.trim())on(JSON.parse(line))}}}
 catch(err){if(err.name==='AbortError')return;$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+' ('+sec()+'초)</div>'}finally{clearInterval(tick)}}
 $('#form').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)search(q).catch(err=>{$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+'</div>'})};
 $('#copy').onclick=()=>navigator.clipboard.writeText(state.md).then(()=>{$('#copy').textContent='복사됨';setTimeout(()=>$('#copy').textContent='Markdown 복사',1200)});
 $('#dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([state.md],{type:'text/markdown'}));a.download=state.title.replace(/\s+/g,'-')+'.md';a.click()};
 $('#regen').onclick=()=>guide(state.key,state.variant,state.label);
+// 7단계 수정 요청: 지금 가이드와 요청을 함께 보내 고친 판을 받는다. 결과는 그대로 'Wiki에 등록'할 수 있다.
+$('#revBtn').onclick=()=>{const req=$('#revText').value.trim();if(!req||!state.done)return;$('#revText').value='';guide(state.key,state.variant,state.label,{markdown:state.md,request:req})};$('#revText').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))$('#revBtn').click()});
 // 시나리오 1의 가벼운 승인: 미리보기를 확인한 사람이 눌러야 등록한다(같은 제목이면 갱신).
 $('#reg').onclick=async()=>{if(!state.done)return;if(!confirm(`'${state.title}'을(를) Azure DevOps Wiki의 '02. 운영 > 00. AI 문서 생성' 아래에 등록할까요?\n팀원에게 공개되며, 같은 제목이 있으면 갱신됩니다.`))return;
 const b=$('#reg'),r=$('#regResult');b.disabled=true;b.textContent='등록 중…';r.innerHTML='';
@@ -925,7 +1109,10 @@ class Handler(BaseHTTPRequestHandler):
                     d = do_guide(q, body.get("key"), body.get("variant"))
                     t.set(mode=d.get("mode"), model=d.get("model"), chars=len(d.get("markdown") or ""))
                     self.send_json(d); return
-                self.send_stream(guide_events(q, body.get("key"), body.get("variant")), t)
+                revise = body.get("revise") if isinstance(body.get("revise"), dict) else None
+                if revise:
+                    t.set(revise=str(revise.get("request", ""))[:80])
+                self.send_stream(guide_events(q, body.get("key"), body.get("variant"), revise), t)
         except (ValueError, json.JSONDecodeError):
             self.send_json({"error": "bad request"}, 400)
 

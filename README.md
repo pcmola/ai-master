@@ -10,7 +10,7 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 |---|---|---|---|
 | 이름 | 프록시 설정 가이드 자동 생성 | 프록시 현황 Wiki 현행화 | 장애 감지 및 자동 조치 |
 | 내용 | 명령어 한 줄로 기존 Wiki를 검색해 LLM이 통합 가이드 문서를 생성 | Wiki 현황과 Azure의 '*xy' VM을 비교하고 승인 후 반영 | LLM이 장애 로그·소스를 분석해 원인·수정안 도출 후 승인 요청 |
-| 트리거 | 사용자 명령 | 직접 실행 / 스케줄러 | 직접 실행 / 스케줄러 |
+| 트리거 | 사용자 명령 | 직접 실행 | 직접 실행 / 스케줄러 |
 | 승인 | 미리보기 확인 후 "Wiki에 등록" 버튼 | Teams Yes/No | Teams Yes/No |
 | 결과물 | 가이드 Wiki 문서 (링크 제공) | Wiki 현황 갱신 + DevOps Task | 원인·수정안 (PR은 확장) |
 | 구현 | `wiki_tools/wiki_search.py` | `proxy_tools/proxy_status_sync.py` | `proxy_tools/proxy_log_detect.py` 등 (일부) |
@@ -28,7 +28,7 @@ flowchart TD
     a --> s["2. Wiki 검색<br/>키워드 + 임베딩"]
     wiki[("Azure DevOps Wiki<br/>(wiki-repo)")] --> s
     s -. "근거 약함" .-> web["웹 검색<br/>(Tavily)"]
-    s --> r["3. RAG·LLM 통합<br/>상위 문서 선별"]
+    s --> r["3. RAG·LLM 통합<br/>관련 조각(청크)만 선별"]
     web -.-> r
     r --> g["4. 가이드 생성<br/>근거 문서·출처 표기"]
     g --> u{"5. 사용자 확인<br/>미리보기"}
@@ -36,6 +36,8 @@ flowchart TD
     u -- "Wiki에 등록" --> reg["6. Wiki 등록<br/>02. 운영 › 00. AI 문서 생성<br/>같은 제목은 갱신"]
     reg -- "push" --> wiki
     reg --> out(["7. 결과 제공<br/>Wiki 링크"])
+    u -- "수정 요청" --> rv["수정 반영<br/>지금 가이드 + 요청"]
+    rv --> u
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
     classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
@@ -44,8 +46,7 @@ flowchart TD
     classDef io fill:#EEF2FF,stroke:#6366F1,color:#312E81
     classDef ext fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
     class q,out io
-    class a,s,g,reg done
-    class r part
+    class a,s,r,g,reg,rv done
     class u user
     class wiki,web ext
 ```
@@ -54,11 +55,11 @@ flowchart TD
 |---|---|---|---|
 | 1. 사용자 명령 입력 | "프록시 설정 가이드 알려줘", 주제·유형 인식, 모호하면 되묻기(포워드/리버스), 오타 교정 | ✅ | 개념 사전, 자모 분해 + 편집 거리 오타 교정, 유형 선택 |
 | 2. Azure DevOps Wiki 검색 | 키워드 검색(proxy = 프록시 = 프락시), 의미 기반 검색(임베딩), 근거가 약하면 웹 검색 보완 | ✅ | BM25 + 문자 bigram + `text-embedding-3-large`, Tavily |
-| 3. RAG·LLM 분석·통합 | 관련 문서 선별, 중복·상충 정리, 단계별 구성 | 🟡 | 핵심 개념이 나오는 상위 15개 문서 전문을 LLM에 전달(청킹 없음) |
+| 3. RAG·LLM 분석·통합 | 관련 문서 선별, 중복·상충 정리, 단계별 구성 | ✅ | 상위 15개 문서를 제목 단위 조각(청크)으로 나눠 질의와 가까운 조각 24개만 LLM에 전달(코드 블록·다이어그램은 자르지 않음, 같은·거의 같은 조각은 하나만). 입력 8,364 → 4,801토큰, 생성 57 → 34초(2026-10-24 측정). AI가 등록한 문서(00. AI 문서 생성)는 재료에서 제외 |
 | 4. 가이드 문서 생성 | 설정 방법·예제·주의사항, 단계마다 근거 문서, 웹 출처 따로 표시, 원문 다이어그램 유지 | ✅ | `OPENAI_MODEL`(gpt-6.1-sol) |
 | 5. 사용자 확인 | 미리보기, "Wiki에 등록" 또는 "다시 생성", Markdown 복사·다운로드 | ✅ | "Wiki에 등록"은 확인 창(팀원 공개·같은 제목 갱신 안내) 후 진행 |
 | 6. Wiki 문서 등록 | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목`으로 등록, 같은 제목이면 갱신(번호 유지, 이력은 git), Wiki 문서 규칙(채번·`.order`·인코딩·프록시 표기) 준수, 머리에 "AI 생성 · 모델 · 생성 일시 · 질의 · 근거 수" | ✅ | `wiki_tools/wiki_register.py`. 로컬 뷰어 링크를 Wiki 안 링크로 바꾸고 push |
-| 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | 🟡 | 등록 후 "Wiki에서 열기"·로컬 뷰어 링크. 추가 질문·수정 요청은 없음 |
+| 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | ✅ | 등록 후 "Wiki에서 열기"·로컬 뷰어 링크. 가이드 아래 "수정 요청" 입력칸: 지금 가이드와 요청을 함께 보내 고친 판을 받음(요청과 관계없는 부분은 유지, 사용자가 적은 문구는 그대로 반영). 고친 판을 그대로 등록 가능 |
 
 ### 시나리오 2. 프록시 현황 Wiki 현행화
 
@@ -85,15 +86,14 @@ flowchart TD
     classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
     classDef io fill:#EEF2FF,stroke:#6366F1,color:#312E81
     classDef ext fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
-    class t part
-    class w,az,c,ai,task,wu,rep,man done
+    class t,w,az,c,ai,task,wu,rep,man done
     class ap user
     class end0,end1 io
 ```
 
 | 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
-| 1. 점검 트리거 | 직접 실행, 스케줄러(매일 정해진 시각) | 🟡 | 직접 실행. 스케줄러 등록 안 됨(`--yes`로 무인 실행 가능) |
+| 1. 점검 트리거 | 직접 실행 | ✅ | 직접 실행. 스케줄러는 하지 않기로 함(2026-10-24). 출력은 `data/logs/scenario2.log`에도 남고 허브 "작업 로그"에서 봄 |
 | 2. Wiki 현황 조회 | 표준 표는 규칙으로 파싱, 형식이 다른 문서는 LLM이 표준 형식으로 바꾸고 원문 대조로 검증 | ✅ | `wiki_parse_llm`: VM 이름이 원문에 없으면 버리고, IP·SIZE가 원문에 없으면 비움. 실제 문서 `Proxy VM 정리 ('26.09.17 기준)` 11행 확인. LLM으로 읽은 문서는 7단계에서 자동 수정하지 않고 Task에 수동 반영 요청 |
 | 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | ✅ | 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있으면 이름과 상관없이 대상, 없으면 이름 규칙. 트레이스에 `by_tag`·`by_name` |
 | 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | ✅ | 테스트 정답 대조(`--verify`) |
@@ -262,6 +262,7 @@ Copy-Item .env.sample .env
 | `WEB_SEARCH_MAX` | `5` | 웹 검색 결과를 몇 건까지 가져올지 |
 | `TRACE_KEEP_DAYS` | `14` | `data/traces/`의 요청별 트레이스 보관 일수 |
 | `SCENARIO2_TAG` | `role=proxy` | 시나리오 2에서 이 태그가 있는 VM은 이름과 상관없이 Proxy로 봄(`key=value` 또는 `key`) |
+| `GUIDE_CHUNKS` / `GUIDE_CHUNK_CHARS` / `GUIDE_CONTEXT_CHARS` | `24` / `1500` / `16000` | 시나리오 1 RAG: LLM에 넘길 조각 수, 조각 하나의 대략 길이, 전체 글자 수 상한. 조각 임베딩은 `data/wiki_search_chunks.json`에 캐시 |
 | `WIKI_REGISTER_PUSH` | `1` | 시나리오 1 "Wiki에 등록" 때 Azure DevOps Wiki로 push(`0`이면 로컬 커밋만) |
 | `SQUID_HOST` | - | 정책 감지 대상 프록시 VM의 공용 IP |
 | `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
@@ -281,6 +282,7 @@ Copy-Item .env.sample .env
 | `proxy_policy_state/` | squid_policy_publish.py (정책 기준 스냅샷, 변경 이력) |
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
+| `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력. 허브 "작업 로그"에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py (요청별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
@@ -330,7 +332,7 @@ hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다.
 
 ### 허브 (hub.py)
 
-http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 서버 화면은 "화면" 버튼으로 새 창에서 엽니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
+http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 실행하고 끝나는 작업(시나리오 2)의 출력은 "작업 로그" 줄에서 봅니다. 서버 화면은 "화면" 버튼으로 새 창에서 엽니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
 
 ```powershell
 python hub.py                # 허브를 켜고 크롬으로 연다
@@ -455,7 +457,7 @@ flowchart TD
 01:39:55 [07902dac] ■ guide/stream ok 58.1s | llm_generate 57.3s · web_decision 0.4s … | mode=llm model=gpt-6.1-sol
 ```
 
-- 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
+- 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `chunk_select`(조각 수·줄어든 글자 수·중복) → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
 - 줄 앞 표시: `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
@@ -596,7 +598,7 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 
 | 단계 | 하는 일 |
 |---|---|
-| 1. trigger | 직접 실행 또는 스케줄러(`--yes`면 승인 생략) |
+| 1. trigger | 직접 실행(`--yes`면 승인 생략) |
 | 2. wiki_read | Wiki 문서의 `## VM 목록` 표를 읽음 (머리글 이름으로 칸을 찾음) |
 | 3. azure_read | 리소스 그룹에서 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM의 IP·상태·SIZE·리전 |
 | 4. compare | 신규·삭제·변경(사설/공인 IP, 상태, SIZE, LOCATION, RESOURCE GROUP). 차이 없으면 종료. Proxy(용도) 칸은 사람이 관리하므로 비교하지 않음 |
@@ -616,7 +618,7 @@ python proxy_tools\proxy_status_sync.py --dry-run --wiki-page "AI-Master-프로�
 
 - 버튼을 누르면 열린 브라우저 창이 진행 화면으로 바뀌어 단계(Task 생성 → Wiki 현행화 → 완료 처리)를 실시간으로 보여 주고, 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다. 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있고, 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
-- 노드별 기록은 콘솔과 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
+- 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **작업 로그 › 시나리오 2**에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
 
 ## 실행 예시

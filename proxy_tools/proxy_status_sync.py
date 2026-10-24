@@ -655,7 +655,50 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
     return 0
 
 
+LOG_FILE = DATA_DIR / "logs" / "scenario2.log"  # 허브의 '작업 로그'에서 본다
+
+
+class Tee:
+    """화면 출력을 그대로 로그 파일에도 쓴다."""
+
+    def __init__(self, stream, file):
+        self.stream, self.file = stream, file
+
+    def write(self, text):
+        self.stream.write(text)
+        self.file.write(text)
+        return len(text)
+
+    def flush(self):
+        self.stream.flush()
+        self.file.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+def open_log():
+    """data/logs/scenario2.log 를 연다(2MB 가 넘으면 .old.log 로 넘긴다). 실행마다 머리줄을 쓴다."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if LOG_FILE.is_file() and LOG_FILE.stat().st_size > 2 * 1024 * 1024:
+        LOG_FILE.replace(LOG_FILE.with_suffix(".old.log"))
+    f = LOG_FILE.open("a", encoding="utf-8")
+    f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 시작: proxy_status_sync.py {' '.join(sys.argv[1:])} =====\n")
+    return f
+
+
 def main() -> int:
+    log = open_log()
+    out, err = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = Tee(out, log), Tee(err, log)
+    try:
+        return _main()
+    finally:
+        sys.stdout, sys.stderr = out, err
+        log.close()
+
+
+def _main() -> int:
     p = argparse.ArgumentParser(description="시나리오 2: Proxy 현황 Wiki 현행화")
     p.add_argument("--dry-run", action="store_true", help="1~4단계만 하고 할 일을 출력")
     p.add_argument("--verify", action="store_true", help="비교 결과를 테스트 정답(data/scenario2/expected_diff.json)과 대조")

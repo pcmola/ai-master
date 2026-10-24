@@ -250,10 +250,15 @@ def watch(interval: float = 5):
         time.sleep(interval)
 
 
+# 서버가 아니라 실행하고 끝나는 작업. 작업이 스스로 data/logs/<key>.log 에 출력을 남긴다.
+JOBS = {"scenario2": "시나리오 2 · Wiki 현행화 (proxy_status_sync.py)"}
+
+
 def log_tail(key: str, lines: int = 300) -> str:
     log = LOG_DIR / f"{key}.log"
     if not log.is_file():
-        return "(로그 없음: 허브에서 시작한 서버만 로그가 남습니다)"
+        return ("(로그 없음: 작업을 실행하면 남습니다)" if key in JOBS
+                else "(로그 없음: 허브에서 시작한 서버만 로그가 남습니다)")
     with open(log, "rb") as f:
         f.seek(max(0, log.stat().st_size - 128 * 1024))
         text = f.read().decode("utf-8", errors="replace")
@@ -282,7 +287,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         if url.path == "/":
-            self.send_body(PAGE.replace("__TITLE__", HUB_TITLE).encode("utf-8"), "text/html; charset=utf-8")
+            self.send_body(PAGE.replace("__TITLE__", HUB_TITLE).replace("__JOBS__", json.dumps(JOBS, ensure_ascii=False))
+                           .encode("utf-8"), "text/html; charset=utf-8")
         elif url.path == "/api/status":
             try:
                 self.send_json({"servers": server_status(), "time": datetime.now().isoformat(timespec="seconds")})
@@ -291,7 +297,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 500)
         elif url.path == "/api/log":
             key = parse_qs(url.query).get("key", [""])[0]
-            if key not in BY_KEY:
+            if key not in BY_KEY and key not in JOBS:
                 self.send_error(404)
                 return
             self.send_body(log_tail(key).encode("utf-8"), "text/plain; charset=utf-8")
@@ -361,12 +367,16 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <main>
 <div class="card"><table><thead><tr><th>상태</th><th>서버</th><th>주소</th><th class="hide-sm">PID · 실행 시간</th><th>관리</th></tr></thead>
 <tbody id="rows"><tr><td colspan="5" class="muted">불러오는 중…</td></tr></tbody></table><div id="err" class="err" hidden></div></div>
+<div class="card"><div class="tabs"><b>작업 로그</b><span id="jobs"></span>
+<span class="muted" style="margin-left:auto">실행하고 끝나는 작업의 출력 (data/logs)</span></div></div>
 <div class="card" id="panel" hidden><div class="tabs"><button id="tab-log" class="on">로그</button><span class="name" id="pname"></span>
 <span class="muted" style="margin-left:auto" id="phint"></span></div>
 <pre id="log"></pre></div>
 </main>
 <script>
 let servers=[], selected=null;
+const JOBS=__JOBS__;
+document.getElementById('jobs').innerHTML=Object.entries(JOBS).map(([k,t])=>`<button style="margin-left:8px" onclick="pick('${k}')">${t}</button>`).join('');
 const LABEL={running:'실행 중',starting:'시작 중',stopped:'꺼짐'};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function since(iso){if(!iso)return'';const s=Math.max(0,(Date.now()-new Date(iso))/1000);
@@ -398,8 +408,9 @@ async function refresh(){
 async function loadLog(){const pre=document.getElementById('log');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
   pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(selected))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
 // 하단 패널은 로그만 보여 준다. 서버 화면은 '화면' 버튼으로 새 창에서 연다.
-function pick(key){selected=key;const s=servers.find(x=>x.key===key);if(!s)return;document.getElementById('panel').hidden=false;
-  document.getElementById('pname').textContent=s.title;document.getElementById('phint').textContent='data/logs/'+s.key+'.log';loadLog();render()}
+function pick(key){const s=servers.find(x=>x.key===key);const title=s?s.title:JOBS[key];if(!title)return;selected=key;
+  document.getElementById('panel').hidden=false;document.getElementById('pname').textContent=title;
+  document.getElementById('phint').textContent='data/logs/'+key+'.log';loadLog();render()}
 refresh();setInterval(refresh,3000);
 </script></body></html>"""
 
