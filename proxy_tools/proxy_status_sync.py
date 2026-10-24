@@ -2,7 +2,7 @@
 Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 뒤 결과를 Teams 로 알린다.
 
 단계(노드별 트레이스는 data/traces/scenario2-YYYYMMDD.jsonl 과 콘솔에 남는다)
-1. trigger      직접 실행 또는 스케줄러(--yes 로 승인 생략 가능)
+1. trigger      직접 실행(허브 '시나리오 실행' 탭 또는 명령줄)
 2. wiki_read    Wiki 문서의 'VM 목록' 표를 규칙으로 읽는다. 그 형식이 아니면 wiki_parse_llm: LLM 이 표준 형식으로
                 바꾸고, VM 이름이 원문에 실제로 있는지 대조한다(없으면 버림, IP 도 원문에 없으면 비움).
                 LLM 으로 읽은 문서는 형식이 제각각이라 7단계에서 표를 자동으로 고치지 않고 Task 에 수동 반영을 남긴다
@@ -10,26 +10,25 @@ Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 �
                 끝나는 VM 의 IP·상태·SIZE·리전을 읽는다
 4. compare      신규·삭제·변경(사설/공인 IP, 상태, SIZE, 리전). 차이가 없으면 여기서 끝난다
    llm_summary  (AI) 차이 전체를 LLM(OPENAI_MODEL)으로 2문장 이내로 요약해 승인 카드·화면·Task 맨 위에 '참고용'으로 붙인다.
-                비교 자체는 규칙으로 하고 AI 는 설명만 한다. 실패하면 규칙 목록만 쓴다. --no-ai 로 끈다
+                비교 자체는 규칙으로 하고 AI 는 설명만 한다. 실패하거나 LLM 설정이 없으면 규칙 목록만 쓴다
 5. approval     Teams 채널에 요약 카드(Yes/No 버튼)를 보내고 이 PC 의 승인 서버에서 답을 기다린다.
                 TEAMS_WEBHOOK_URL 이 없으면 승인 화면을 브라우저로 연다. No·시간 초과면 기록하고 끝낸다
 6. task_create  Azure DevOps 백로그 아래 Task: Epic(SCENARIO2_EPIC_ID) → Feature → 그 달 PBI → 'NN. …' Task
                 (Feature·PBI 는 있으면 다시 쓰고 없으면 만든다. 담당자, 상위 항목의 Area·Iteration)
-7. wiki_update  표를 Azure 값으로 고치고 변경 이력 행을 더해 wiki-repo 에 커밋한다(--push 일 때만 push)
+7. wiki_update  표를 Azure 값으로 고치고 변경 이력 행을 더해 wiki-repo 에 커밋한다(SCENARIO2_PUSH=1 일 때만 push)
 8. report       Task 를 완료 상태로 바꾸고 Teams 에 결과를 알린다
 
 설정(.env): AZURE_DEVOPS_ORG/PROJECT/PAT, TEAMS_WEBHOOK_URL,
             SCENARIO2_RESOURCE_GROUP(기본 WJY-PROXY-RG), SCENARIO2_ASSIGNEE(비우면 PAT 소유자),
             SCENARIO2_EPIC_ID(기본 1 '01. 공통'), SCENARIO2_FEATURE(기본 '[공통] Proxy 현황 관리'),
-            SCENARIO2_PBI(기본 'Proxy VM 현황 Wiki 현행화', 앞에 'YYMM) ' 이 붙는다)
+            SCENARIO2_PBI(기본 'Proxy VM 현황 Wiki 현행화', 앞에 'YYMM) ' 이 붙는다),
+            SCENARIO2_PUSH(기본 0: wiki-repo 로컬 커밋만, 1: Azure DevOps Wiki 로 push),
+            SCENARIO2_TIMEOUT(승인 대기 초, 기본 900), SCENARIO2_WIKI_PAGE(비교할 문서, 비우면 테스트 문서)
+테스트 문서를 비교하면 테스트 정답(data/scenario2/expected_diff.json)과 자동으로 대조한다.
 
 사용 예:
-    python proxy_tools/proxy_status_sync.py --dry-run     # 1~4단계만 하고 할 일을 출력
     python proxy_tools/proxy_status_sync.py               # Teams 승인 후 Task·Wiki 반영
-    python proxy_tools/proxy_status_sync.py --verify      # 4단계 결과를 테스트 정답(data/scenario2)과 비교
-    python proxy_tools/proxy_status_sync.py --yes --push  # 승인 없이 진행하고 Azure DevOps Wiki 로 push
-    python proxy_tools/proxy_status_sync.py --dry-run --no-ai   # AI 요약 없이
-    python proxy_tools/proxy_status_sync.py --dry-run --wiki-page "AI-Master-프로젝트/…/Proxy-VM-정리-('26.09.17-기준).md"
+    python proxy_tools/proxy_status_sync.py --dry-run     # 1~4단계만 하고 할 일을 출력(아무것도 바꾸지 않음)
 """
 
 from __future__ import annotations
@@ -59,8 +58,11 @@ except ImportError:
 KST = timezone(timedelta(hours=9))
 RESOURCE_GROUP = os.environ.get("SCENARIO2_RESOURCE_GROUP", "WJY-PROXY-RG")
 NAME_PATTERN = r"(?i)(proxy|prxy|pxy)\d*$"
-WIKI_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06-네트워크-및-Proxy"
+TEST_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06-네트워크-및-Proxy"
              / "01-네트워크-및-Proxy-현황-파악" / "Proxy-VM-현황-(테스트-구독).md")
+WIKI_PAGE = WIKI_REPO / os.environ["SCENARIO2_WIKI_PAGE"] if os.environ.get("SCENARIO2_WIKI_PAGE") else TEST_PAGE
+PUSH = os.environ.get("SCENARIO2_PUSH", "0") == "1"
+APPROVAL_TIMEOUT = float(os.environ.get("SCENARIO2_TIMEOUT") or 900)
 COLUMNS = ["NAME", "RESOURCE GROUP", "LOCATION", "사설 IP", "공인 IP", "SIZE", "Proxy", "상태"]
 FIELDS = ["name", "resource_group", "location", "private_ip", "public_ip", "size", "proxy", "state"]
 COMPARE = {"private_ip": "사설 IP", "public_ip": "공인 IP", "state": "상태", "size": "SIZE",
@@ -213,6 +215,14 @@ def stopped_alert(azure: list[dict]) -> str:
     return f"⚠ 이상 징후: 중지된 Proxy VM {len(off)}대 ({', '.join(off)}) — 장애·의도 여부를 확인해 주세요." if off else ""
 
 
+def verify_target() -> bool:
+    """정답 파일이 지금 비교하는 문서의 것일 때만 대조한다(테스트 문서)."""
+    if not EXPECTED.is_file():
+        return False
+    page = json.loads(EXPECTED.read_text(encoding="utf-8")).get("wiki_page", "")
+    return (WIKI_REPO / page).resolve() == WIKI_PAGE.resolve()
+
+
 def verify(diffs: list[dict]) -> bool:
     if not EXPECTED.is_file():
         print(f"  [verify] 정답 파일이 없습니다: {EXPECTED} (test/scenario2/setup_env.py 를 먼저 실행)")
@@ -305,7 +315,7 @@ def wiki_links(dv) -> list[tuple[str, str]]:
     except RuntimeError:
         pushed = False
     links.append(("Azure DevOps Wiki", dv.wiki_url(WIKI_PAGE)) if pushed
-                 else ("Azure DevOps Wiki 에는 없음 (로컬 전용 문서, --push 로 올림)", ""))
+                 else ("Azure DevOps Wiki 에는 없음 (로컬 전용 문서, SCENARIO2_PUSH=1 이면 올림)", ""))
     return links
 
 
@@ -514,7 +524,7 @@ def write_wiki(text: str, message: str, push: bool) -> str:
 
 def run(args) -> int:
     when = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
-    with span("trigger", mode="dry-run" if args.dry_run else "auto" if args.yes else "teams", push=args.push):
+    with span("trigger", mode="dry-run" if args.dry_run else "teams", push=PUSH):
         pass
     with span("wiki_read", page=WIKI_PAGE.name) as s:
         if not WIKI_PAGE.is_file():
@@ -536,7 +546,7 @@ def run(args) -> int:
     with span("compare") as s:
         diffs = compare(wiki, azure)
         s.set(diffs=len(diffs), summary=[describe(d) for d in diffs][:6])
-    if args.verify:
+    if verify_target():  # 테스트 문서면 정답과 자동 대조
         verify(diffs)
     alert = stopped_alert(azure)  # 실제 운영 가정: Proxy VM 은 항상 켜져 있어야 한다
     if alert:
@@ -548,7 +558,7 @@ def run(args) -> int:
             with span("teams_notify", kind="stopped_alert"):  # 문서는 맞아도 VM 이 꺼져 있으면 알린다
                 teams_notify.send(alert, "[Proxy 현황] 이상 징후", facts=[("리소스 그룹", RESOURCE_GROUP), ("감지 시각", when)])
         return 0
-    ai = None if args.no_ai else ai_summary(diffs, wiki, azure)
+    ai = ai_summary(diffs, wiki, azure)
     if ai:
         print(f"\nAI 요약 ({ai['model']}, 참고용): {ai['summary']}")
     print(f"\n차이 {len(diffs)}건" + "".join(f"\n  - {line}" for line in explained(diffs, ai)))
@@ -559,7 +569,7 @@ def run(args) -> int:
 
     dv = devops()
     links = wiki_links(dv)
-    decision, ap = (True, None) if args.yes else ask_approval(diffs, when, args.timeout, links, ai, alert)
+    decision, ap = ask_approval(diffs, when, APPROVAL_TIMEOUT, links, ai, alert)
     try:
         return apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai, parsed_by)
     except Exception as exc:
@@ -625,24 +635,24 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
         return 0
     step("Wiki 문서 현행화 중…")
 
-    with span("wiki_update", push=args.push) as s:
+    with span("wiki_update", push=PUSH) as s:
         page = updated_page(text, wiki, azure, diffs, when, f"[#{task_id}]({dv.task_url(task_id)})")
-        commit = write_wiki(page, f"Proxy 현황 현행화: 변경 {len(diffs)}건 (Task #{task_id})", args.push)
+        commit = write_wiki(page, f"Proxy 현황 현행화: 변경 {len(diffs)}건 (Task #{task_id})", PUSH)
         s.set(commit=commit, rows=len(azure))
-    print(f"Wiki 현행화 커밋 {commit}" + (" · push 완료" if args.push else " (로컬 커밋, --push 로 Azure DevOps Wiki 에 반영)"))
-    step(f"Wiki 표 {len(azure)}행으로 현행화, 변경 이력 추가 (커밋 {commit}" + (", push 완료)" if args.push else ", 로컬)"),
+    print(f"Wiki 현행화 커밋 {commit}" + (" · push 완료" if PUSH else " (로컬 커밋, SCENARIO2_PUSH=1 이면 Azure DevOps Wiki 에 반영)"))
+    step(f"Wiki 표 {len(azure)}행으로 현행화, 변경 이력 추가 (커밋 {commit}" + (", push 완료)" if PUSH else ", 로컬)"),
          "ok", ("수정된 문서 열기", viewer))
     step("Task 완료 처리와 Teams 결과 알림 중…")
 
     with span("report") as s:
         state = complete_task(dv, task_id, f"Wiki 현행화 완료: wiki-repo 커밋 {commit}"
-                                           + (" (Azure DevOps Wiki push 완료)" if args.push else " (로컬 커밋)"))
+                                           + (" (Azure DevOps Wiki push 완료)" if PUSH else " (로컬 커밋)"))
         s.set(task_state=state)
         if os.environ.get("TEAMS_WEBHOOK_URL"):
             from teams_tools import teams_notify
             teams_notify.send(f"Proxy 현황 변경 {len(diffs)}건을 반영했습니다.\n\n" + "\n".join(f"- {describe(d)}" for d in diffs),
                               "[Proxy 현황] 현행화 완료",
-                              facts=[("Wiki 문서", wiki_fact(links)), ("Task", f"[#{task_id}]({dv.task_url(task_id)}) ({state})"), ("Wiki 커밋", commit + (" · push" if args.push else " · 로컬")),
+                              facts=[("Wiki 문서", wiki_fact(links)), ("Task", f"[#{task_id}]({dv.task_url(task_id)}) ({state})"), ("Wiki 커밋", commit + (" · push" if PUSH else " · 로컬")),
                                      ("담당", owner or "-")],
                               buttons=[("수정된 Wiki 문서 열기", viewer), ("Task 열기", dv.task_url(task_id))])
             s.set(teams="sent")
@@ -700,17 +710,8 @@ def main() -> int:
 
 def _main() -> int:
     p = argparse.ArgumentParser(description="시나리오 2: Proxy 현황 Wiki 현행화")
-    p.add_argument("--dry-run", action="store_true", help="1~4단계만 하고 할 일을 출력")
-    p.add_argument("--verify", action="store_true", help="비교 결과를 테스트 정답(data/scenario2/expected_diff.json)과 대조")
-    p.add_argument("--yes", action="store_true", help="승인 없이 진행(스케줄러용)")
-    p.add_argument("--push", action="store_true", help="Wiki 커밋을 Azure DevOps Wiki 로 push")
-    p.add_argument("--timeout", type=float, default=900, help="승인 대기 시간(초, 기본 900)")
-    p.add_argument("--no-ai", action="store_true", help="AI 요약(llm_summary)을 쓰지 않음")
-    p.add_argument("--wiki-page", help="비교할 Wiki 문서(wiki-repo 기준 경로). 기본은 테스트 문서")
+    p.add_argument("--dry-run", action="store_true", help="1~4단계만 하고 할 일을 출력(아무것도 바꾸지 않음)")
     args = p.parse_args()
-    if args.wiki_page:
-        global WIKI_PAGE
-        WIKI_PAGE = WIKI_REPO / args.wiki_page
     try:
         with trace("scenario2", "proxy_status_sync", resource_group=RESOURCE_GROUP, dry_run=args.dry_run) as t:
             code = run(args)

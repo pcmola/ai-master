@@ -140,10 +140,10 @@ flowchart TD
 | 1. 점검 트리거 | 직접 실행 | ✅ | 직접 실행. 스케줄러는 하지 않기로 함(2026-10-24). 허브 **시나리오 실행** 탭에서 실행하고 `data/logs/scenario2.log`를 봄 |
 | 2. Wiki 현황 조회 | 표준 표는 규칙으로 파싱, 형식이 다른 문서는 LLM이 표준 형식으로 바꾸고 원문 대조로 검증 | ✅ | `wiki_parse_llm`: VM 이름이 원문에 없으면 버리고, IP·SIZE가 원문에 없으면 비움. 실제 문서 `Proxy VM 정리 ('26.09.17 기준)` 11행 확인. LLM으로 읽은 문서는 7단계에서 자동 수정하지 않고 Task에 수동 반영 요청 |
 | 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | ✅ | 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있으면 이름과 상관없이 대상, 없으면 이름 규칙. 트레이스에 `by_tag`·`by_name` |
-| 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | ✅ | 테스트 정답 대조(`--verify`) |
+| 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | ✅ | 테스트 문서면 정답(`data/scenario2/expected_diff.json`)과 자동 대조 |
 | 5. Teams 알림·승인 요청 | 이상 징후 + AI 요약(참고용) + 변경 목록 + Wiki 문서 링크, "현행화할까요?" Yes/No, No·시간 초과는 기록 후 종료 | ✅ | Teams 웹후크 카드, 로컬 승인 서버, 진행 화면 |
 | 6. DevOps Task 생성 | Epic → Feature → 월별 PBI 아래 Task, 변경 내역, 담당자 | ✅ | Feature·그 달 PBI가 없으면 만들고 `NN. …` Task에 변경 표를 적음. 담당자는 `SCENARIO2_ASSIGNEE`(비우면 PAT 소유자). 예: Task #2505 |
-| 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | ✅ | `--push`일 때 반영 |
+| 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | ✅ | wiki-repo에 커밋, `.env`의 `SCENARIO2_PUSH=1`이면 Azure DevOps Wiki로 push(기본 0: 로컬만) |
 | 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | ✅ | Task 상태를 Done으로 바꾸고 Teams 결과 카드 전송, 로컬 승인 진행 화면에도 완료와 링크 표시. No·시간 초과도 결과 카드로 알림 |
 
 **실행 화면**
@@ -321,7 +321,7 @@ flowchart LR
 | PC 도구 (Python·Git·Azure CLI) | 전부 | 실행 불가 |
 | hosts 등록 | 전부(허브·화면) | `127.0.0.1:포트` 주소로 뜸 |
 | Azure DevOps (Wiki·PAT·백로그) | 1, 2 | 문서 검색·등록, Task 생성 불가 |
-| LLM 게이트웨이 (Azure OpenAI 호환) | 1, 2 | 가이드 생성·검색 임베딩·AI 요약 불가(시나리오 2는 `--no-ai`로 요약만 끄고 실행 가능) |
+| LLM 게이트웨이 (Azure OpenAI 호환) | 1, 2 | 가이드 생성·검색 임베딩·AI 요약 불가(시나리오 2는 AI 요약만 빠지고 규칙 비교로 실행됨) |
 | 웹 검색 (Tavily API 키) | 1 | 위키 근거가 약해도 웹 검색 없이 위키만 씀 |
 | Azure 구독과 Proxy VM | 2, 3 | 비교할 실제 VM이 없음 |
 | Microsoft Teams (회사·학교 계정, Workflows 웹후크) | 2 | 승인 요청·결과 알림 카드를 못 보냄 |
@@ -421,6 +421,8 @@ Copy-Item .env.sample .env
 | `WEB_SEARCH_MAX` | `5` | 웹 검색 결과를 몇 건까지 가져올지 |
 | `TRACE_KEEP_DAYS` | `14` | `data/traces/`의 요청별 트레이스 보관 일수 |
 | `SCENARIO2_TAG` | `role=proxy` | 시나리오 2에서 이 태그가 있는 VM은 이름과 상관없이 Proxy로 봄(`key=value` 또는 `key`) |
+| `SCENARIO2_PUSH` | `0` | 시나리오 2 승인 후 Wiki 커밋을 Azure DevOps Wiki로 push할지(`1`). 기본은 wiki-repo 로컬 커밋만(테스트 문서가 올라가지 않게) |
+| `SCENARIO2_TIMEOUT` / `SCENARIO2_WIKI_PAGE` | `900` / (비움) | 승인 대기 초, 비교할 Wiki 문서(wiki-repo 기준 경로, 비우면 테스트 문서) |
 | `GUIDE_CHUNKS` / `GUIDE_CHUNK_CHARS` / `GUIDE_CONTEXT_CHARS` | `24` / `1500` / `16000` | 시나리오 1 RAG: LLM에 넘길 조각 수, 조각 하나의 대략 길이, 전체 글자 수 상한. 조각 임베딩은 `data/wiki_search_chunks.json`에 캐시 |
 | `WIKI_REGISTER_PUSH` | `1` | 시나리오 1 "Wiki에 등록" 때 Azure DevOps Wiki로 push(`0`이면 로컬 커밋만) |
 | `SQUID_HOST` | - | 정책 감지 대상 프록시 VM의 공용 IP |
@@ -499,7 +501,7 @@ http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 
 | 탭 | 내용 |
 |---|---|
 | 로컬 서버 | 서버 표(상태·PID·가동 시간, 시작·중지·재시작·로그·화면)와 로그 창 |
-| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py --start-vms`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음 |
+| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음 |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 "화면" 버튼으로 새 창에서 엽니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
 
@@ -762,15 +764,13 @@ flowchart LR
 | 없는 VM(`*-prxy04`) | 표에 넣음 | 삭제 |
 
 ```powershell
-python test\scenario2\setup_env.py            # 점검 + Wiki 문서를 '현행화 전'으로 초기화 (시나리오 실행 전마다)
-python test\scenario2\setup_env.py --check    # 점검만
-python test\scenario2\setup_env.py --reseed   # VM이 바뀌었을 때(시작·중지 포함) 표와 정답을 다시 만듦
-python test\scenario2\setup_env.py --start-vms   # 꺼진 Proxy VM을 켜고(실제 운영 가정: 항상 켜짐) 표와 정답을 다시 만듦
+python test\scenario2\setup_env.py            # 꺼진 Proxy VM 켜기 + 표·정답 재생성 + 문서를 '현행화 전'으로 (허브 "테스트 환경 준비")
+python test\scenario2\setup_env.py --check    # 점검만, 아무것도 바꾸지 않음
 python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신규: wjy-proxy03"   # 승인 화면만 시험
 ```
 
 - 점검 항목: az 로그인과 Proxy VM 3대 이상, 스냅샷과 실제 VM 일치, Azure DevOps PAT, 승인 화면 모듈.
-- VM 전원 상태도 비교 대상이라 VM을 켜거나 끄면 정답이 틀어집니다. 이때 `--check`가 실패하므로 `--reseed`로 다시 만듭니다. 실제 운영처럼 VM이 켜진 상태로 시험하려면 `--start-vms`를 씁니다(테스트 VM은 비용 때문에 매일 01:00 자동 종료).
+- 실제 운영처럼 VM이 모두 켜진 상태로 시험합니다. 테스트 VM은 비용 때문에 매일 01:00 자동 종료되므로, 옵션 없이 실행하면 꺼진 VM부터 켜고 실제 VM 값으로 표와 정답을 다시 만듭니다. `--check`가 "스냅샷과 다름"으로 실패해도 옵션 없이 다시 실행하면 됩니다.
 - Wiki 문서는 wiki-repo에 로컬 커밋만 하고 Azure DevOps Wiki로 push하지 않습니다.
 - Teams 연동(Workflows 웹후크·승인 카드·Graph API)에는 회사·학교용 Microsoft 365 계정이 필요합니다(무료 개인 Teams 불가, 가장 싼 선택지는 Microsoft 365 Business Basic). Teams 카드의 응답을 이 PC 스크립트로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다.
 
@@ -778,24 +778,22 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 
 | 단계 | 하는 일 |
 |---|---|
-| 1. trigger | 직접 실행(`--yes`면 승인 생략) |
-| 2. wiki_read | Wiki 문서의 `## VM 목록` 표를 읽음 (머리글 이름으로 칸을 찾음) |
+| 1. trigger | 직접 실행(허브 "시나리오 실행" 탭 또는 명령줄) |
+| 2. wiki_read | Wiki 문서의 `## VM 목록` 표를 읽음 (머리글 이름으로 칸을 찾음). 문서는 `SCENARIO2_WIKI_PAGE`(비우면 테스트 문서) |
 | 3. azure_read | 리소스 그룹에서 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM의 IP·상태·SIZE·리전 |
 | 4. compare | 신규·삭제·변경(사설/공인 IP, 상태, SIZE, LOCATION, RESOURCE GROUP). 차이 없으면 종료. Proxy(용도) 칸은 사람이 관리하므로 비교하지 않음 |
-| 4.5 llm_summary (AI) | 차이 전체를 2문장·120자 이내 존댓말로 요약해 LLM(`OPENAI_MODEL`)으로 승인 카드·화면·Task 맨 위에 "AI 요약 · 참고용"으로 넣음(위험도는 기준이 없어 표시하지 않음). 차이 목록은 규칙으로 만든 짧은 줄 그대로. 비교 자체는 규칙으로 하고 AI는 설명만 함. 데이터에 없는 사실은 '확인 필요'로 쓰게 함. 실패하면 규칙 목록만 표시하고 트레이스에 이유를 남김(`--no-ai`로 끔) |
-| 5. approval | Teams 채널에 요약 카드와 **Yes · 현행화 / No · 기록만** 버튼을 보내고 이 PC의 승인 서버에서 답을 기다림(기본 15분). 웹후크가 없으면 승인 화면을 브라우저로 엶. No·시간 초과는 Teams에 알리고 종료 |
+| 4.5 llm_summary (AI) | 차이 전체를 2문장·120자 이내 존댓말로 요약해 LLM(`OPENAI_MODEL`)으로 승인 카드·화면·Task 맨 위에 "AI 요약 · 참고용"으로 넣음(위험도는 기준이 없어 표시하지 않음). 차이 목록은 규칙으로 만든 짧은 줄 그대로. 비교 자체는 규칙으로 하고 AI는 설명만 함. 데이터에 없는 사실은 '확인 필요'로 쓰게 함. 실패하거나 LLM 설정이 없으면 규칙 목록만 표시하고 트레이스에 이유를 남김 |
+| 5. approval | Teams 채널에 요약 카드와 **Yes · 현행화 / No · 기록만** 버튼을 보내고 이 PC의 승인 서버에서 답을 기다림(기본 15분, `SCENARIO2_TIMEOUT`). 웹후크가 없으면 승인 화면을 브라우저로 엶. No·시간 초과는 Teams에 알리고 종료 |
 | 6. backlog · task_create | 백로그 아래에 Task 생성: Epic `01. 공통`(#1) → Feature `[공통] Proxy 현황 관리` → 그 달 PBI `YYMM) Proxy VM 현황 Wiki 현행화` → Task `NN. [Proxy 현황] …`. Feature·PBI는 있으면 다시 쓰고 없으면 만들며(달이 바뀌면 새 PBI), Task는 PBI 아래 다음 순번. 담당자 = `SCENARIO2_ASSIGNEE` 또는 PAT 소유자, Area·Iteration은 상위 항목을 따름, 태그 `proxy-status; scenario2`. 이름·Epic은 `SCENARIO2_EPIC_ID`·`SCENARIO2_FEATURE`·`SCENARIO2_PBI`로 바꿈 |
-| 7. wiki_update | 표를 Azure 값으로 고치고 `## 변경 이력`에 행 추가, 최종 수정일 갱신 → wiki-repo 커밋 (`--push`일 때만 push) |
+| 7. wiki_update | 표를 Azure 값으로 고치고 `## 변경 이력`에 행 추가, 최종 수정일 갱신 → wiki-repo 커밋 (`SCENARIO2_PUSH=1`일 때만 push) |
 | 8. report | Task를 완료 상태(프로세스의 Completed 범주, 예: Done)로 바꾸고 댓글, Teams에 결과 카드 |
 
 ```powershell
-python proxy_tools\proxy_status_sync.py --dry-run --verify   # 1~4단계 + 테스트 정답 대조, 아무것도 바꾸지 않음
-python proxy_tools\proxy_status_sync.py                      # Teams 승인 후 Task·Wiki 반영
-python proxy_tools\proxy_status_sync.py --yes --push         # 승인 없이 진행하고 Azure DevOps Wiki로 push
-python proxy_tools\proxy_status_sync.py --dry-run --no-ai     # AI 요약 없이
-python proxy_tools\proxy_status_sync.py --dry-run --wiki-page "AI-Master-프로젝트/…/Proxy-VM-정리-('26.09.17-기준).md"   # 다른 형식의 문서(LLM 파싱)
+python proxy_tools\proxy_status_sync.py              # Teams 승인 후 Task·Wiki 반영 (허브 "실행" 버튼과 같음)
+python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것도 바꾸지 않음
 ```
 
+- 옵션은 `--dry-run` 하나입니다. push·승인 대기 시간·비교할 문서는 `.env`의 `SCENARIO2_PUSH`, `SCENARIO2_TIMEOUT`, `SCENARIO2_WIKI_PAGE`로 정합니다. 다른 형식의 문서(예: `Proxy-VM-정리-('26.09.17-기준).md`)를 LLM 파싱으로 시험하려면 `SCENARIO2_WIKI_PAGE`에 그 경로를 넣습니다.
 - 버튼을 누르면 열린 브라우저 창이 진행 화면으로 바뀌어 단계(Task 생성 → Wiki 현행화 → 완료 처리)를 실시간으로 보여 주고, 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다. 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있고, 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
 - 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **시나리오 실행** 탭에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).

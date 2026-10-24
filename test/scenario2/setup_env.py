@@ -6,7 +6,7 @@ Azure 는 바꾸지 않는다. 실제 Proxy VM 을 읽어 일부러 틀린 값�
 
 하는 일
 1. 사전 조건 점검: az 로그인, 테스트 Proxy VM(3대 이상), Azure DevOps PAT, 승인 화면 모듈
-2. 처음 실행(또는 --reseed) 때 실제 VM 으로 '현행화 전' 표와 정답을 만든다
+2. 꺼진 Proxy VM 을 켜고(실제 운영 가정: 항상 켜짐), 실제 VM 으로 '현행화 전' 표와 정답을 다시 만든다
      1번째 VM: 상태·스펙을 다르게 → 상태 변경, 스펙 변경
      2번째 VM: 사설 IP 를 다르게   → IP 변경
      3번째 VM: 표에서 뺀다         → 신규
@@ -19,10 +19,8 @@ data/scenario2/
     expected_diff.json  정답 차이 목록
 
 사용 예:
-    python test/scenario2/setup_env.py            # 점검 + 문서 초기화(시나리오 실행 전마다)
-    python test/scenario2/setup_env.py --check    # 점검만
-    python test/scenario2/setup_env.py --reseed   # VM 이 바뀌었을 때 표·정답을 다시 만든다
-    python test/scenario2/setup_env.py --start-vms   # Proxy VM 을 켜고(실제 운영 가정: 항상 켜짐) 표·정답을 다시 만든다
+    python test/scenario2/setup_env.py            # 꺼진 VM 켜기 + 표·정답 재생성 + 문서 초기화(시나리오 실행 전마다)
+    python test/scenario2/setup_env.py --check    # 점검만(아무것도 바꾸지 않음)
 """
 
 from __future__ import annotations
@@ -51,8 +49,8 @@ OUT = DATA_DIR / "scenario2"
 # Azure 조회·표 형식·이름 규칙은 시나리오 2 실행기와 같아야 하므로 실행기에서 가져온다.
 sys.path.insert(0, str(PROJECT_ROOT / "proxy_tools"))
 from proxy_status_sync import (  # noqa: E402,F401
-    COLUMNS, FIELDS, NAME_PATTERN, RESOURCE_GROUP, WIKI_PAGE, proxy_vms,
-)
+    COLUMNS, FIELDS, NAME_PATTERN, RESOURCE_GROUP, TEST_PAGE as WIKI_PAGE, proxy_vms,
+)  # SCENARIO2_WIKI_PAGE 와 상관없이 늘 테스트 문서만 쓴다
 
 
 def make_seed(vms: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -114,7 +112,7 @@ def check_azure(vms: list[dict] | None) -> bool:
         return False
     snap = OUT / "azure_vms.json"
     if snap.is_file() and json.loads(snap.read_text(encoding="utf-8")) != vms:
-        print("  [실패] Azure: VM 값이 저장된 스냅샷과 다릅니다. 정답이 틀어졌으니 --reseed 로 다시 만드세요.")
+        print("  [실패] Azure: VM 값이 저장된 스냅샷과 다릅니다. 정답이 틀어졌으니 옵션 없이 다시 실행해 표·정답을 다시 만드세요.")
         return False
     print(f"  [통과] Azure: Proxy VM {len(vms)}대 ({', '.join(v['name'] for v in vms)})")
     return True
@@ -199,23 +197,19 @@ def start_vms(timeout: float = 420) -> bool:
 def main() -> int:
     p = argparse.ArgumentParser(description="시나리오 2 테스트 환경 점검·초기화")
     p.add_argument("--check", action="store_true", help="점검만 하고 문서·정답은 바꾸지 않음")
-    p.add_argument("--reseed", action="store_true", help="실제 VM 으로 '현행화 전' 표와 정답을 다시 만든다")
-    p.add_argument("--start-vms", action="store_true", help="꺼진 Proxy VM 을 켠 뒤 표·정답을 다시 만든다(--reseed 포함)")
     args = p.parse_args()
 
     print("시나리오 2 테스트 환경 점검")
     OUT.mkdir(parents=True, exist_ok=True)
-    if args.start_vms:
-        if not start_vms():
-            print("결과: 준비 안 됨 (VM 시작 실패)")
-            return 1
-        args.reseed = True
+    if not args.check and not start_vms():
+        print("결과: 준비 안 됨 (VM 시작 실패)")
+        return 1
     try:
         vms = [{k: v for k, v in x.items() if k != "matched_by"} for x in proxy_vms()]  # 기록용 값은 정답에서 뺀다
     except Exception as exc:
         print(f"  [실패] Azure VM 조회: {exc}")
         vms = None
-    if args.reseed and vms:
+    if not args.check and vms:  # VM 값이 바뀌었을 수 있으니 매번 표·정답을 다시 만든다
         for name in ("azure_vms.json", "seed.json", "expected_diff.json"):
             (OUT / name).unlink(missing_ok=True)
     results = [check_azure(vms), check_devops(), check_approval()]

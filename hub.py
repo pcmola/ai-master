@@ -259,7 +259,7 @@ JOBS = {
                   "self_log": True,
                   "options": {}},
     "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
-                        "self_log": False, "options": {"start_vms": "--start-vms"}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
+                        "self_log": False, "options": {}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
 }
 JOB_LOGS = {j["log"] for j in JOBS.values()}
 RUNNING: dict[str, dict] = {}  # 작업 → {proc, pid, started, args, finished, code}
@@ -455,7 +455,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <span class="jobstate" id="s1state"></span></div></div>
 <div class="card sc"><h2>시나리오 2 · 프록시 현황 Wiki 현행화</h2>
 <p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
-<div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py --start-vms: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
+<div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
 <button onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div></div>
@@ -512,7 +512,7 @@ let jobs={}, slogKey=null;
 function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
   window.open(s.url+'/','_blank','noopener');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
-async function runJob(job){const options=job==='scenario2'?{}:{start_vms:true};
+async function runJob(job){const options={};
   const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
   const d=await r.json();if(d.error){alert(d.error);return}showLog('scenario2','시나리오 2 로그');setTimeout(refreshJobs,300)}
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11),arg=j.args.length?' '+j.args.join(' '):'';
