@@ -642,6 +642,7 @@ flowchart TD
 - 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `chunk_select`(조각 수·줄어든 글자 수·중복) → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
 - 줄은 단계가 끝날 때 찍히고 번호는 시작 순서입니다. 하위 단계가 있는 단계는 시작할 때 `▸ … 시작` 줄을 먼저 찍으므로, 들여 쓴 하위 줄은 항상 바로 위 `▸` 줄의 하위입니다.
 - 줄 앞 표시: `▸` 하위 단계가 있는 단계의 시작, `↻` 진행 중(LLM 응답을 기다리는 동안 5초마다, 게이트웨이가 응답을 모아 한 번에 보내므로 그사이 로그가 멈춘 것처럼 보이지 않게), `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
+- 시각 옆 8자리 16진수(예: `07902dac`)는 **트레이스 ID**로, 요청마다 새로 만듭니다. 요청 두 개가 동시에 돌아 줄이 섞여도 ID가 같은 줄만 보면 한 요청의 흐름을 따라갈 수 있고, `data/traces/*.jsonl`에서 `"trace_id"`로 같은 요청의 상세 기록을 찾습니다(예: `Select-String -Path data	races\wiki-search-*.jsonl -Pattern 07902dac`). 시나리오 2 로그도 같습니다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
 ### 6.2 Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
