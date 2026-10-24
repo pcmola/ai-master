@@ -7,7 +7,9 @@ Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 �
                 바꾸고, VM 이름이 원문에 실제로 있는지 대조한다(없으면 버림, IP 도 원문에 없으면 비움).
                 LLM 으로 읽은 문서는 형식이 제각각이라 7단계에서 표를 자동으로 고치지 않고 Task 에 수동 반영을 남긴다
 3. azure_read   리소스 그룹의 VM 중 태그 SCENARIO2_TAG(기본 role=proxy)가 있거나, 이름이 proxy·prxy·pxy(+숫자)로
-                끝나는 VM 의 IP·상태·SIZE·리전을 읽는다
+                끝나는 VM(프록시로 추정)의 IP·상태·SIZE·리전을 읽는다. SCENARIO2_EXCLUDE_TAG(기본 role=not-proxy)는 뺀다
+   proxy_confirm  이름 규칙으로만 찾은 VM 은 5단계 승인 카드에서 한 번 확인받는다. Yes 면 확인한 VM 에 SCENARIO2_TAG,
+                '프록시 아님'으로 고른 VM 에 SCENARIO2_EXCLUDE_TAG 태그를 붙여 다음부터 묻지 않고, 뺀 VM 은 비교에서 제외한다
 4. compare      신규·삭제·변경(사설/공인 IP, 상태, SIZE, 리전). 차이가 없으면 여기서 끝난다
    llm_summary  (AI) 차이 전체를 LLM(OPENAI_MODEL)으로 2문장 이내로 요약해 승인 카드·화면·Task 맨 위에 '참고용'으로 붙인다.
                 비교 자체는 규칙으로 하고 AI 는 설명만 한다. 실패하거나 LLM 설정이 없으면 규칙 목록만 쓴다
@@ -83,9 +85,13 @@ def az(*args: str):
     return json.loads(out.stdout)
 
 
-def tag_match(tags: dict | None) -> bool:
-    """SCENARIO2_TAG 와 맞는 태그가 있는가. 'key=value' 또는 'key'(값 상관없음). 대소문자 무시."""
-    spec = os.environ.get("SCENARIO2_TAG", "role=proxy").strip()
+PROXY_TAG = os.environ.get("SCENARIO2_TAG", "role=proxy").strip()
+EXCLUDE_TAG = os.environ.get("SCENARIO2_EXCLUDE_TAG", "role=not-proxy").strip()
+
+
+def tag_match(tags: dict | None, spec: str | None = None) -> bool:
+    """spec(기본 SCENARIO2_TAG)과 맞는 태그가 있는가. 'key=value' 또는 'key'(값 상관없음). 대소문자 무시."""
+    spec = PROXY_TAG if spec is None else spec
     if not spec or not tags:
         return False
     key, _, value = spec.partition("=")
@@ -102,7 +108,7 @@ def proxy_vms(resource_group: str = RESOURCE_GROUP) -> list[dict]:
     vms = []
     for v in raw:
         by_tag, by_name = tag_match(v.get("tags")), bool(re.search(NAME_PATTERN, v["name"]))
-        if not (by_tag or by_name):
+        if not (by_tag or by_name) or (not by_tag and tag_match(v.get("tags"), EXCLUDE_TAG)):  # '프록시 아님'으로 확인된 VM
             continue
         tags = v.get("tags") or {}
         vms.append({"name": v["name"], "resource_group": v["rg"], "location": LOCATIONS.get(v["loc"], v["loc"]),
@@ -111,6 +117,37 @@ def proxy_vms(resource_group: str = RESOURCE_GROUP) -> list[dict]:
                     "state": "운영" if v.get("power") == "VM running" else "중지",
                     "matched_by": "tag" if by_tag else "name"})
     return sorted(vms, key=lambda v: v["name"])
+
+
+def set_tag(name: str, spec: str):
+    """VM 에 태그 하나를 더한다(다른 태그는 그대로). 'key=value', 값이 없으면 'true'. Tag Contributor 권한이면 된다."""
+    key, _, value = spec.partition("=")
+    vm_id = az("vm", "show", "-g", RESOURCE_GROUP, "-n", name, "--query", "id")
+    az("tag", "update", "--resource-id", vm_id, "--operation", "Merge", "--tags", f"{key}={value or 'true'}")
+
+
+def confirm_proxies(ap, azure: list[dict]) -> list[dict]:
+    """승인(Yes)과 함께, 이름 규칙으로만 찾은 VM 을 태그로 확정한다. '프록시 아님'으로 고른 VM 은 빼고 돌려준다."""
+    guessed = [v["name"] for v in azure if v["matched_by"] == "name"]
+    if not guessed:
+        return azure
+    excluded = [n for n in (ap.excluded if ap else []) if n in guessed]
+    step = ap.step if ap else (lambda *a, **k: None)
+    with span("proxy_confirm", guessed=guessed, excluded=excluded or "없음") as s:
+        failed = []
+        for name in guessed:
+            spec = EXCLUDE_TAG if name in excluded else PROXY_TAG
+            try:
+                set_tag(name, spec)
+            except RuntimeError as exc:
+                failed.append(f"{name}: {str(exc)[:120]}")
+        s.set(tagged=len(guessed) - len(failed), failed=failed or "없음")
+    kept = [n for n in guessed if n not in excluded]
+    msg = (f"프록시로 확정: {', '.join(kept) or '없음'} ({PROXY_TAG} 태그)"
+           + (f" · 프록시 아님: {', '.join(excluded)} ({EXCLUDE_TAG} 태그, 비교에서 뺌)" if excluded else ""))
+    print(msg + (f" · 태그 실패 {len(failed)}건(다음 실행 때 다시 묻습니다): {'; '.join(failed)}" if failed else ""))
+    step(msg + (f" · 태그 실패 {len(failed)}건" if failed else ""), "fail" if failed else "ok")
+    return [v for v in azure if v["name"] not in excluded]
 
 
 def table_rows(rows: list[dict]) -> str:
@@ -320,7 +357,7 @@ def wiki_links(dv) -> list[tuple[str, str]]:
 
 
 def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple[str, str]], ai: dict | None = None,
-                 alert: str = ""):
+                 alert: str = "", guessed: list[str] | None = None):
     """Teams 카드(또는 브라우저)로 승인을 받는다. 승인 서버는 처리가 끝날 때까지 열어 두고 진행 상황을 보여 준다.
     alert: 중지된 VM 같은 이상 징후(맨 위에 보인다). 돌려주는 값: (결정 True/False/None, Approval)."""
     from teams_tools import teams_notify
@@ -333,7 +370,7 @@ def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple
         head = alert + "\n\n" + head
     webhook = bool(os.environ.get("TEAMS_WEBHOOK_URL"))
     ap = Approval(f"Proxy 현황 변경 {len(diffs)}건", ([alert] if alert else []) + [head.split("\n\n")[-1]] + items,
-                  "Wiki 현행화와 Task 등록을 진행할까요?", links)
+                  "Wiki 현행화와 Task 등록을 진행할까요?", links, guessed)
     with span("approval", channel="teams" if webhook else "local", timeout_s=timeout) as s:
         page_url, yes_url, no_url = ap.start(open_browser=not webhook)
         if webhook:
@@ -341,6 +378,9 @@ def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple
                 n.set(http=teams_notify.send(
                     "Wiki 의 Proxy 현황과 Azure 의 실제 VM 이 다릅니다. 현행화할까요?\n\n" + head + "\n\n"
                     + "\n".join(f"- {i}" for i in items)
+                    + (f"\n\n**프록시로 추정한 VM {len(guessed)}대(한 번만 확인)**: {', '.join(guessed)}. "
+                       "Yes 를 누르면 모두 프록시로 확정합니다. 프록시가 아닌 VM 이 있으면 '자세히 보기'에서 빼고 승인하세요."
+                       if guessed else "")
                     + f"\n\n버튼은 이 알림을 보낸 PC({os.environ.get('COMPUTERNAME', '-')})에서 눌러야 합니다. "
                       f"{int(timeout // 60)}분 안에 답이 없으면 취소됩니다.",
                     f"[Proxy 현황] 변경 {len(diffs)}건 · 승인 요청",
@@ -543,6 +583,9 @@ def run(args) -> int:
         azure = proxy_vms()
         s.set(vms=len(azure), names=[v["name"] for v in azure], tag=os.environ.get("SCENARIO2_TAG", "role=proxy"),
               by_tag=sum(v["matched_by"] == "tag" for v in azure), by_name=sum(v["matched_by"] == "name" for v in azure))
+    guessed = [v["name"] for v in azure if v["matched_by"] == "name"]
+    if guessed:
+        print(f"프록시로 추정한 VM {len(guessed)}대(이름 규칙, 태그 없음): {', '.join(guessed)} → 승인 때 한 번 확인합니다.")
     with span("compare") as s:
         diffs = compare(wiki, azure)
         s.set(diffs=len(diffs), summary=[describe(d) for d in diffs][:6])
@@ -569,8 +612,17 @@ def run(args) -> int:
 
     dv = devops()
     links = wiki_links(dv)
-    decision, ap = ask_approval(diffs, when, APPROVAL_TIMEOUT, links, ai, alert)
+    decision, ap = ask_approval(diffs, when, APPROVAL_TIMEOUT, links, ai, alert, guessed)
     try:
+        if decision:
+            kept = confirm_proxies(ap, azure)
+            if len(kept) != len(azure):  # '프록시 아님'으로 뺀 VM 이 있으면 다시 비교한다
+                azure, diffs = kept, compare(wiki, kept)
+                print(f"뺀 VM 을 제외하고 다시 비교: 차이 {len(diffs)}건")
+                if not diffs:
+                    ap.finish("프록시가 아닌 VM 을 빼고 나니 바꿀 내용이 없습니다. Wiki 문서와 Task 는 그대로입니다.",
+                              [("Wiki 문서 보기", links[0][1])])
+                    return 0
         return apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai, parsed_by)
     except Exception as exc:
         if ap:

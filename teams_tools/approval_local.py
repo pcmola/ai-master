@@ -54,6 +54,8 @@ button.yes,.btn.main{background:#5b5fc7;color:#fff;border-color:#5b5fc7}
 .ok .ic{color:#1e7a4f}.fail .ic{color:#b42318}.steps a{margin-left:auto;font-size:13px}
 .msg{padding:12px;border-radius:6px;margin-bottom:12px;font-weight:600}.msg.ok{background:#e3f5ec;color:#1e7a4f}
 .msg.fail{background:#fdecec;color:#b42318}.msg.wait{background:#eef2ff;color:#3730a3}
+.guess{border:1px solid #f5c26b;background:#fff8eb;border-radius:6px;padding:10px 12px;margin:0 0 14px;font-size:13px}
+.guess b{display:block;margin-bottom:4px}.guess label{display:flex;gap:8px;align-items:center;padding:2px 0}
 @keyframes spin{to{transform:rotate(360deg)}}
 """
 
@@ -75,13 +77,25 @@ def shell(title: str, inner: str, script: str = "") -> bytes:
             f'<script>{script}</script></body></html>').encode("utf-8")
 
 
-def ask_page(title: str, items: list[str], question: str, links) -> bytes:
+def guess_html(candidates: list[str] | None) -> str:
+    """이름 규칙으로만 찾은 VM. 프록시가 아니면 체크해서 빼고 승인한다(체크 안 한 VM 은 프록시로 확정)."""
+    if not candidates:
+        return ""
+    boxes = "".join(f'<label><input type="checkbox" class="notproxy" value="{html.escape(n)}"> {html.escape(n)} '
+                    f'<span style="color:#888">— 프록시 아님</span></label>' for n in candidates)
+    return (f'<div class="guess"><b>프록시로 추정한 VM {len(candidates)}대 (이름 규칙으로 찾음, 한 번만 확인)</b>'
+            f'프록시가 아닌 VM 이 있으면 체크하세요. Yes 를 누르면 체크하지 않은 VM 은 프록시로, 체크한 VM 은 '
+            f'프록시 아님으로 Azure 태그를 붙여 다음부터 묻지 않습니다.{boxes}</div>')
+
+
+def ask_page(title: str, items: list[str], question: str, links, candidates: list[str] | None = None) -> bytes:
     rows = "".join(f"<li>{html.escape(i)}</li>" for i in items) or "<li>(요약 없음)</li>"
-    return shell("승인 요청", f"""<h1>{html.escape(title)}</h1><ul>{rows}</ul>{link_html(links)}
+    return shell("승인 요청", f"""<h1>{html.escape(title)}</h1><ul>{rows}</ul>{guess_html(candidates)}{link_html(links)}
 <div class="q">{html.escape(question)}</div>
 <div class="btns" id="btns"><button class="yes" onclick="send('yes')">Yes</button><button onclick="send('no')">No</button></div>""",
         """async function send(a){document.getElementById('btns').innerHTML='<div class="msg wait" style="flex:1">전송 중…</div>';
-const r=await fetch('/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answer:a})});
+const exclude=[...document.querySelectorAll('.notproxy:checked')].map(c=>c.value);
+const r=await fetch('/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answer:a,exclude})});
 location.href=r.ok?'/progress':'/progress?late=1'}""")
 
 
@@ -126,8 +140,10 @@ def kill_port_owner(port: int, wait: float = 5.0) -> bool:
 
 class Approval:
     def __init__(self, title: str, items: list[str], question: str = "현행화할까요?",
-                 links: list[tuple[str, str]] | None = None):
+                 links: list[tuple[str, str]] | None = None, candidates: list[str] | None = None):
         self.title, self.items, self.question, self.links = title, items, question, links
+        self.candidates = candidates or []  # 확인받을 VM(프록시로 추정). 승인 화면에서 '프록시 아님'을 고를 수 있다
+        self.excluded: list[str] = []
         self.token = secrets.token_urlsafe(9)
         self.decided, self.final_seen = threading.Event(), threading.Event()
         self.answer: bool | None = None
@@ -136,11 +152,13 @@ class Approval:
         self.server = None
 
     # -- 결정
-    def decide(self, value: str) -> bool:
+    def decide(self, value: str, exclude: list[str] | None = None) -> bool:
+        """Teams 카드의 Yes 버튼은 exclude 없이 온다(추정 VM 을 모두 프록시로 확정)."""
         with self.lock:
             if value not in ("yes", "no") or self.decided.is_set():
                 return False
             self.answer = value == "yes"
+            self.excluded = [n for n in (exclude or []) if n in self.candidates]
             self.state["decision"] = value
             self.decided.set()
             return True
@@ -162,7 +180,7 @@ class Approval:
     # -- 서버
     def start(self, open_browser: bool = True) -> tuple[str, str, str]:
         ap = self
-        ask = ask_page(self.title, self.items, self.question, self.links)
+        ask = ask_page(self.title, self.items, self.question, self.links, self.candidates)
         progress = progress_page(self.title)
 
         class Handler(BaseHTTPRequestHandler):
@@ -196,10 +214,11 @@ class Approval:
 
             def do_POST(self):
                 try:
-                    value = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}").get("answer")
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 except ValueError:
-                    value = None
-                ok = urlparse(self.path).path == "/decide" and ap.decide(value)
+                    body = {}
+                exclude = body.get("exclude") if isinstance(body.get("exclude"), list) else []
+                ok = urlparse(self.path).path == "/decide" and ap.decide(body.get("answer"), [str(x) for x in exclude])
                 self.reply(b"", 200 if ok else 409, "text/plain")
 
             def log_message(self, *_):
