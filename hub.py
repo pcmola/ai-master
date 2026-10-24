@@ -255,9 +255,9 @@ def watch(interval: float = 5):
 # 서버가 아니라 실행하고 끝나는 작업(시나리오 실행 탭). log 는 data/logs/<log>.log.
 # self_log=True 인 작업은 스스로 그 파일에 출력을 남기므로 허브는 출력을 버린다(중복 방지).
 JOBS = {
-    "scenario2": {"title": "시나리오 2 · 위키 현행화", "script": "proxy_tools/proxy_status_sync.py", "log": "scenario2",
+    "scenario2": {"title": "시나리오 2 · Wiki 현행화", "script": "proxy_tools/proxy_status_sync.py", "log": "scenario2",
                   "self_log": True,
-                  "options": {"dry_run": "--dry-run"}},
+                  "options": {}},
     "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
                         "self_log": False, "options": {"start_vms": "--start-vms"}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
 }
@@ -450,14 +450,13 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <main id="pane-scenarios" hidden>
 <div class="scgrid">
 <div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
-<p>위키 검색 화면을 새 창으로 엽니다. 질의 입력·유형 선택·미리보기·수정 요청·위키 등록은 그 화면에서 합니다.</p>
-<div class="row"><button class="main" id="s1run" onclick="runS1()">실행 (위키 검색 화면 열기)</button><button onclick="showLog('wiki-search','시나리오 1 · 위키 검색 서버 로그')">로그</button>
+<p>Wiki 검색 화면을 새 창으로 엽니다. 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 그 화면에서 합니다.</p>
+<div class="row"><button class="main" id="s1run" onclick="runS1()">실행 (Wiki 검색 화면 열기)</button><button onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button>
 <span class="jobstate" id="s1state"></span></div></div>
-<div class="card sc"><h2>시나리오 2 · 프록시 현황 위키 현행화</h2>
-<p>위키 현황 문서와 애저 가상 머신을 비교하고, 차이가 있으면 팀즈 승인 후 작업 항목과 위키에 반영합니다. 승인 카드는 팀즈 일반 채널로 갑니다.</p>
-<div class="opts"><label><input type="checkbox" id="o-dry_run" checked> 점검만 (반영하지 않음)</label></div>
-<div class="row"><button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
-<button id="s2setup" onclick="runJob('scenario2-setup')" title="꺼진 프록시 가상 머신을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만듭니다">테스트 환경 준비</button>
+<div class="card sc"><h2>시나리오 2 · 프록시 현황 Wiki 현행화</h2>
+<p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
+<div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py --start-vms: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
+<button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
 <button onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div></div>
 </div>
@@ -510,8 +509,8 @@ function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t
 let jobs={}, slogKey=null;
 function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
-  window.open(s.url+'/','_blank','noopener');showLog('wiki-search','시나리오 1 · 위키 검색 서버 로그')}
-async function runJob(job){const options=job==='scenario2'?{dry_run:document.getElementById('o-dry_run').checked}:{start_vms:true};
+  window.open(s.url+'/','_blank','noopener');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
+async function runJob(job){const options=job==='scenario2'?{}:{start_vms:true};
   const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
   const d=await r.json();if(d.error){alert(d.error);return}showLog('scenario2','시나리오 2 로그');setTimeout(refreshJobs,300)}
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11),arg=j.args.length?' '+j.args.join(' '):'';
@@ -521,7 +520,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   const run=Object.values(jobs).some(j=>j.state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
   document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
-  document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:'<span class="jobstate fail">위키 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
+  document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
   if(slogKey)loadSLog()}
 function showLog(key,title){slogKey=key;document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
 async function loadSLog(){const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;

@@ -25,7 +25,9 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import secrets
+import subprocess
 import sys
 import threading
 from datetime import datetime
@@ -99,6 +101,27 @@ if(d.done){clearInterval(timer);m.className='msg '+(d.ok?'ok':'fail');m.textCont
 document.getElementById('links').innerHTML=d.links.map((l,i)=>`<a class="btn${i?'':' main'}" href="${esc(l[1])}" target="_blank" rel="noopener">${esc(l[0])}</a>`).join('')}
 else m.textContent=d.decision==='yes'?'승인했습니다. 처리 중…':d.decision==='no'?'거절했습니다. 정리 중…':'답을 기다리는 중…'}
 poll();timer=setInterval(poll,1000);""")
+
+
+def kill_port_owner(port: int, wait: float = 5.0) -> bool:
+    """port 에서 수신 중인 다른 프로세스를 강제로 끈다. 끈 것이 있으면 True."""
+    import time
+    nw = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+    def owners() -> set[int]:
+        out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, timeout=30, creationflags=nw)
+        return {int(c[4]) for c in (line.split() for line in out.stdout.decode("utf-8", "replace").splitlines())
+                if len(c) == 5 and c[0] == "TCP" and c[3] == "LISTENING" and c[1].endswith(f":{port}")
+                and c[4].isdigit() and int(c[4]) != os.getpid()}
+
+    pids = owners()
+    for pid in pids:
+        print(f"[approval] {datetime.now():%H:%M:%S} 포트 {port} 를 잡고 있는 이전 프로세스(PID {pid})를 강제로 끕니다.", flush=True)
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=30, creationflags=nw)
+    deadline = time.monotonic() + wait
+    while pids and owners() and time.monotonic() < deadline:
+        time.sleep(0.25)
+    return bool(pids)
 
 
 class Approval:
@@ -182,7 +205,13 @@ class Approval:
             def log_message(self, *_):
                 pass
 
-        self.server = local_server(PORT, Handler, "approval.local")
+        try:
+            self.server = local_server(PORT, Handler, "approval.local")
+        except SystemExit:
+            # 이전 실행이 승인 대기 중에 남아 포트를 잡고 있으면 그 프로세스를 끄고 다시 띄운다.
+            if not kill_port_owner(PORT):
+                raise
+            self.server = local_server(PORT, Handler, "approval.local")
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         url = self.server.url
         print(f"[approval] {datetime.now():%H:%M:%S} 승인 대기: {url}", flush=True)

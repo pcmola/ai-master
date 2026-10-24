@@ -337,7 +337,7 @@ http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 
 | 탭 | 내용 |
 |---|---|
 | 로컬 서버 | 서버 표(상태·PID·가동 시간, 시작·중지·재시작·로그·화면)와 로그 창 |
-| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "점검만(반영하지 않음, `--dry-run`)"(기본 체크)을 켜거나 끄고 실행, "테스트 환경 준비"(`setup_env.py --start-vms`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦), 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음 |
+| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py --start-vms`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음 |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 "화면" 버튼으로 새 창에서 엽니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
 
