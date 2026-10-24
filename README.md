@@ -407,10 +407,11 @@ flowchart TD
 관리자 PowerShell에서 `C:\Windows\System32\drivers\etc\hosts`에 아래를 추가하고 `ipconfig /flushdns`를 실행합니다.
 
 ```
-127.0.87.64 ai-master.local
-127.0.87.65 wiki.local
-127.0.87.66 wiki-search.local
-127.0.87.68 proxy-log.local
+# ai-master local web servers
+127.0.87.64  ai-master.local      # ai-master hub (ai-master/hub.py)
+127.0.87.65  wiki.local           # Wiki viewer (ai-master/wiki_tools/wiki_viewer.py)
+127.0.87.66  wiki-search.local    # Wiki search + guide (ai-master/wiki_tools/wiki_search.py)
+127.0.87.68  proxy-log.local      # proxy log viewer (ai-master/proxy_tools/proxy_log_viewer.py)
 ```
 
 hosts의 주석(`#` 뒤)은 영문(ASCII)으로만 씁니다. Windows는 hosts를 UTF-8로 읽지 않아 한글 주석이 있으면 이름 해석이 깨집니다(2026-10-21 확인).
