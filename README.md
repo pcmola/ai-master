@@ -2,7 +2,7 @@
 
 **Azure DevOps 기반 AI 운영 자동화 시나리오** (2026. 10)
 
-## 목적
+## 1. 목적
 
 Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으로 연결해, 사람이 반복하던 운영 업무를 자동화합니다. 문서를 찾아 정리하고(시나리오 1), 문서와 실제 상태를 맞추고(시나리오 2), 장애 원인을 찾아 조치를 제안합니다(시나리오 3). 사람의 판단이 필요한 변경은 Teams에서 Yes/No 승인을 받은 뒤에만 반영합니다.
 
@@ -18,7 +18,7 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 구현 상태 표시: ✅ 구현 · 🟡 일부 · ⬜ 미구현 · (확장) = 자료에서 Nice-to-have로 둔 범위  
 다이어그램 색: 초록 = 구현 · 노랑 = 일부 · 회색 점선 = 미구현 · 주황 = 사용자 판단
 
-### 시나리오 1. 프록시 설정 가이드 자동 생성
+### 1.1 시나리오 1 · 프록시 설정 가이드 자동 생성
 
 명령어 한 줄로 기존 Azure DevOps Wiki를 검색하고, RAG(검색한 Wiki 문서를 근거로 LLM이 작성)로 통합 가이드 문서를 만듭니다. 사용자가 미리보기로 확인한 뒤 Wiki에 등록합니다. 승인 없이 자동 등록하면 LLM이 잘못 쓴 문서가 팀 Wiki에 쌓이므로, 화면의 버튼을 가벼운 승인으로 씁니다. 화면: http://wiki-search.local
 
@@ -61,9 +61,9 @@ flowchart TD
 | 6. Wiki 문서 등록 | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목`으로 등록, 같은 제목이면 갱신(번호 유지, 이력은 git), Wiki 문서 규칙(채번·`.order`·인코딩·프록시 표기) 준수, 머리에 "AI 생성 · 모델 · 생성 일시 · 질의 · 근거 수" | ✅ | `wiki_tools/wiki_register.py`. 로컬 뷰어 링크를 Wiki 안 링크로 바꾸고 push |
 | 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | ✅ | 등록 후 "Wiki에서 열기"·로컬 뷰어 링크. 가이드 아래 "수정 요청" 입력칸: 지금 가이드와 요청을 함께 보내 고친 판을 받음(요청과 관계없는 부분은 유지, 사용자가 적은 문구는 그대로 반영). 고친 판을 그대로 등록 가능 |
 
-### 시나리오 2. 프록시 현황 Wiki 현행화
+### 1.2 시나리오 2 · 프록시 현황 Wiki 현행화
 
-Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다. 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다. 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**하므로, 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#시나리오-2-실행-proxy_status_syncpy))
+Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다. 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다. 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**하므로, 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#81-시나리오-2-실행-proxy_status_syncpy))
 
 ```mermaid
 flowchart TD
@@ -102,7 +102,7 @@ flowchart TD
 | 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | ✅ | `--push`일 때 반영 |
 | 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | ✅ | |
 
-### 시나리오 3. 장애 감지 및 자동 조치
+### 1.3 시나리오 3 · 장애 감지 및 자동 조치
 
 LLM이 장애 로그를 Wiki·DevOps 소스로 분석해 원인과 수정안을 도출하고 Teams 승인을 요청합니다(6~8단계는 확장 범위). 지금은 규칙 기반 로그 탐지와 장애 재현 도구까지 있습니다.
 
@@ -140,7 +140,7 @@ flowchart TD
 | 7. 소스 수정 및 PR(확장) | 브랜치 생성·AI 코드 수정, Pull Request, Task와 PR 연결 | ⬜ | |
 | 8. 장애 대응 이력 Wiki(확장) | 대응 이력 문서(LLM), 원인·조치·PR 링크, Teams 결과 알림 | ⬜ | |
 
-## 구성
+## 2. 구성
 
 ```
 ai-master/
@@ -241,7 +241,7 @@ flowchart LR
 | test | `teams_test.py` | Teams 연동 테스트: 웹후크·Graph 를 차례로 시험하고 실패 원인을 안내 (`.env`의 `TEAMS_*`) | - |
 | | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
 
-## 사전 준비
+## 3. 사전 준비
 
 처음 설치할 때 한 번 해 두는 작업입니다. 키·URL·IP 같은 실제 값은 모두 `.env`에만 넣고 커밋하지 않습니다.
 
@@ -255,7 +255,7 @@ flowchart LR
 | Azure 구독과 Proxy VM | 2, 3 | 비교할 실제 VM이 없음 |
 | Microsoft Teams (회사·학교 계정, Workflows 웹후크) | 2 | 승인 요청·결과 알림 카드를 못 보냄 |
 
-### 1. PC 도구
+### 3.1 PC 도구
 
 - Windows, Python 3.11 이상, Git, [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli-windows), Chrome(없으면 기본 브라우저).
 - Python 패키지:
@@ -265,13 +265,13 @@ flowchart LR
   pip install anthropic msal   # 선택: Anthropic 모델을 쓸 때, Teams Graph API를 시험할 때
   ```
 
-- `.env.sample`을 `.env`로 복사합니다([설정](#설정) 참고).
+- `.env.sample`을 `.env`로 복사합니다([설정](#4-설정) 참고).
 
-### 2. hosts 등록
+### 3.2 hosts 등록
 
-허브·Wiki 뷰어·Wiki 검색·프록시 로그 뷰어를 포트 없는 주소(`http://ai-master.local` 등)로 열기 위해 관리자 권한으로 `C:\Windows\System32\drivers\etc\hosts`에 줄을 추가합니다. 값은 [포트 없는 주소 (hosts)](#포트-없는-주소-hosts)에 있습니다. hosts 주석은 ASCII로만 씁니다(한글 주석이 있으면 이름 풀이가 깨짐).
+허브·Wiki 뷰어·Wiki 검색·프록시 로그 뷰어를 포트 없는 주소(`http://ai-master.local` 등)로 열기 위해 관리자 권한으로 `C:\Windows\System32\drivers\etc\hosts`에 줄을 추가합니다. 값은 [포트 없는 주소 (hosts)](#51-포트-없는-주소-hosts)에 있습니다. hosts 주석은 ASCII로만 씁니다(한글 주석이 있으면 이름 풀이가 깨짐).
 
-### 3. Azure DevOps
+### 3.3 Azure DevOps
 
 1. 조직·프로젝트를 만들고 프로젝트 Wiki를 켭니다. 프로세스는 Epic → Feature → Product Backlog Item → Task를 쓰는 **Scrum**입니다.
 2. **User settings › Personal access tokens**에서 PAT를 만듭니다. 범위: **Wiki (Read & write)**, **Work Items (Read & write)**, **Code (Read & write)**. `.env`의 `AZURE_DEVOPS_ORG`, `AZURE_DEVOPS_PROJECT`, `AZURE_DEVOPS_WIKI`, `AZURE_DEVOPS_PAT`에 넣습니다.
@@ -283,19 +283,19 @@ flowchart LR
 
 4. 시나리오 2의 Task가 달릴 Epic을 하나 만들고 번호를 `SCENARIO2_EPIC_ID`에 넣습니다. Feature(`SCENARIO2_FEATURE`)와 그 달 PBI(`SCENARIO2_PBI`)는 없으면 자동으로 만듭니다.
 
-### 4. LLM 게이트웨이
+### 3.4 LLM 게이트웨이
 
 - Azure OpenAI 호환 게이트웨이의 주소와 키를 `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`에 넣습니다.
 - 모델 두 개가 필요합니다: 답변용 `OPENAI_MODEL`(기본 `gpt-6.1-sol`), 임베딩용 `OPENAI_EMBED_MODEL`(기본 `text-embedding-3-large`).
 
-### 5. 웹 검색 (Tavily)
+### 3.5 웹 검색 (Tavily)
 
 1. https://tavily.com 에 가입하고 대시보드에서 API 키를 발급합니다(무료 플랜으로 시험 가능).
 2. `.env`의 `TAVILY_API_KEY`에 넣고 Wiki 검색 서버를 재시작합니다.
 
 위키 근거가 약할 때만 웹을 검색합니다(기준: `WEB_SEARCH_MIN_SIM`, `WEB_SEARCH_MIN_VARIANT_SIM`). 키를 비우면 웹 검색을 하지 않습니다.
 
-### 6. Azure 구독과 Proxy VM
+### 3.6 Azure 구독과 Proxy VM
 
 1. Azure 구독에 로그인합니다. 브라우저 로그인이 안 되면 `az login --use-device-code`를 씁니다.
 
@@ -304,7 +304,7 @@ flowchart LR
    az account set --subscription <구독 이름>
    ```
 
-2. Proxy VM을 만듭니다. `azure_proxy_vm.py`가 가장 싼 B 시리즈 VM에 Squid(포워드)나 HAProxy를 podman으로 올리고, NSG는 이 PC의 공인 IP에만 열고, 매일 01:00 자동 종료를 겁니다. nginx 리버스 프록시(wjy-proxy03)는 같은 리소스 그룹에 따로 둡니다([프록시 VM 운영](#프록시-vm-운영)).
+2. Proxy VM을 만듭니다. `azure_proxy_vm.py`가 가장 싼 B 시리즈 VM에 Squid(포워드)나 HAProxy를 podman으로 올리고, NSG는 이 PC의 공인 IP에만 열고, 매일 01:00 자동 종료를 겁니다. nginx 리버스 프록시(wjy-proxy03)는 같은 리소스 그룹에 따로 둡니다([프록시 VM 운영](#7-프록시-vm-운영)).
 
    ```powershell
    python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --count 2
@@ -314,7 +314,7 @@ flowchart LR
 4. 권한: 조회만 하려면 리소스 그룹 **Reader**, "테스트 환경 준비"에서 꺼진 VM을 켜려면 **Virtual Machine Contributor**가 필요합니다.
 5. 시나리오 3: 프록시 로그 뷰어는 이 PC의 기본 SSH 키로 `azureuser@<VM 공용 IP>`에 접속해 로그를 읽습니다(VM을 만들 때 넣은 키, NSG에서 이 PC IP 허용). 허용 클라이언트 대역은 `PROXY_ALLOWED_CLIENTS`에 넣습니다. Squid 정책 변경 감지(`squid_policy_*.py`)를 쓰려면 `SQUID_HOST`, `SQUID_SSH_USER`, `SQUID_SSH_KEY`도 넣습니다.
 
-### 7. Microsoft Teams
+### 3.7 Microsoft Teams
 
 1. **회사·학교용 Microsoft 365 계정**이 필요합니다. 무료 개인 Teams에는 Workflows가 없습니다. Teams Essentials나 Microsoft 365 Business Basic이면 됩니다.
 2. 알림을 받을 팀과 채널을 만듭니다(예: 기본 채널 `일반`).
@@ -325,7 +325,7 @@ flowchart LR
 - Teams 카드의 Yes/No 응답을 이 PC로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다. 그래서 승인 버튼은 이 PC의 로컬 승인 화면(`approval_local.py`, http://127.0.0.1:8771)을 엽니다.
 - 카드가 채널에 안 올라오면 Teams 로그인이나 흐름의 연결이 만료된 경우가 많습니다. https://make.powerautomate.com 의 **연결**에서 오류 난 Microsoft Teams 연결을 다시 맺고, **내 흐름** › 해당 흐름 › **28일 실행 기록**에서 성공했는지 봅니다. 흐름의 게시 주체는 **흐름 봇**(Flow bot)이어야 합니다(기본값).
 
-## 설정
+## 4. 설정
 
 `.env.sample`을 복사해 `.env`를 만들고 실제 인증정보를 입력합니다. `.env`는 프로젝트 루트에 하나만 두고 모든 도구가 함께 씁니다.
 
@@ -335,7 +335,7 @@ Copy-Item .env.sample .env
 
 `.env`에는 API 키와 PAT가 포함될 수 있으므로 Git에 커밋하지 않습니다. `.env.sample`에는 민감한 값 대신 placeholder를 사용합니다.
 
-### 주요 설정 값
+### 4.1 주요 설정 값
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -359,7 +359,7 @@ Copy-Item .env.sample .env
 
 서버는 시작할 때만 `.env`를 읽는다. 값을 바꾸면 허브에서 해당 서버를 재시작해야 적용된다.
 
-### data 폴더
+### 4.2 data 폴더
 
 | 파일 | 만드는 도구 |
 |---|---|
@@ -372,9 +372,9 @@ Copy-Item .env.sample .env
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py (요청별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
-## 로컬 웹서버
+## 5. 로컬 웹서버
 
-### 포트 없는 주소 (hosts)
+### 5.1 포트 없는 주소 (hosts)
 
 hosts 파일은 포트를 정할 수 없으므로 서버마다 다른 루프백 IP의 80 포트를 씁니다. 서버는 시작할 때 hosts를 읽어 자기 이름에 적힌 IP로 뜹니다(`common/server.py`).
 
@@ -417,7 +417,7 @@ flowchart TD
 hosts의 주석(`#` 뒤)은 영문(ASCII)으로만 씁니다. Windows는 hosts를 UTF-8로 읽지 않아 한글 주석이 있으면 이름 해석이 깨집니다(2026-10-21 확인).
 hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다. 127.0.87.67·69·70은 ai-monitor(사용량·비용 모니터와 그 허브)가 같은 규칙으로 씁니다.
 
-### 허브 (hub.py)
+### 5.2 허브 (hub.py)
 
 http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 화면은 탭 두 개입니다.
 
@@ -473,9 +473,9 @@ Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | For
 
 `/T`(프로세스 트리)를 붙이면 허브가 띄운 서버까지 함께 꺼지므로 붙이지 않습니다.
 
-## 주요 흐름
+## 6. 주요 흐름
 
-### Wiki 검색·가이드 생성 (wiki_search.py)
+### 6.1 Wiki 검색·가이드 생성 (wiki_search.py)
 
 ```mermaid
 flowchart TD
@@ -556,7 +556,7 @@ flowchart TD
 - 줄 앞 표시: `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
-### Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
+### 6.2 Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"actorBkg": "#FFEDD5", "actorBorder": "#F97316", "actorTextColor": "#7C2D12", "actorLineColor": "#F97316", "signalColor": "#64748B", "signalTextColor": "#64748B", "labelBoxBkgColor": "#FEF3C7", "labelBoxBorderColor": "#D97706", "labelTextColor": "#78350F", "loopTextColor": "#D97706", "sequenceNumberColor": "#FFFFFF", "noteBkgColor": "#FEF9C3"}}}%%
@@ -594,7 +594,7 @@ sequenceDiagram
 
 처음 실행(기준 스냅샷 없음)이면 Task 없이 기준만 저장하고 Wiki 현황 문서를 만듭니다. 중간에 실패하면 스냅샷이 그대로라서 다음 실행 때 같은 변경을 다시 처리합니다.
 
-### 프록시 로그 이상 탐지 (proxy_log_detect.py)
+### 6.3 프록시 로그 이상 탐지 (proxy_log_detect.py)
 
 ```mermaid
 flowchart LR
@@ -619,7 +619,7 @@ flowchart LR
     class report,viewer done
 ```
 
-## 프록시 VM 운영
+## 7. 프록시 VM 운영
 
 리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트를 허용 클라이언트 IP 한 곳에만 엽니다.
 
@@ -644,7 +644,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 
 로그 뷰어(http://proxy-log.local)는 새로고침하는 동안 상단 진행 막대·회전 아이콘·흐린 표를 보여 주고, 끝나면 `갱신 HH:MM:SS · 새 로그 N건`(또는 `변경 없음`)을 잠깐 강조합니다. 로그 소스가 "실제 로그"면 VM의 진짜 로그이고, "가상 로그"일 때만 만들어 낸 데이터입니다.
 
-## 시나리오 2 테스트 환경
+## 8. 시나리오 2 테스트 환경
 
 시나리오 2는 Wiki의 Proxy 현황 문서와 Azure의 실제 VM을 비교해, 차이가 있으면 승인을 받아 Task를 만들고 문서를 현행화합니다. 테스트 환경은 Azure를 바꾸지 않고 Wiki 쪽에 일부러 차이를 넣어 만듭니다.
 
@@ -689,7 +689,7 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 - Wiki 문서는 wiki-repo에 로컬 커밋만 하고 Azure DevOps Wiki로 push하지 않습니다.
 - Teams 연동(Workflows 웹후크·승인 카드·Graph API)에는 회사·학교용 Microsoft 365 계정이 필요합니다(무료 개인 Teams 불가, 가장 싼 선택지는 Microsoft 365 Business Basic). Teams 카드의 응답을 이 PC 스크립트로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다.
 
-### 시나리오 2 실행 (proxy_status_sync.py)
+### 8.1 시나리오 2 실행 (proxy_status_sync.py)
 
 | 단계 | 하는 일 |
 |---|---|
@@ -716,7 +716,7 @@ python proxy_tools\proxy_status_sync.py --dry-run --wiki-page "AI-Master-프로�
 - 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **시나리오 실행** 탭에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
 
-## 실행 예시
+## 9. 실행 예시
 
 프로젝트 루트에서 실행합니다. 다른 폴더에서 실행해도 `.env`·`wiki-repo`·`data`는 프로젝트 루트 기준으로 찾습니다.
 
@@ -730,7 +730,7 @@ python proxy_tools\squid_policy_publish.py --dry-run
 python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --dry-run
 ```
 
-## 주의사항
+## 10. 주의사항
 
 - `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`, `TAVILY_API_KEY`를 소스에 직접 작성하지 마세요. `.env.sample`에도 실제 값을 넣지 않습니다(공개 저장소에 올라감).
 - 이미 노출된 인증정보는 폐기하고 재발급하세요.
