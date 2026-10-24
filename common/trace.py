@@ -101,6 +101,11 @@ class Trace:
         print(f"{datetime.now():%H:%M:%S} [{self.id}] {text}", flush=True)
 
 
+def _row(mark: str, s: Span, value: str) -> str:
+    """노드 한 줄의 앞부분. 들여쓰기(깊이)까지 포함해 이름 칸을 고정 폭으로 맞춰 시간 칸이 세로로 정렬되게 한다."""
+    return f"{mark} " + f"{'  ' * s.depth}{s.no:02d} {s.name}".ljust(26) + f"{value:>10}"
+
+
 def heartbeat(s, detail=None, every: float = 5.0):
     """오래 걸리는 노드가 도는 동안 every 초마다 '진행 중' 줄을 남긴다(로그가 멈춘 것처럼 보이지 않게).
     돌려준 함수를 부르면 멈춘다. 트레이스 밖(_NullSpan)이면 아무것도 하지 않는다."""
@@ -111,7 +116,7 @@ def heartbeat(s, detail=None, every: float = 5.0):
     def beat():
         while not stop.wait(every):
             extra = detail() if detail else ""
-            s.trace.log(f"↻ {'  ' * s.depth}{s.no:02d} {s.name:<16}{time.perf_counter() - s.start:>7.0f}s  진행 중"
+            s.trace.log(_row("↻", s, f"{time.perf_counter() - s.start:.0f}s") + "  진행 중"
                         + (f" · {extra}" if extra else ""))
 
     threading.Thread(target=beat, daemon=True, name=f"heartbeat-{s.name}").start()
@@ -140,7 +145,7 @@ def span(name: str, **attrs):
         s.ms = (time.perf_counter() - s.start) * 1000
         mark = {"ok": " ", "error": "✗", "cancelled": "…"}[s.status]
         tail = _attrs(s.attrs) + (f"  error={_fmt(s.error)}" if s.error else "")
-        t.log(f"{mark} {'  ' * s.depth}{s.no:02d} {s.name:<16}{s.ms:>8,.0f}ms  {tail}")
+        t.log(_row(mark, s, f"{s.ms:,.0f}ms") + f"  {tail}")
 
 
 @contextmanager
