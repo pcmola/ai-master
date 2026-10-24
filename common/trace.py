@@ -80,7 +80,7 @@ class _NullSpan:
         return self
 
     def fail(self, error: str):
-        print(f"{datetime.now():%H:%M:%S} [-] {error}", flush=True)
+        print(f"{datetime.now():%Y-%m-%d %H:%M:%S} [-] {error}", flush=True)
         return self
 
 
@@ -99,7 +99,7 @@ class Trace:
         return self
 
     def log(self, text: str):
-        print(f"{datetime.now():%H:%M:%S} [{self.id}] {text}", flush=True)
+        print(f"{datetime.now():%Y-%m-%d %H:%M:%S} [{self.id}] {text}", flush=True)  # 서버가 며칠씩 돌아도 날짜를 알 수 있게
 
 
 def _row(mark: str, s: Span, value: str) -> str:

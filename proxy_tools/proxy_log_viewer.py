@@ -4,6 +4,9 @@
   --host 1.2.3.4 로 직접 지정할 수도 있다.
 - 로그는 SSH(azureuser + 이 PC 의 기본 키)로 squid 컨테이너의 /var/log/squid/access.log 끝부분을 읽는다.
 - 화면에서 허용/차단 필터, 검색, 도메인별 집계, 자동 새로고침을 제공한다.
+- 요청마다 노드별 트레이스(ssh_read → parse → detect, 허용 목록은 ssh_read → parse_policy)를 콘솔(허브 로그
+  data/logs/proxy-log.log)과 data/traces/proxy-log-YYYYMMDD.jsonl 에 남긴다. 결과 줄에 허용·차단 건수, 클라이언트·도메인 수,
+  탐지 규칙을 적는다.
 
 사용 예:
     python proxy_tools/proxy_log_viewer.py                 # http://127.0.0.1:8768
@@ -28,6 +31,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR  # noqa: E402
 from common.server import local_server, open_chrome  # noqa: E402
+from common.trace import span, trace  # noqa: E402
 
 RESOURCE_GROUP = "wjy-proxy-rg"
 SSH_USER = "azureuser"
@@ -110,6 +114,24 @@ def parse_nginx(line: str) -> dict | None:
     }
 
 
+def ssh(ip: str, remote: str, what: str) -> tuple[str, str | None]:
+    """VM 에서 명령을 실행해 (표준 출력, 오류)를 돌려준다. ssh_read 노드에 소요 시간·받은 바이트를 남긴다."""
+    with span("ssh_read", what=what) as s:
+        try:
+            res = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                                  "-o", "StrictHostKeyChecking=accept-new", f"{SSH_USER}@{ip}", remote],
+                                 capture_output=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            s.fail("SSH 응답 없음(30초)")
+            return "", f"{ip} SSH 응답 없음(30초). VM 이 켜져 있는지, 이 PC IP 가 NSG 에 허용됐는지 확인하세요."
+        s.set(exit=res.returncode, bytes=len(res.stdout))
+        if res.returncode != 0:
+            err = res.stderr.decode("utf-8", errors="replace").strip() or f"exit {res.returncode}"
+            s.fail(err[:160])
+            return "", err
+        return res.stdout.decode("utf-8", errors="replace"), None
+
+
 LOCAL_SIM = DATA_DIR / "sim_access.log"  # proxy_log_detect.py simulate 결과
 REMOTE_SIM = "sim_access.log"  # simulate --upload 로 올린 VM 의 ~/sim_access.log
 
@@ -127,54 +149,47 @@ def read_logs(ip: str, lines: int, source: str = "real", kind: str = "squid") ->
         # 이전 컨테이너 로그까지 남아 있는 journald 에서 이름으로 읽는다. PRIORITY=6 은 표준 출력(접속 로그)만,
         # 표준 오류(nginx error log, PRIORITY=3)는 뺀다. 알림 줄이 섞이므로 넉넉히 가져온다.
         remote = f"sudo journalctl CONTAINER_NAME=nginx PRIORITY=6 -o cat --no-pager -n {lines * 2} 2>/dev/null"
-        try:
-            res = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-                                  "-o", "StrictHostKeyChecking=accept-new", f"{SSH_USER}@{ip}", remote],
-                                 capture_output=True, timeout=30)
-        except subprocess.TimeoutExpired:
-            return {"error": f"{ip} SSH 응답 없음(30초). VM 이 켜져 있는지, 이 PC IP 가 NSG 에 허용됐는지 확인하세요."}
-        if res.returncode != 0:
-            err = res.stderr.decode("utf-8", errors="replace").strip()
-            return {"error": f"{ip} 로그 읽기 실패: {err or 'exit ' + str(res.returncode)}"}
-        text = res.stdout.decode("utf-8", errors="replace")
+        text, err = ssh(ip, remote, "journalctl nginx")
+        if err:
+            return {"error": f"{ip} 로그 읽기 실패: {err}"}
     elif source == "local":
-        if not LOCAL_SIM.is_file():
-            return {"error": f"{LOCAL_SIM.name} 이 없습니다. python proxy_tools/proxy_log_detect.py simulate 로 먼저 만드세요."}
-        text = "\n".join(LOCAL_SIM.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
+        with span("file_read", file=LOCAL_SIM.name) as s:
+            if not LOCAL_SIM.is_file():
+                s.fail("파일 없음")
+                return {"error": f"{LOCAL_SIM.name} 이 없습니다. python proxy_tools/proxy_log_detect.py simulate 로 먼저 만드세요."}
+            text = "\n".join(LOCAL_SIM.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
+            s.set(bytes=len(text.encode("utf-8")))
     else:
         remote = (f"tail -n {lines} {REMOTE_SIM}" if source == "sim"
                   else f"sudo {RUNTIME} exec squid tail -n {lines} {LOG_PATH}")
-        cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new",
-               f"{SSH_USER}@{ip}", remote]
-        try:
-            res = subprocess.run(cmd, capture_output=True, timeout=30)
-        except subprocess.TimeoutExpired:
-            return {"error": f"{ip} SSH 응답 없음(30초). VM 이 켜져 있는지, 이 PC IP 가 NSG 에 허용됐는지 확인하세요."}
-        if res.returncode != 0:
-            err = res.stderr.decode("utf-8", errors="replace").strip()
+        text, err = ssh(ip, remote, "VM 가상 로그" if source == "sim" else f"{RUNTIME} squid access.log")
+        if err:
             if source == "sim" and "No such file" in err:
                 err = "VM 에 가상 로그가 없습니다. python proxy_tools/proxy_log_detect.py simulate --upload <IP> 로 올리세요."
-            return {"error": f"{ip} 로그 읽기 실패: {err or 'exit ' + str(res.returncode)}"}
-        text = res.stdout.decode("utf-8", errors="replace")
-    rows = [r for r in map(parser, text.splitlines()) if r][-lines:]
-    rows.sort(key=lambda r: r["ts"], reverse=True)  # 최신이 위로
+            return {"error": f"{ip} 로그 읽기 실패: {err}"}
+    with span("parse", format=kind) as s:
+        raw = text.splitlines()
+        rows = [r for r in map(parser, raw) if r][-lines:]
+        rows.sort(key=lambda r: r["ts"], reverse=True)  # 최신이 위로
+        denied = sum(1 for r in rows if r.get("denied"))
+        s.set(lines=len(raw), rows=len(rows), skipped=len(raw) - len(rows), allowed=len(rows) - denied, denied=denied,
+              clients=len({r.get("client") for r in rows}), domains=len({r.get("host") for r in rows}),
+              newest=rows[0]["time"][:19] if rows else None)
     from proxy_log_detect import ALLOWED_CLIENTS, WHITELIST, detect  # 순환 import 를 피하려고 여기서 불러온다
-    findings = [asdict(f) for f in detect(rows, ALLOWED_CLIENTS, WHITELIST)]
+    with span("detect") as s:  # 차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트·지연·대용량 등
+        found = detect(rows, ALLOWED_CLIENTS, WHITELIST)
+        s.set(findings=len(found), hits=[f"{f.severity}:{f.rule}×{f.count}" for f in found][:6] or "없음")
+    findings = [asdict(f) for f in found]
     return {"rows": rows, "findings": findings, "fetched": datetime.now(timezone.utc).isoformat()}
 
 
 def read_policy(ip: str, kind: str) -> dict:
     """VM 의 /etc/proxy 설정에서 허용 목록을 읽는다. squid: 허용 도메인 + 클라이언트, nginx: 가상 도메인 + 클라이언트."""
     remote = "cat /etc/proxy/proxy.conf; echo '---WHITELIST---'; cat /etc/proxy/lists/whitelist.txt 2>/dev/null"
-    try:
-        res = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-                              "-o", "StrictHostKeyChecking=accept-new", f"{SSH_USER}@{ip}", remote],
-                             capture_output=True, timeout=30)
-    except subprocess.TimeoutExpired:
-        return {"error": f"{ip} SSH 응답 없음(30초)"}
-    if res.returncode != 0:
-        return {"error": f"{ip} 설정 읽기 실패: {res.stderr.decode('utf-8', errors='replace').strip()}"}
-    conf, _, wl = res.stdout.decode("utf-8", errors="replace").partition("---WHITELIST---")
+    text, err = ssh(ip, remote, "proxy.conf + whitelist.txt")
+    if err:
+        return {"error": f"{ip} 설정 읽기 실패: {err}"}
+    conf, _, wl = text.partition("---WHITELIST---")
     lines = [ln.strip() for ln in conf.splitlines() if ln.strip() and not ln.strip().startswith("#")]
     if kind == "nginx":
         clients = [ln.split()[1].rstrip(";") for ln in lines if ln.startswith("allow ")]
@@ -306,7 +321,12 @@ class Handler(BaseHTTPRequestHandler):
             if not host:
                 self.send_json({"error": f"알 수 없는 호스트: {ip}"})
                 return
-            self.send_json(read_policy(ip, host.get("kind") or "squid"))
+            kind = host.get("kind") or "squid"
+            with trace("proxy-log", "policy", vm=host["name"], kind=kind) as t:
+                d = read_policy(ip, kind)
+                t.set(**({"error": d["error"][:120]} if "error" in d else
+                         {"clients": len(d.get("clients", [])), "domains": len(d.get("domains", d.get("routes", [])))}))
+            self.send_json(d)
         elif url.path == "/api/logs":
             qs = parse_qs(url.query)
             ip = (qs.get("host") or [""])[0]
@@ -317,8 +337,14 @@ class Handler(BaseHTTPRequestHandler):
             source = (qs.get("source") or ["real"])[0]
             if source not in ("real", "sim", "local"):
                 source = "real"
-            kind = next((h.get("kind") or "squid" for h in HOSTS if h["ip"] == ip), "squid")
-            self.send_json(read_logs(ip, lines, source, kind))
+            host = next(h for h in HOSTS if h["ip"] == ip)
+            kind = host.get("kind") or "squid"
+            with trace("proxy-log", "logs", vm=host["name"], kind=kind, source=source, lines=lines) as t:
+                d = read_logs(ip, lines, source, kind)
+                t.set(**({"error": d["error"][:120]} if "error" in d else
+                         {"rows": len(d["rows"]), "denied": sum(1 for r in d["rows"] if r.get("denied")),
+                          "findings": len(d["findings"])}))
+            self.send_json(d)
         else:
             self.send_error(404)
 
@@ -339,10 +365,11 @@ def main():
     if args.host:
         HOSTS = [{"name": ip, "ip": ip, "kind": args.kind} for ip in args.host]
     else:
-        print(f"{args.resource_group} 에서 Squid 프록시 VM 을 찾는 중 ...", flush=True)
+        print(f"{datetime.now():%Y-%m-%d %H:%M:%S} {args.resource_group} 에서 프록시 VM 을 찾는 중 (태그 proxy=squid|nginx) ...", flush=True)
         HOSTS = discover_hosts(args.resource_group)
+    print(f"  프록시 VM {len(HOSTS)}대 · Squid 런타임 {RUNTIME} · Squid 로그 {LOG_PATH} · nginx 로그 journald · 최대 {MAX_LINES}줄")
     for h in HOSTS:
-        print(f"  {h['name']}  {h['ip']}  {h.get('state', '')}")
+        print(f"  {h['name']:<14} {h.get('kind') or 'squid':<6} {h['ip']:<16} {h.get('state', '')}")
 
     server = local_server(args.port, Handler, "proxy-log.local")
     print(f"Proxy log viewer: {server.url}")

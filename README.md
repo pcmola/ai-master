@@ -444,7 +444,7 @@ Copy-Item .env.sample .env
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
 | `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 "시나리오 실행" 탭에서 봄, 2MB 넘으면 `.old.log`) |
-| `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py (요청별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
+| `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py·proxy_status_sync.py·proxy_log_viewer.py (요청·실행별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
 <sub>[↑ 목차로](#목차)</sub>
@@ -626,23 +626,23 @@ flowchart TD
 요청마다 노드별 소요 시간과 결과가 허브 로그(`data/logs/wiki-search.log`)와 `data/traces/`에 남습니다(`common/trace.py`).
 
 ```text
-01:38:57 [07902dac] ▶ guide/stream  q=프록시 설정 가이드 알려줘 key=proxy variant=forward
-01:38:58 [07902dac] ▸ 02 hybrid_search                      시작 (하위 단계는 아래)
-01:38:58 [07902dac]     03 embed_query                307ms  model=text-embedding-3-large best_sim=0.601 …
-01:38:58 [07902dac]   02 hybrid_search                321ms  docs=1026 results=20 top=6.37 top_doc=…
-01:38:58 [07902dac]   04 select_sources                 3ms  sources=15 statements=35 top3=…
-01:38:58 [07902dac]   05 web_decision                 385ms  best_sim=0.601 variant=포워드 프록시 variant_sim=0.499 result=위키만 사용
-01:39:03 [07902dac] ↻ 07 llm_generate                   5s  진행 중 · LLM 응답 기다리는 중
-01:39:08 [07902dac] ↻ 07 llm_generate                  10s  진행 중 · LLM 응답 기다리는 중
+2026-10-23 01:38:57 [07902dac] ▶ guide/stream  q=프록시 설정 가이드 알려줘 key=proxy variant=forward
+2026-10-23 01:38:58 [07902dac] ▸ 02 hybrid_search                      시작 (하위 단계는 아래)
+2026-10-23 01:38:58 [07902dac]     03 embed_query                307ms  model=text-embedding-3-large best_sim=0.601 …
+2026-10-23 01:38:58 [07902dac]   02 hybrid_search                321ms  docs=1026 results=20 top=6.37 top_doc=…
+2026-10-23 01:38:58 [07902dac]   04 select_sources                 3ms  sources=15 statements=35 top3=…
+2026-10-23 01:38:58 [07902dac]   05 web_decision                 385ms  best_sim=0.601 variant=포워드 프록시 variant_sim=0.499 result=위키만 사용
+2026-10-23 01:39:03 [07902dac] ↻ 07 llm_generate                   5s  진행 중 · LLM 응답 기다리는 중
+2026-10-23 01:39:08 [07902dac] ↻ 07 llm_generate                  10s  진행 중 · LLM 응답 기다리는 중
 …
-01:39:55 [07902dac]   07 llm_generate              57,255ms  model=gpt-6.1-sol prompt_tokens=8364 completion_tokens=4957 reasoning_tokens=205 first_line_ms=56911 …
-01:39:55 [07902dac] ■ guide/stream ok 58.1s | llm_generate 57.3s · web_decision 0.4s … | mode=llm model=gpt-6.1-sol
+2026-10-23 01:39:55 [07902dac]   07 llm_generate              57,255ms  model=gpt-6.1-sol prompt_tokens=8364 completion_tokens=4957 reasoning_tokens=205 first_line_ms=56911 …
+2026-10-23 01:39:55 [07902dac] ■ guide/stream ok 58.1s | llm_generate 57.3s · web_decision 0.4s … | mode=llm model=gpt-6.1-sol
 ```
 
 - 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `chunk_select`(조각 수·줄어든 글자 수·중복) → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
 - 줄은 단계가 끝날 때 찍히고 번호는 시작 순서입니다. 하위 단계가 있는 단계는 시작할 때 `▸ … 시작` 줄을 먼저 찍으므로, 들여 쓴 하위 줄은 항상 바로 위 `▸` 줄의 하위입니다.
 - 줄 앞 표시: `▸` 하위 단계가 있는 단계의 시작, `↻` 진행 중(LLM 응답을 기다리는 동안 5초마다, 게이트웨이가 응답을 모아 한 번에 보내므로 그사이 로그가 멈춘 것처럼 보이지 않게), `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
-- 시각 옆 8자리 16진수(예: `07902dac`)는 **트레이스 ID**로, 요청마다 새로 만듭니다. 요청 두 개가 동시에 돌아 줄이 섞여도 ID가 같은 줄만 보면 한 요청의 흐름을 따라갈 수 있고, `data/traces/*.jsonl`에서 `"trace_id"`로 같은 요청의 상세 기록을 찾습니다(예: `Select-String -Path data	races\wiki-search-*.jsonl -Pattern 07902dac`). 시나리오 2 로그도 같습니다.
+- 줄 앞은 날짜·시각입니다(서버가 며칠씩 돌아도 어느 날 기록인지 알 수 있게 모든 줄에 날짜를 씀). 그 옆 8자리 16진수(예: `07902dac`)는 **트레이스 ID**로, 요청마다 새로 만듭니다. 요청 두 개가 동시에 돌아 줄이 섞여도 ID가 같은 줄만 보면 한 요청의 흐름을 따라갈 수 있고, `data/traces/*.jsonl`에서 `"trace_id"`로 같은 요청의 상세 기록을 찾습니다(예: `Select-String -Path data	races\wiki-search-*.jsonl -Pattern 07902dac`). 시나리오 2 로그도 같습니다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
 ### 6.2 Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
@@ -734,6 +734,20 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 리버스 프록시의 `data.wjy.test`·`law.wjy.test`는 nginx 설정(`server_name`)에만 있는 이름입니다. 요청은 IP로 보내고 이름은 `Host` 머리글에만 실으므로 hosts·DNS가 필요 없습니다.
 
 로그 뷰어(http://proxy-log.local)는 새로고침하는 동안 상단 진행 막대·회전 아이콘·흐린 표를 보여 주고, 끝나면 `갱신 HH:MM:SS · 새 로그 N건`(또는 `변경 없음`)을 잠깐 강조합니다. 로그 소스가 "실제 로그"면 VM의 진짜 로그이고, "가상 로그"일 때만 만들어 낸 데이터입니다.
+
+로그 뷰어 서버는 요청마다 단계별 기록을 허브 로그(`data/logs/proxy-log.log`)와 `data/traces/proxy-log-YYYYMMDD.jsonl`에 남깁니다.
+
+```text
+2026-10-24 17:16:53 [a8ad86b7] ▶ logs  vm=wjy-proxy02 kind=squid source=real lines=200
+2026-10-24 17:16:56 [a8ad86b7]   01 ssh_read                  2,838ms  what=podman squid access.log exit=0 bytes=3132
+2026-10-24 17:16:56 [a8ad86b7]   02 parse                         0ms  format=squid lines=29 rows=29 skipped=0 allowed=9 denied=20 clients=1 domains=16 newest=2026-10-20T16:50:56
+2026-10-24 17:16:56 [a8ad86b7]   03 detect                        0ms  findings=3 hits=high:…
+2026-10-24 17:16:56 [a8ad86b7] ■ logs ok 2.8s | ssh_read 2.8s · detect 0.0s · parse 0.0s | vm=wjy-proxy02 … rows=29 denied=20 findings=3
+```
+
+- `logs`: 접속 로그 조회. `ssh_read`(SSH 소요 시간·받은 바이트) → `parse`(읽은 줄·해석한 줄·건너뛴 줄, 허용·차단 건수, 클라이언트·도메인 수, 가장 최근 기록) → `detect`(탐지 건수와 규칙). 가상 로그 파일은 `ssh_read` 대신 `file_read`.
+- `policy`: 허용 목록 조회. 허용 클라이언트 수, 허용 도메인(nginx는 가상 도메인) 수.
+- 실패하면 `✗ 01 ssh_read … error=…`로 이유(SSH 시간 초과, 파일 없음 등)가 남습니다. 로그에는 IP 대신 VM 이름을 씁니다.
 
 <sub>[↑ 목차로](#목차)</sub>
 
