@@ -57,6 +57,7 @@ class Span:
         self.start = time.perf_counter()
         self.ms: float | None = None
         self.status, self.error = "ok", None
+        self.opened = False  # 시작 줄을 찍었는지(하위 노드가 있을 때만 찍는다)
 
     def set(self, **attrs) -> Span:
         self.attrs.update(attrs)
@@ -130,6 +131,11 @@ def span(name: str, **attrs):
         yield _NullSpan()
         return
     s = Span(t, name, attrs)
+    parent = t.stack[-1] if t.stack else None
+    if parent is not None and not parent.opened:
+        # 하위 노드가 생기면 상위의 시작 줄을 먼저 찍는다. 끝 줄만 있으면 하위가 상위보다 위에 찍혀 앞 노드의 하위처럼 보인다.
+        parent.opened = True
+        t.log(_row("▸", parent, "") + "  시작 (하위 단계는 아래)")
     t.spans.append(s)
     t.stack.append(s)
     try:

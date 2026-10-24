@@ -627,6 +627,7 @@ flowchart TD
 
 ```text
 01:38:57 [07902dac] ▶ guide/stream  q=프록시 설정 가이드 알려줘 key=proxy variant=forward
+01:38:58 [07902dac] ▸ 02 hybrid_search                      시작 (하위 단계는 아래)
 01:38:58 [07902dac]     03 embed_query                307ms  model=text-embedding-3-large best_sim=0.601 …
 01:38:58 [07902dac]   02 hybrid_search                321ms  docs=1026 results=20 top=6.37 top_doc=…
 01:38:58 [07902dac]   04 select_sources                 3ms  sources=15 statements=35 top3=…
@@ -639,7 +640,8 @@ flowchart TD
 ```
 
 - 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `chunk_select`(조각 수·줄어든 글자 수·중복) → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
-- 줄 앞 표시: `↻` 진행 중(LLM 응답을 기다리는 동안 5초마다, 게이트웨이가 응답을 모아 한 번에 보내므로 그사이 로그가 멈춘 것처럼 보이지 않게), `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
+- 줄은 단계가 끝날 때 찍히고 번호는 시작 순서입니다. 하위 단계가 있는 단계는 시작할 때 `▸ … 시작` 줄을 먼저 찍으므로, 들여 쓴 하위 줄은 항상 바로 위 `▸` 줄의 하위입니다.
+- 줄 앞 표시: `▸` 하위 단계가 있는 단계의 시작, `↻` 진행 중(LLM 응답을 기다리는 동안 5초마다, 게이트웨이가 응답을 모아 한 번에 보내므로 그사이 로그가 멈춘 것처럼 보이지 않게), `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
 ### 6.2 Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
