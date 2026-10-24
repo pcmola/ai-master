@@ -298,7 +298,7 @@ flowchart LR
 | | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, nginx는 journald) | http://proxy-log.local (8768) |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
 | | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣음 | - |
-| | `squid_policy_monitor.py` | Squid 정책 변경 감지 (읽기 전용) | - |
+| | `squid_policy_monitor.py` | Squid 정책 변경 감지 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
 | | `squid_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki 현황 갱신 | - |
 | | `proxy_status_sync.py` | 시나리오 2: Wiki Proxy 현황 ↔ Azure VM 비교 → Teams 승인 → Task → Wiki 현행화 → 완료 보고 | - |
 | teams_tools | `teams_notify.py`, `teams_graph.py` | Teams 알림 (Workflows 웹후크 / Graph API). `.env`의 `TEAMS_MENTION`(UPN)을 넣으면 카드마다 그 사람을 @멘션해 Teams 활동 피드에 알림이 뜸 | - |
@@ -656,7 +656,7 @@ sequenceDiagram
         participant D as Azure DevOps
     end
 
-    운영자->>P: 실행 (--dry-run / --yes / --task-id)
+    운영자->>P: 실행 (--dry-run이면 출력만)
     P->>S: 기준 스냅샷 읽기
     P->>VM: SSH로 설정 + whitelist.txt 읽기
     P->>P: 기준과 비교 (추가/삭제)
@@ -666,16 +666,16 @@ sequenceDiagram
         P-->>운영자: 할 일만 출력 (아무것도 바꾸지 않음)
     else 변경 있음
         P->>운영자: 변경 내용 보여 주고 승인 요청
-        운영자->>P: 승인 (--yes면 생략)
+        운영자->>P: 승인 (콘솔에서 y)
         rect rgba(22, 163, 74, 0.1)
-            P->>D: Task 생성 (--task-id면 댓글 추가)
+            P->>D: Task 생성
             P->>W: '프록시 화이트리스트 현황' 갱신 후 commit/push
             P->>S: 모두 성공한 뒤에만 스냅샷·이력 갱신
         end
     end
 ```
 
-처음 실행(기준 스냅샷 없음)이면 Task 없이 기준만 저장하고 Wiki 현황 문서를 만듭니다. 중간에 실패하면 스냅샷이 그대로라서 다음 실행 때 같은 변경을 다시 처리합니다.
+처음 실행(기준 스냅샷 없음)이면 Task 없이 기준만 저장하고 Wiki 현황 문서를 만듭니다. 중간에 실패하면 스냅샷이 그대로라서 다음 실행 때 같은 변경을 다시 처리합니다. 접속 정보(`SQUID_HOST`, `SQUID_NAME`, `SQUID_SSH_USER`, `SQUID_SSH_KEY`, `SQUID_CONTAINER`, `SQUID_POLICY_ROOT`, `SQUID_POLICY_SNAPSHOT`)는 옵션이 아니라 `.env`에서만 읽습니다. `squid_policy_monitor.py`는 변경을 보여 주기만 하고 기준 스냅샷을 바꾸지 않으므로, 먼저 확인용으로 돌려도 이 단계의 변경 감지에 영향이 없습니다.
 
 ### 6.3 프록시 로그 이상 탐지 (proxy_log_detect.py)
 
@@ -804,6 +804,19 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 ## 9. 실행 예시
 
 프로젝트 루트에서 실행합니다. 다른 폴더에서 실행해도 `.env`·`wiki-repo`·`data`는 프로젝트 루트 기준으로 찾습니다.
+
+명령줄 옵션은 최소로 두고, 접속 정보·동작 방식은 `.env`로 정합니다. 화면이 있는 기능은 허브(http://ai-master.local)에서 실행하는 것이 기본입니다.
+
+| 도구 | 옵션 | 나머지는 `.env` |
+|---|---|---|
+| `hub.py` | `--start-all`, `--restart-all`, `--no-browser`, `--keep` | - |
+| `proxy_status_sync.py` (시나리오 2) | `--dry-run` | `SCENARIO2_*` (push, 승인 대기, 비교 문서 등) |
+| `test\scenario2\setup_env.py` | `--check` | 옵션 없이 실행하면 VM 켜기 + 표·정답 재생성 + 문서 초기화 |
+| `wiki_register.py` (시나리오 1 명령줄 등록) | `--query`, `--model` | `WIKI_REGISTER_PUSH` |
+| `squid_policy_publish.py` | `--dry-run` | `SQUID_*` |
+| `squid_policy_monitor.py` | 없음 | `SQUID_*` |
+| `proxy_log_detect.py` | `simulate` / `detect` 하위 명령 | `PROXY_ALLOWED_CLIENTS` |
+| `proxy_fault_inject.py` (장애 재현) | `list` / `apply` / `status`, `apply`의 `--push`·`--deploy` | 외부(저장소·VM)를 바꾸는 동작이라 옵션으로 명시할 때만 함 |
 
 ```powershell
 python wiki_tools\wiki_search.py

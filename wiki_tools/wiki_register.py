@@ -11,7 +11,6 @@ WIKI_DOCUMENT_RULES.md 를 따른다.
 
 사용 예(직접 실행):
     python wiki_tools/wiki_register.py guide.md --query "프록시 설정 가이드 알려줘" --model gpt-6.1-sol
-    python wiki_tools/wiki_register.py guide.md --no-push     # 로컬 커밋만
 """
 
 from __future__ import annotations
@@ -139,12 +138,11 @@ def main() -> int:
     p.add_argument("file", type=Path, help="가이드 Markdown 파일(첫 줄 '# 제목')")
     p.add_argument("--query", default="")
     p.add_argument("--model")
-    p.add_argument("--no-push", action="store_true", help="로컬 커밋만 하고 push 하지 않음")
     args = p.parse_args()
     text = args.file.read_text(encoding="utf-8-sig")
     m = re.match(r"#\s+(.+)", text)
     title = m.group(1).strip() if m else args.file.stem
-    r = register(title, text, args.query, args.model, push=not args.no_push)
+    r = register(title, text, args.query, args.model, push=os.environ.get("WIKI_REGISTER_PUSH", "1") != "0")  # 화면 등록과 같은 .env 설정
     print(f"{'갱신' if r['updated'] else '등록'}: {r['title']} ({r['path']}) 커밋 {r['commit']}"
           + (" · push 완료" if r["pushed"] else " · 로컬"))
     print(r["url"])

@@ -2,21 +2,20 @@
 
 흐름
 1. squid_policy_monitor 의 함수로 프록시 VM 의 Squid 정책(설정 + lists/whitelist.txt)을 SSH 로 읽어 기준과 비교한다.
-2. 바뀐 내용(추가/삭제)을 보여 주고 승인을 받는다(--yes 면 묻지 않음).
-3. Azure DevOps 에 Task 를 만든다(--task-id 를 주면 그 Task 에 댓글로 추가).
+2. 바뀐 내용(추가/삭제)을 보여 주고 승인을 받는다.
+3. Azure DevOps 에 Task 를 만든다.
 4. wiki-repo 의 '프록시 화이트리스트 현황' 문서를 다시 쓰고 commit/push 한다.
 5. 모두 성공한 뒤에만 기준 스냅샷을 갱신한다. 중간에 실패하면 다음 실행 때 같은 변경을 다시 처리한다.
 
 처음 실행(기준 스냅샷 없음)은 Task 없이 기준만 저장하고 위키 현황 문서를 만든다.
 
 사용 예:
-    python proxy_tools/squid_policy_publish.py --dry-run      # 무엇을 할지 출력만 (Task·위키·스냅샷 변경 없음)
-    python proxy_tools/squid_policy_publish.py                # 변경이 있으면 승인 후 Task 등록 + 위키 갱신
-    python proxy_tools/squid_policy_publish.py --yes          # 승인 없이 진행 (작업 스케줄러용)
-    python proxy_tools/squid_policy_publish.py --task-id 123  # 새 Task 대신 기존 Task 123 에 댓글로 추가
+    python proxy_tools/squid_policy_publish.py            # 변경이 있으면 승인 후 Task 등록 + 위키 갱신
+    python proxy_tools/squid_policy_publish.py --dry-run  # 무엇을 할지 출력만 (Task·위키·스냅샷 변경 없음)
 
 필요한 설정(.env): AZURE_DEVOPS_ORG / PROJECT / PAT (PAT 에 Work Items Read & write 권한 필요),
-                   SQUID_HOST(프록시 IP), SQUID_CONTAINER=squid, SQUID_POLICY_ROOT=/etc/squid
+                   SQUID_HOST(프록시 IP), SQUID_NAME(문서·Task 에 표시할 VM 이름, 기본 wjy-proxy01),
+                   SQUID_SSH_USER, SQUID_SSH_KEY, SQUID_CONTAINER=squid, SQUID_POLICY_ROOT=/etc/squid, SQUID_POLICY_SNAPSHOT
 """
 
 from __future__ import annotations
@@ -223,19 +222,15 @@ def confirm(question: str) -> bool:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Squid 정책 변경을 Azure DevOps Task 와 위키 현황에 반영한다.")
-    p.add_argument("--host", default=env("SQUID_HOST"), help="프록시 VM IP (기본 .env 의 SQUID_HOST)")
-    p.add_argument("--name", default="wjy-proxy01", help="문서·Task 에 표시할 VM 이름")
-    p.add_argument("--user", default=env("SQUID_SSH_USER", "azureuser"))
-    p.add_argument("--key", default=env("SQUID_SSH_KEY"))
-    p.add_argument("--policy-root", default=env("SQUID_POLICY_ROOT", "/etc/squid"))
-    p.add_argument("--container", default=env("SQUID_CONTAINER", "squid"))
-    p.add_argument("--snapshot", type=Path, default=Path(env("SQUID_POLICY_SNAPSHOT", str(DEFAULT_SNAPSHOT))))
-    p.add_argument("--task-id", type=int, help="새 Task 대신 이 Task 에 댓글로 변경 내용을 추가")
-    p.add_argument("--yes", action="store_true", help="승인 질문 없이 진행")
     p.add_argument("--dry-run", action="store_true", help="출력만 하고 Task·위키·스냅샷은 바꾸지 않음")
     args = p.parse_args()
+    # 접속 정보는 옵션 대신 .env 에서만 읽는다
+    args.host, args.name = env("SQUID_HOST"), env("SQUID_NAME", "wjy-proxy01")
+    args.user, args.key = env("SQUID_SSH_USER", "azureuser"), env("SQUID_SSH_KEY")
+    args.policy_root, args.container = env("SQUID_POLICY_ROOT", "/etc/squid"), env("SQUID_CONTAINER", "squid")
+    args.snapshot = Path(env("SQUID_POLICY_SNAPSHOT", str(DEFAULT_SNAPSHOT)))
     if not args.host:
-        p.error("--host 또는 .env 의 SQUID_HOST 에 프록시 IP 를 지정하세요.")
+        p.error(".env 의 SQUID_HOST 에 프록시 IP 를 지정하세요.")
 
     try:
         print(f"{args.name} ({args.host}) 정책 읽는 중 ...", flush=True)
@@ -266,23 +261,18 @@ def main() -> int:
         if args.dry_run:
             if not baseline:
                 title, _ = task_body(args.name, args.host, change, whitelist, when, wiki_url)
-                print(f"[dry-run] {'Task #' + str(args.task_id) + ' 에 댓글' if args.task_id else 'Task 생성'}: {title}")
+                print(f"[dry-run] Task 생성: {title}")
             print(f"[dry-run] 위키 갱신: {WIKI_PAGE.relative_to(WIKI_REPO).as_posix()}")
             return 0
-        if not args.yes and not confirm("Task 등록과 위키 갱신을 진행할까요?" if not baseline else "위키 현황 문서를 만들까요?"):
+        if not confirm("Task 등록과 위키 갱신을 진행할까요?" if not baseline else "위키 현황 문서를 만들까요?"):
             print("취소했습니다. 기준 스냅샷은 그대로 두었으므로 다음 실행 때 다시 묻습니다.")
             return 1
 
         task_id = None
         if not baseline:
             title, body = task_body(args.name, args.host, change, whitelist, when, wiki_url)
-            if args.task_id:
-                devops.add_comment(args.task_id, f"<p><b>{html.escape(title)}</b></p>{body}")
-                task_id = args.task_id
-                print(f"  Task #{task_id} 에 댓글 추가: {devops.task_url(task_id)}")
-            else:
-                task_id = devops.create_task(title, body)
-                print(f"  Task #{task_id} 생성: {devops.task_url(task_id)}")
+            task_id = devops.create_task(title, body)
+            print(f"  Task #{task_id} 생성: {devops.task_url(task_id)}")
             history.append({"when": when, "host": args.name, "added": change["added"], "removed": change["removed"],
                             "task_id": task_id})
 

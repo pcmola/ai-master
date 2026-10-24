@@ -1,8 +1,11 @@
 """Read Squid policy files over SSH and produce an approval-ready change draft.
 
 The monitor is intentionally read-only. It never edits Squid, creates an Azure
-DevOps item, or updates Wiki automatically. A later approval step can consume
-the JSON draft produced here.
+DevOps item, updates Wiki, or moves the baseline snapshot; squid_policy_publish.py
+does that after approval. Settings come from .env (SQUID_HOST, SQUID_SSH_USER,
+SQUID_SSH_KEY, SQUID_POLICY_ROOT, SQUID_CONTAINER, SQUID_POLICY_WRAPPER, SQUID_POLICY_SNAPSHOT).
+
+    python proxy_tools/squid_policy_monitor.py   # 기준 대비 정책 변경을 출력만
 """
 
 from __future__ import annotations
@@ -145,47 +148,27 @@ def load_snapshot(path: Path) -> dict | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Read-only Squid policy change monitor")
-    parser.add_argument("--host", default=env("SQUID_HOST", DEFAULT_HOST))
-    parser.add_argument("--user", default=env("SQUID_SSH_USER", DEFAULT_USER))
-    parser.add_argument("--key", default=env("SQUID_SSH_KEY"))
-    parser.add_argument("--policy-root", default=env("SQUID_POLICY_ROOT", DEFAULT_ROOT))
-    parser.add_argument("--container", default=env("SQUID_CONTAINER"), help="Docker container name, if Squid runs in Docker")
-    parser.add_argument("--wrapper", default=env("SQUID_POLICY_WRAPPER"), help="Fixed read-only server wrapper command")
-    parser.add_argument("--snapshot", type=Path, default=Path(env("SQUID_POLICY_SNAPSHOT", str(DEFAULT_SNAPSHOT))))
-    parser.add_argument("--json", action="store_true", help="print machine-readable result")
-    parser.add_argument("--no-save", action="store_true", help="do not update the baseline snapshot")
-    args = parser.parse_args()
+    parser.parse_args()  # 옵션 없음(-h 만). 설정은 .env
+    host = env("SQUID_HOST", DEFAULT_HOST)
+    snapshot = Path(env("SQUID_POLICY_SNAPSHOT", str(DEFAULT_SNAPSHOT)))
 
     try:
-        previous = load_snapshot(args.snapshot)
-        files = read_remote_policy(args.host, args.user, args.policy_root, args.key, args.container, args.wrapper)
-        current = normalize_policy(files)
-        change = diff_policy(previous, current)
-        result = {
-            "host": args.host,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
-            "snapshot": str(args.snapshot),
-            "file_count": len(files),
-            "policy": {"sha256": current["sha256"], "rules": current["rules"]},
-            "change": change,
-            "approval_status": "pending" if change["changed"] else "no_change",
-        }
-        if not args.no_save:
-            args.snapshot.parent.mkdir(parents=True, exist_ok=True)
-            args.snapshot.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+        previous = load_snapshot(snapshot)
+        files = read_remote_policy(host, env("SQUID_SSH_USER", DEFAULT_USER), env("SQUID_POLICY_ROOT", DEFAULT_ROOT),
+                                   env("SQUID_SSH_KEY"), env("SQUID_CONTAINER"), env("SQUID_POLICY_WRAPPER"))
+        change = diff_policy(previous, normalize_policy(files))
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    elif change["changed"]:
+    args = argparse.Namespace(host=host)
+    if change["changed"]:
         print(f"Policy changed on {args.host}: +{change['added_count']} / -{change['removed_count']}")
         for item in change["added"]:
             print(f"  ADDED   {item}")
         for item in change["removed"]:
             print(f"  REMOVED {item}")
-        print("Approval required before Task/Wiki registration.")
+        print("Approval required before Task/Wiki registration: python proxy_tools/squid_policy_publish.py")
     else:
         print(f"No policy change on {args.host}.")
     return 0
