@@ -396,7 +396,7 @@ def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple
 # ---------------------------------------------------------------- 6·8 Azure DevOps
 
 def devops():
-    from squid_policy_publish import DevOps
+    from proxy_policy_publish import DevOps
     return DevOps()
 
 

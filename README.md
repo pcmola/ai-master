@@ -27,7 +27,7 @@
   - [5.2 허브 (hub.py)](#52-허브-hubpy)
 - [6. 주요 흐름](#6-주요-흐름)
   - [6.1 Wiki 검색·가이드 생성 (wiki_search.py)](#61-wiki-검색가이드-생성-wiki_searchpy)
-  - [6.2 Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)](#62-squid-정책-변경--taskwiki-반영-squid_policy_publishpy)
+  - [6.2 프록시 정책 변경 → Task·Wiki 반영 (proxy_policy_publish.py)](#62-프록시-정책-변경--taskwiki-반영-proxy_policy_publishpy)
   - [6.3 프록시 로그 이상 탐지 (proxy_log_detect.py)](#63-프록시-로그-이상-탐지-proxy_log_detectpy)
 - [7. 프록시 VM 운영](#7-프록시-vm-운영)
 - [8. 시나리오 2 테스트 환경](#8-시나리오-2-테스트-환경)
@@ -192,7 +192,7 @@ flowchart TD
 | 3. 유사 장애 검색 | Wiki 장애 사례(RAG), 웹 검색(확장), 해결 방법 조회 | ⬜ | 시나리오 1의 검색 엔진을 쓸 수 있으나 연결 안 됨 |
 | 4. DevOps 소스 확인 | Repos 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | ⬜ | 장애 재현용 `proxy_fault_inject.py`(proxy-config 저장소에 잘못된 설정 커밋)만 있음 |
 | 5. Teams 조치 승인 요청 | 원인·수정안 요약(LLM), "조치할까요?" Yes/No | ⬜ | 시나리오 2의 Teams 카드·승인 서버를 재사용할 수 있음 |
-| 6. 장애 조치 Task 생성(확장) | 장애 내용·원인 기록, 담당자·우선순위 | ⬜ | (Squid 정책 변경 → Task 등록은 `squid_policy_publish.py`에 있음) |
+| 6. 장애 조치 Task 생성(확장) | 장애 내용·원인 기록, 담당자·우선순위 | ⬜ | (프록시 정책 변경 → Task 등록은 `proxy_policy_publish.py`에 있음) |
 | 7. 소스 수정 및 PR(확장) | 브랜치 생성·AI 코드 수정, Pull Request, Task와 PR 연결 | ⬜ | 미구현. 고칠 대상(잘못된 설정 커밋)은 `proxy_fault_inject.py`로 proxy-config 저장소에 만들 수 있음 |
 | 8. 장애 대응 이력 Wiki(확장) | 대응 이력 문서(LLM), 원인·조치·PR 링크, Teams 결과 알림 | ⬜ | 미구현. Wiki 등록은 시나리오 1의 `wiki_register.py`, 결과 알림은 `teams_notify.py`를 재사용할 예정 |
 
@@ -211,7 +211,7 @@ ai-master/
 ├─ hub.py          로컬 웹서버 허브: 로컬 서버 탭(시작·중지·재시작, 로그) + 시나리오 실행 탭
 ├─ common/         공통 모듈: 프로젝트 경로(paths.py), 로컬 웹서버·크롬 열기(server.py), 노드별 트레이싱(trace.py)
 ├─ wiki_tools/     Wiki 검색·가이드 생성, 로컬 뷰어, Azure DevOps Wiki 문서 관리
-├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, Squid 정책 변경 감지·Task/Wiki 반영
+├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, 프록시 정책(Squid·nginx) 변경 감지·Task/Wiki 반영
 ├─ teams_tools/    Microsoft Teams 알림, 로컬 승인 화면(Teams 대체)
 ├─ docs/images/    README 실행 화면 캡처 (공인 IP 등은 가린 상태)
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
@@ -233,7 +233,7 @@ flowchart LR
         subgraph proxy_tools
             logviewer["proxy_log_viewer.py"]
             detect["proxy_log_detect.py"]
-            publish["squid_policy_publish.py"]
+            publish["proxy_policy_publish.py"]
             vmtool["azure_proxy_vm.py"]
         end
         teams["teams_tools"]
@@ -298,8 +298,8 @@ flowchart LR
 | | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, nginx는 journald) | http://proxy-log.local (8768) |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
 | | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣음 | - |
-| | `squid_policy_monitor.py` | Squid 정책 변경 감지 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
-| | `squid_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki 현황 갱신 | - |
+| | `proxy_policy_monitor.py` | 프록시 VM 전체(Squid·nginx) 정책 변경 확인 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
+| | `proxy_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki '프록시 정책 현황' 갱신 | - |
 | | `proxy_status_sync.py` | 시나리오 2: Wiki Proxy 현황 ↔ Azure VM 비교 → Teams 승인 → Task → Wiki 현행화 → 완료 보고 | - |
 | teams_tools | `teams_notify.py`, `teams_graph.py` | Teams 알림 (Workflows 웹후크 / Graph API). `.env`의 `TEAMS_MENTION`(UPN)을 넣으면 카드마다 그 사람을 @멘션해 Teams 활동 피드에 알림이 뜸 | - |
 | | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | http://127.0.0.1:8771 (요청 중에만) |
@@ -383,7 +383,7 @@ flowchart LR
 
 3. 시나리오 2가 VM을 찾는 기준: 리소스 그룹 `SCENARIO2_RESOURCE_GROUP`(기본 `WJY-PROXY-RG`) 안에서 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있거나 이름이 `proxy`·`prxy`·`pxy`(+숫자)로 끝나는 VM.
 4. 권한: 조회만 하려면 리소스 그룹 **Reader**, 승인 때 추정 VM에 태그를 붙이려면 **Tag Contributor**, "테스트 환경 준비"에서 꺼진 VM을 켜려면 **Virtual Machine Contributor**가 필요합니다.
-5. 시나리오 3: 프록시 로그 뷰어는 이 PC의 기본 SSH 키로 `azureuser@<VM 공용 IP>`에 접속해 로그를 읽습니다(VM을 만들 때 넣은 키, NSG에서 이 PC IP 허용). 허용 클라이언트 대역은 `PROXY_ALLOWED_CLIENTS`에 넣습니다. Squid 정책 변경 감지(`squid_policy_*.py`)를 쓰려면 `SQUID_HOST`, `SQUID_SSH_USER`, `SQUID_SSH_KEY`도 넣습니다.
+5. 시나리오 3: 프록시 로그 뷰어는 이 PC의 기본 SSH 키로 `azureuser@<VM 공용 IP>`에 접속해 로그를 읽습니다(VM을 만들 때 넣은 키, NSG에서 이 PC IP 허용). 허용 클라이언트 대역은 `PROXY_ALLOWED_CLIENTS`에 넣습니다. 정책 변경 감지(`proxy_policy_*.py`)도 같은 SSH 접속을 씁니다(기본 사용자 azureuser, 다른 키를 쓰면 `PROXY_SSH_USER`·`PROXY_SSH_KEY`).
 
 ### 3.7 Microsoft Teams
 
@@ -426,9 +426,9 @@ Copy-Item .env.sample .env
 | `SCENARIO2_TIMEOUT` / `SCENARIO2_WIKI_PAGE` | `900` / (비움) | 승인 대기 초, 비교할 Wiki 문서(wiki-repo 기준 경로, 비우면 테스트 문서) |
 | `GUIDE_CHUNKS` / `GUIDE_CHUNK_CHARS` / `GUIDE_CONTEXT_CHARS` | `24` / `1500` / `16000` | 시나리오 1 RAG: LLM에 넘길 조각 수, 조각 하나의 대략 길이, 전체 글자 수 상한. 조각 임베딩은 `data/wiki_search_chunks.json`에 캐시 |
 | `WIKI_REGISTER_PUSH` | `1` | 시나리오 1 "Wiki에 등록" 때 Azure DevOps Wiki로 push(`0`이면 로컬 커밋만) |
-| `SQUID_HOST` | - | 정책 감지 대상 프록시 VM의 공용 IP |
 | `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
-| `SQUID_CONTAINER` / `SQUID_RUNTIME` | `squid` / `podman` | VM에서 Squid가 도는 컨테이너 이름과 런타임 |
+| `PROXY_SSH_USER` / `PROXY_SSH_KEY` | `azureuser` / (비움: 기본 키) | 프록시 VM SSH 접속(정책 변경 감지) |
+| `SQUID_RUNTIME` | `podman` | VM에서 Squid 컨테이너를 띄운 런타임(로그 뷰어) |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
 
 임베딩 모델을 바꾸면 처음 실행할 때 문서 전체 임베딩을 다시 계산한다(약 2분). 결과는 `data/wiki_search_cache.json`에 캐시된다.
@@ -441,7 +441,7 @@ Copy-Item .env.sample .env
 |---|---|
 | `wiki_search_cache.json` | wiki_search.py (문서 임베딩 캐시) |
 | `sim_access.log` | proxy_log_detect.py simulate (가상 프록시 로그) |
-| `proxy_policy_state/` | squid_policy_publish.py (정책 기준 스냅샷, 변경 이력) |
+| `proxy_policy_state/` | proxy_policy_publish.py (VM별 정책 기준 스냅샷 `<VM>.json`, 변경 이력) |
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
 | `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 "시나리오 실행" 탭에서 봄, 2MB 넘으면 `.old.log`) |
@@ -646,7 +646,7 @@ flowchart TD
 - 줄 앞은 날짜·시각입니다(서버가 며칠씩 돌아도 어느 날 기록인지 알 수 있게 모든 줄에 날짜를 씀). 그 옆 8자리 16진수(예: `07902dac`)는 **트레이스 ID**로, 요청마다 새로 만듭니다. 요청 두 개가 동시에 돌아 줄이 섞여도 ID가 같은 줄만 보면 한 요청의 흐름을 따라갈 수 있고, `data/traces/*.jsonl`에서 `"trace_id"`로 같은 요청의 상세 기록을 찾습니다(예: `Select-String -Path data	races\wiki-search-*.jsonl -Pattern 07902dac`). 시나리오 2 로그도 같습니다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
-### 6.2 Squid 정책 변경 → Task·Wiki 반영 (squid_policy_publish.py)
+### 6.2 프록시 정책 변경 → Task·Wiki 반영 (proxy_policy_publish.py)
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"actorBkg": "#FFEDD5", "actorBorder": "#F97316", "actorTextColor": "#7C2D12", "actorLineColor": "#F97316", "signalColor": "#64748B", "signalTextColor": "#64748B", "labelBoxBkgColor": "#FEF3C7", "labelBoxBorderColor": "#D97706", "labelTextColor": "#78350F", "loopTextColor": "#D97706", "sequenceNumberColor": "#FFFFFF", "noteBkgColor": "#FEF9C3"}}}%%
@@ -654,19 +654,19 @@ sequenceDiagram
     autonumber
     actor 운영자
     box rgba(249, 115, 22, 0.08) 로컬 PC
-        participant P as squid_policy_publish.py
+        participant P as proxy_policy_publish.py
         participant S as data/proxy_policy_state
         participant W as wiki-repo
     end
     box rgba(2, 132, 199, 0.08) Azure
-        participant VM as 프록시 VM (Squid)
+        participant VM as 프록시 VM (Squid·nginx)
         participant D as Azure DevOps
     end
 
     운영자->>P: 실행 (--dry-run이면 출력만)
     P->>S: 기준 스냅샷 읽기
-    P->>VM: SSH로 설정 + whitelist.txt 읽기
-    P->>P: 기준과 비교 (추가/삭제)
+    P->>VM: VM마다 SSH로 /etc/proxy 설정 읽기 (중지된 VM은 건너뜀)
+    P->>P: VM별 기준과 비교 (추가/삭제)
     alt 변경 없음
         P-->>운영자: "변경 없음" 후 종료
     else --dry-run
@@ -675,14 +675,24 @@ sequenceDiagram
         P->>운영자: 변경 내용 보여 주고 승인 요청
         운영자->>P: 승인 (콘솔에서 y)
         rect rgba(22, 163, 74, 0.1)
-            P->>D: Task 생성
-            P->>W: '프록시 화이트리스트 현황' 갱신 후 commit/push
+            P->>D: Task 생성 (바뀐 VM을 모두 적음)
+            P->>W: '프록시 정책 현황' 갱신 후 commit/push
             P->>S: 모두 성공한 뒤에만 스냅샷·이력 갱신
         end
     end
 ```
 
-처음 실행(기준 스냅샷 없음)이면 Task 없이 기준만 저장하고 Wiki 현황 문서를 만듭니다. 중간에 실패하면 스냅샷이 그대로라서 다음 실행 때 같은 변경을 다시 처리합니다. 접속 정보(`SQUID_HOST`, `SQUID_NAME`, `SQUID_SSH_USER`, `SQUID_SSH_KEY`, `SQUID_CONTAINER`, `SQUID_POLICY_ROOT`, `SQUID_POLICY_SNAPSHOT`)는 옵션이 아니라 `.env`에서만 읽습니다. `squid_policy_monitor.py`는 변경을 보여 주기만 하고 기준 스냅샷을 바꾸지 않으므로, 먼저 확인용으로 돌려도 이 단계의 변경 감지에 영향이 없습니다.
+대상은 시나리오 2와 같은 기준으로 찾은 프록시 VM 중 Azure 태그 `proxy=squid|nginx`가 있는 VM 전체입니다. VM마다 `/etc/proxy/proxy.conf`와 `/etc/proxy/lists/*`(컨테이너에 연결된 설정 원본)를 읽어 정책 항목으로 나눠 비교합니다.
+
+| 종류 | 비교하는 정책 항목 |
+|---|---|
+| Squid (wjy-proxy01·02) | 허용 도메인(`lists/whitelist.txt`), 허용 클라이언트(`acl … src`), `http_access`·`http_port` 규칙 |
+| nginx (wjy-proxy03) | 가상 도메인 라우팅(`server_name` → `set $upstream`/`proxy_pass`), 허용 클라이언트(`allow`), `deny`·`listen` 규칙 |
+
+- 기준 스냅샷이 없는 VM(처음 보는 VM)은 Task 없이 지금 정책을 기준으로 저장하고 문서에 올립니다. 중간에 실패하면 스냅샷이 그대로라서 다음 실행 때 같은 변경을 다시 처리합니다.
+- 중지된 VM은 읽지 못하므로 건너뛰고 기준도 그대로 둡니다. 문서에는 마지막으로 확인한 정책을 "읽지 못함" 표시와 함께 남깁니다.
+- Wiki 문서는 `02. 운영 > 01. 공통 > 06 네트워크 및 Proxy > 01 네트워크 및 Proxy 현황 파악 > 프록시 정책 현황` 하나에 VM별 절로 씁니다.
+- `proxy_policy_monitor.py`는 변경을 보여 주기만 하고 기준 스냅샷을 바꾸지 않으므로, 먼저 확인용으로 돌려도 이 단계의 변경 감지에 영향이 없습니다. 실행 기록은 `data/traces/proxy-policy-YYYYMMDD.jsonl`에도 남습니다.
 
 ### 6.3 프록시 로그 이상 탐지 (proxy_log_detect.py)
 
@@ -835,8 +845,8 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 | `proxy_status_sync.py` (시나리오 2) | `--dry-run` | `SCENARIO2_*` (push, 승인 대기, 비교 문서 등) |
 | `test\scenario2\setup_env.py` | `--check` | 옵션 없이 실행하면 VM 켜기 + 표·정답 재생성 + 문서 초기화 |
 | `wiki_register.py` (시나리오 1 명령줄 등록) | `--query`, `--model` | `WIKI_REGISTER_PUSH` |
-| `squid_policy_publish.py` | `--dry-run` | `SQUID_*` |
-| `squid_policy_monitor.py` | 없음 | `SQUID_*` |
+| `proxy_policy_publish.py` | `--dry-run` | `PROXY_SSH_*` |
+| `proxy_policy_monitor.py` | 없음 | `PROXY_SSH_*` |
 | `proxy_log_detect.py` | `simulate` / `detect` 하위 명령 | `PROXY_ALLOWED_CLIENTS` |
 | `proxy_fault_inject.py` (장애 재현) | `list` / `apply` / `status`, `apply`의 `--push`·`--deploy` | 외부(저장소·VM)를 바꾸는 동작이라 옵션으로 명시할 때만 함 |
 
@@ -846,7 +856,7 @@ python wiki_tools\wiki_viewer.py
 python wiki_tools\wiki_documents.py list
 python proxy_tools\proxy_log_viewer.py
 python proxy_tools\proxy_log_detect.py detect --host <VM_IP>
-python proxy_tools\squid_policy_publish.py --dry-run
+python proxy_tools\proxy_policy_publish.py --dry-run
 python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --dry-run
 ```
 
