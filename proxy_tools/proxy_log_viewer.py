@@ -143,7 +143,7 @@ def read_logs(ip: str, lines: int, source: str = "real", kind: str = "squid") ->
     parser = parse_line
     if kind == "nginx":
         if source != "real":
-            return {"error": "가상 로그는 squid 형식만 있습니다. nginx 프록시는 '실제 로그'로 보세요."}
+            return {"error": "가상 로그는 squid 형식만 있습니다. NGINX 프록시는 '실제 로그'로 보세요."}
         parser = parse_nginx
         # podman logs 는 지금 컨테이너 것만 보여 준다. 컨테이너는 --rm 이라 재시작·VM 중지마다 새로 만들어지므로,
         # 이전 컨테이너 로그까지 남아 있는 journald 에서 이름으로 읽는다. PRIORITY=6 은 표준 출력(접속 로그)만,
@@ -238,7 +238,7 @@ body.loading .loadbar{visibility:visible}.grid{transition:opacity .2s}body.loadi
 .stamp{margin-left:6px;padding:1px 6px;border-radius:4px;transition:background .6s,color .6s}.stamp.fresh{background:#e3f5ec;color:#1e7a4f;font-weight:600}
 @media(max-width:900px){.grid{grid-template-columns:1fr}}
 </style></head><body><div class="loadbar"><i></i></div>
-<header class="top"><div class="mark">P</div><div class="brand">Proxy Log Viewer</div><div class="crumb">Squid · nginx 접속 로그 · 읽기 전용</div></header>
+<header class="top"><div class="mark">P</div><div class="brand">Proxy Log Viewer</div><div class="crumb">Squid · NGINX 접속 로그 · 읽기 전용</div></header>
 <div class="wrap">
 <div class="bar">
 <select id="src" title="로그 소스"><option value="real">실제 로그</option><option value="sim">가상 로그 (VM ~/sim_access.log)</option><option value="local">가상 로그 (로컬 파일)</option></select>
@@ -367,7 +367,7 @@ def main():
     else:
         print(f"{datetime.now():%Y-%m-%d %H:%M:%S} {args.resource_group} 에서 프록시 VM 을 찾는 중 (태그 proxy=squid|nginx) ...", flush=True)
         HOSTS = discover_hosts(args.resource_group)
-    print(f"  프록시 VM {len(HOSTS)}대 · Squid 런타임 {RUNTIME} · Squid 로그 파일 {LOG_PATH} · nginx 로그 journald(VM 시스템 로그, journalctl 로 읽음) · 최대 {MAX_LINES}줄")
+    print(f"  프록시 VM {len(HOSTS)}대 · Squid 런타임 {RUNTIME} · Squid 로그 파일 {LOG_PATH} · NGINX 로그 journald(VM 시스템 로그, journalctl 로 읽음) · 최대 {MAX_LINES}줄")
     for h in HOSTS:
         print(f"  {h['name']:<14} {h.get('kind') or 'squid':<6} {h['ip']:<16} {h.get('state', '')}")
 

@@ -379,14 +379,14 @@ def create_vm(name: str, args, size: str, allow: str, port: int):
 
 def main():
     global DRY_RUN
-    p = argparse.ArgumentParser(description="Azure 에 저가 Linux 프록시 VM(Squid/HAProxy/nginx)을 만든다.")
+    p = argparse.ArgumentParser(description="Azure 에 저가 Linux 프록시 VM(Squid/HAProxy/NGINX)을 만든다.")
     p.add_argument("--proxy", choices=["squid", "haproxy", "nginx"], help="설치할 프록시. 생략하면 물어본다.")
     p.add_argument("--count", type=int, default=1, help="만들 VM 수 (기본 1)")
     p.add_argument("--backend", help="전달 대상. haproxy: host:port, nginx: http(s)://host[:port]")
     p.add_argument("--port", type=int, help="프록시 수신 포트 (기본 squid 3128, haproxy·nginx 80)")
     p.add_argument("--vhost", action="append", default=[], metavar="DOMAIN=URL",
                    type=lambda s: tuple(x.strip() for x in s.split("=", 1)),
-                   help="nginx 가상 도메인 (여러 번 지정 가능). 예: --vhost data.wjy.test=https://www.data.go.kr")
+                   help="NGINX 가상 도메인 (여러 번 지정 가능). 예: --vhost data.wjy.test=https://www.data.go.kr")
     p.add_argument("--install", choices=["podman", "docker", "apt"],
                    help="설치 방식. podman(Quadlet systemd 서비스, 권장) / docker / apt 패키지. 생략하면 물어본다.")
     p.add_argument("--whitelist", type=lambda s: [d.strip() for d in s.split(",") if d.strip()],
@@ -410,7 +410,7 @@ def main():
 
     if not args.proxy:
         choice = input("프록시 종류를 고르세요 [1] squid (포워드 프록시)  [2] haproxy (TCP 전달)  "
-                       "[3] nginx (리버스 프록시): ").strip().lower()
+                       "[3] NGINX (리버스 프록시): ").strip().lower()
         args.proxy = {"1": "squid", "2": "haproxy", "3": "nginx"}.get(choice, choice)
         if args.proxy not in PROXY_PORT:
             p.error("squid, haproxy, nginx 중에서 골라야 합니다.")
@@ -419,9 +419,9 @@ def main():
     if args.proxy == "haproxy" and not re.fullmatch(r"[\w.-]+:\d+", args.backend or ""):
         p.error("--backend 는 host:port 형식이어야 합니다.")
     if args.proxy == "nginx" and not args.backend:
-        args.backend = input("nginx 가 전달할 대상 URL (예: https://www.data.go.kr): ").strip()
+        args.backend = input("NGINX 가 전달할 대상 URL (예: https://www.data.go.kr): ").strip()
     if args.proxy == "nginx" and not re.fullmatch(r"https?://[\w.-]+(:\d+)?/?", args.backend or ""):
-        p.error("nginx 의 --backend 는 http(s)://host[:port] 형식이어야 합니다.")
+        p.error("NGINX 의 --backend 는 http(s)://host[:port] 형식이어야 합니다.")
     port = args.port or PROXY_PORT[args.proxy]
     if args.auto_shutdown != "off" and not re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", args.auto_shutdown):
         p.error("--auto-shutdown 은 HH:MM(한국 시간) 또는 off 여야 합니다.")

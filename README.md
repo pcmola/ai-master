@@ -188,7 +188,7 @@ flowchart TD
 | 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
 | 1. 점검 트리거 | 직접 실행, 스케줄러(확장) | 🟡 | `proxy_log_detect.py detect` 직접 실행, 로그 뷰어 5초 자동 새로고침 |
-| 2. 로그 수집·장애 감지 | 서버 로그 파싱(LLM), 오류 패턴 탐지, 원인 후보 도출(LLM) | 🟡 | SSH로 Squid·nginx 로그 수집, 규칙 탐지(차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트 등). LLM 분석 없음 |
+| 2. 로그 수집·장애 감지 | 서버 로그 파싱(LLM), 오류 패턴 탐지, 원인 후보 도출(LLM) | 🟡 | SSH로 Squid·NGINX 로그 수집, 규칙 탐지(차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트 등). LLM 분석 없음 |
 | 3. 유사 장애 검색 | Wiki 장애 사례(RAG), 웹 검색(확장), 해결 방법 조회 | ⬜ | 시나리오 1의 검색 엔진을 쓸 수 있으나 연결 안 됨 |
 | 4. DevOps 소스 확인 | Repos 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | ⬜ | 장애 재현용 `proxy_fault_inject.py`(proxy-config 저장소에 잘못된 설정 커밋)만 있음 |
 | 5. Teams 조치 승인 요청 | 원인·수정안 요약(LLM), "조치할까요?" Yes/No | ⬜ | 시나리오 2의 Teams 카드·승인 서버를 재사용할 수 있음 |
@@ -198,7 +198,7 @@ flowchart TD
 
 **실행 화면** (공인 IP는 `x.x.x.x`로 가림)
 
-프록시 로그 뷰어: 실제 Squid·nginx 접속 로그, 허용 목록, 탐지 결과:
+프록시 로그 뷰어: 실제 Squid·NGINX 접속 로그, 허용 목록, 탐지 결과:
 
 ![프록시 로그 뷰어](docs/images/proxy-log.png)
 
@@ -211,7 +211,7 @@ ai-master/
 ├─ hub.py          로컬 웹서버 허브: 로컬 서버 탭(시작·중지·재시작, 로그) + 시나리오 실행 탭
 ├─ common/         공통 모듈: 프로젝트 경로(paths.py), 로컬 웹서버·크롬 열기(server.py), 노드별 트레이싱(trace.py)
 ├─ wiki_tools/     Wiki 검색·가이드 생성, 로컬 뷰어, Azure DevOps Wiki 문서 관리
-├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, 프록시 정책(Squid·nginx) 변경 감지·Task/Wiki 반영
+├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, 프록시 정책(Squid·NGINX) 변경 감지·Task/Wiki 반영
 ├─ teams_tools/    Microsoft Teams 알림, 로컬 승인 화면(Teams 대체)
 ├─ docs/images/    README 실행 화면 캡처 (공인 IP 등은 가린 상태)
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
@@ -294,11 +294,11 @@ flowchart LR
 | | `wiki_register.py` | 시나리오 1: 가이드를 `02. 운영 > 00. AI 문서 생성` 아래에 등록(같은 제목 갱신, 문서 규칙 준수, push) | - |
 | | `wiki_viewer.py` | Wiki 로컬 읽기 전용 뷰어 (Azure DevOps 문법 렌더링, 코드 구문 강조, 첫 화면은 AI Master 프로젝트 문서) | http://wiki.local (8765) |
 | | `wiki_documents.py` | Azure DevOps Wiki 문서 목록·생성·삭제 (REST API) | - |
-| proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/nginx, podman·docker). Squid 로그는 VM 디스크 `/var/log/proxy`에 남김 | - |
-| | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, nginx는 journald) | http://proxy-log.local (8768) |
+| proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/NGINX, podman·docker). Squid 로그는 VM 디스크 `/var/log/proxy`에 남김 | - |
+| | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, NGINX는 journald) | http://proxy-log.local (8768) |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
 | | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣음 | - |
-| | `proxy_policy_monitor.py` | 프록시 VM 전체(Squid·nginx) 정책 변경 확인 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
+| | `proxy_policy_monitor.py` | 프록시 VM 전체(Squid·NGINX) 정책 변경 확인 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
 | | `proxy_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki '프록시 정책 현황' 갱신 | - |
 | | `proxy_status_sync.py` | 시나리오 2: Wiki Proxy 현황 ↔ Azure VM 비교 → Teams 승인 → Task → Wiki 현행화 → 완료 보고 | - |
 | teams_tools | `teams_notify.py`, `teams_graph.py` | Teams 알림 (Workflows 웹후크 / Graph API). `.env`의 `TEAMS_MENTION`(UPN)을 넣으면 카드마다 그 사람을 @멘션해 Teams 활동 피드에 알림이 뜸 | - |
@@ -375,7 +375,7 @@ flowchart LR
    az account set --subscription <구독 이름>
    ```
 
-2. Proxy VM을 만듭니다. `azure_proxy_vm.py`가 가장 싼 B 시리즈 VM에 Squid(포워드)나 HAProxy를 podman으로 올리고, NSG는 이 PC의 공인 IP에만 열고, 매일 01:00 자동 종료를 겁니다. nginx 리버스 프록시(wjy-proxy03)는 같은 리소스 그룹에 따로 둡니다([프록시 VM 운영](#7-프록시-vm-운영)).
+2. Proxy VM을 만듭니다. `azure_proxy_vm.py`가 가장 싼 B 시리즈 VM에 Squid(포워드)나 HAProxy를 podman으로 올리고, NSG는 이 PC의 공인 IP에만 열고, 매일 01:00 자동 종료를 겁니다. NGINX 리버스 프록시(wjy-proxy03)는 같은 리소스 그룹에 따로 둡니다([프록시 VM 운영](#7-프록시-vm-운영)).
 
    ```powershell
    python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --count 2
@@ -659,7 +659,7 @@ sequenceDiagram
         participant W as wiki-repo
     end
     box rgba(2, 132, 199, 0.08) Azure
-        participant VM as 프록시 VM (Squid·nginx)
+        participant VM as 프록시 VM (Squid·NGINX)
         participant D as Azure DevOps
     end
 
@@ -687,7 +687,7 @@ sequenceDiagram
 | 종류 | 비교하는 정책 항목 |
 |---|---|
 | Squid (wjy-proxy01·02) | 허용 도메인(`lists/whitelist.txt`), 허용 클라이언트(`acl … src`), `http_access`·`http_port` 규칙 |
-| nginx (wjy-proxy03) | 가상 도메인 라우팅(`server_name` → `set $upstream`/`proxy_pass`), 허용 클라이언트(`allow`), `deny`·`listen` 규칙 |
+| NGINX (wjy-proxy03) | 가상 도메인 라우팅(`server_name` → `set $upstream`/`proxy_pass`), 허용 클라이언트(`allow`), `deny`·`listen` 규칙 |
 
 - 기준 스냅샷이 없는 VM(처음 보는 VM)은 Task 없이 지금 정책을 기준으로 저장하고 문서에 올립니다. 중간에 실패하면 스냅샷이 그대로라서 다음 실행 때 같은 변경을 다시 처리합니다.
 - 중지된 VM은 읽지 못하므로 건너뛰고 기준도 그대로 둡니다. 문서에는 마지막으로 확인한 정책을 "읽지 못함" 표시와 함께 남깁니다.
@@ -728,9 +728,9 @@ flowchart LR
 | VM | 종류 | 접속 로그 위치 | 재시작·VM 중지 후 |
 |---|---|---|---|
 | wjy-proxy01, wjy-proxy02 | Squid 포워드 프록시 (3128) | VM 디스크 `/var/log/proxy/access.log` (컨테이너 `/var/log/squid`에 연결) | 남음 |
-| wjy-proxy03 | nginx 리버스 프록시 (80) | journald (`journalctl CONTAINER_NAME=nginx`) | 남음 |
+| wjy-proxy03 | NGINX 리버스 프록시 (80) | journald (`journalctl CONTAINER_NAME=nginx`) | 남음 |
 
-- 컨테이너는 `--rm`이라 재시작할 때마다 새로 만들어집니다. 그래서 Squid 로그는 VM 디스크 폴더에 연결하고(2026-10-21 적용, `azure_proxy_vm.py`도 같이 만듦), nginx 로그는 `podman logs`(지금 컨테이너만) 대신 journald에서 읽습니다.
+- 컨테이너는 `--rm`이라 재시작할 때마다 새로 만들어집니다. 그래서 Squid 로그는 VM 디스크 폴더에 연결하고(2026-10-21 적용, `azure_proxy_vm.py`도 같이 만듦), NGINX 로그는 `podman logs`(지금 컨테이너만) 대신 journald에서 읽습니다.
 - 매일 01:00(KST)에 자동 종료(`shutdown-computevm-*`)됩니다. 꺼져 있는 동안 보낸 요청은 기록되지 않습니다.
 - Squid 로그는 정리(logrotate) 없이 쌓입니다. 디스크 여유는 약 25GB입니다.
 
@@ -742,7 +742,7 @@ curl.exe -x http://<VM_IP>:3128 https://www.google.com/         # 허용 목록 
 curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프록시: Host 머리글로 가상 도메인 선택
 ```
 
-리버스 프록시의 `data.wjy.test`·`law.wjy.test`는 nginx 설정(`server_name`)에만 있는 이름입니다. 요청은 IP로 보내고 이름은 `Host` 머리글에만 실으므로 hosts·DNS가 필요 없습니다.
+리버스 프록시의 `data.wjy.test`·`law.wjy.test`는 NGINX 설정(`server_name`)에만 있는 이름입니다. 요청은 IP로 보내고 이름은 `Host` 머리글에만 실으므로 hosts·DNS가 필요 없습니다.
 
 로그 뷰어(http://proxy-log.local)는 새로고침하는 동안 상단 진행 막대·회전 아이콘·흐린 표를 보여 주고, 끝나면 `갱신 HH:MM:SS · 새 로그 N건`(또는 `변경 없음`)을 잠깐 강조합니다. 로그 소스가 "실제 로그"면 VM의 진짜 로그이고, "가상 로그"일 때만 만들어 낸 데이터입니다.
 
@@ -757,7 +757,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 ```
 
 - `logs`: 접속 로그 조회. `ssh_read`(SSH 소요 시간·받은 바이트) → `parse`(읽은 줄·해석한 줄·건너뛴 줄, 허용·차단 건수, 클라이언트·도메인 수, 가장 최근 기록) → `detect`(탐지 건수와 규칙). 가상 로그 파일은 `ssh_read` 대신 `file_read`.
-- `policy`: 허용 목록 조회. 허용 클라이언트 수, 허용 도메인(nginx는 가상 도메인) 수.
+- `policy`: 허용 목록 조회. 허용 클라이언트 수, 허용 도메인(NGINX는 가상 도메인) 수.
 - 실패하면 `✗ 01 ssh_read … error=…`로 이유(SSH 시간 초과, 파일 없음 등)가 남습니다. 로그에는 IP 대신 VM 이름을 씁니다.
 
 <sub>[↑ 목차로](#목차)</sub>

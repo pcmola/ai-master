@@ -213,7 +213,7 @@ def print_result(results: list[dict]):
 
 
 def main() -> int:
-    argparse.ArgumentParser(description="프록시 VM(Squid·nginx) 정책 변경 확인(읽기 전용)").parse_args()
+    argparse.ArgumentParser(description="프록시 VM(Squid·NGINX) 정책 변경 확인(읽기 전용)").parse_args()
     try:
         results = check_all()
     except (OSError, RuntimeError, ValueError) as exc:

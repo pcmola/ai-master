@@ -137,11 +137,11 @@ def task_body(changed: list[dict], when: str, wiki_url: str | None) -> tuple[str
 
 def vm_section(n: int, vm: dict, items: list[str], note: str = "") -> list[str]:
     pick = lambda head: [i.split(" ", 1)[1] for i in items if i.startswith(head + " ")]
-    lines = [f"## {n}. {vm['name']} ({'Squid 포워드 프록시' if vm['kind'] == 'squid' else 'nginx 리버스 프록시'})", ""]
+    lines = [f"## {n}. {vm['name']} ({'Squid 포워드 프록시' if vm['kind'] == 'squid' else 'NGINX 리버스 프록시'})", ""]
     if note:
         lines += [f"> {note}", ""]
     lines += ["| 항목 | 값 |", "|---|---|", f"| 공용 IP | {vm['ip']} |",
-              f"| 포트 | {'3128 (Squid, podman 컨테이너)' if vm['kind'] == 'squid' else '80 (nginx, podman 컨테이너)'} |",
+              f"| 포트 | {'3128 (Squid, podman 컨테이너)' if vm['kind'] == 'squid' else '80 (NGINX, podman 컨테이너)'} |",
               f"| 정책 항목 | {len(items)}개 |", ""]
     if vm["kind"] == "squid":
         domains = pick("domain")
@@ -186,7 +186,7 @@ def render_page(results: list[dict], history: list[dict], when: str, devops: Dev
     lines += ["", f"## {n + 2}. 관리 방법", "",
               "- Squid: 허용 도메인은 VM 의 `/etc/proxy/lists/whitelist.txt` 에 한 줄씩 적고 "
               "`sudo podman exec squid squid -k reconfigure` 로 반영한다.",
-              "- nginx: 가상 도메인과 허용 클라이언트는 VM 의 `/etc/proxy/proxy.conf` 에서 고치고 "
+              "- NGINX: 가상 도메인과 허용 클라이언트는 VM 의 `/etc/proxy/proxy.conf` 에서 고치고 "
               "`sudo podman exec nginx nginx -s reload` 로 반영한다.",
               "- 반영 후 `python proxy_tools/proxy_policy_publish.py` 를 실행하면 Task 등록과 이 문서 갱신이 함께 진행된다.", ""]
     return "\n".join(lines)
@@ -292,7 +292,7 @@ def run(args) -> int:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="프록시(Squid·nginx) 정책 변경을 Azure DevOps Task 와 Wiki 현황에 반영한다.")
+    p = argparse.ArgumentParser(description="프록시(Squid·NGINX) 정책 변경을 Azure DevOps Task 와 Wiki 현황에 반영한다.")
     p.add_argument("--dry-run", action="store_true", help="출력만 하고 Task·Wiki·스냅샷은 바꾸지 않음")
     args = p.parse_args()
     try:
