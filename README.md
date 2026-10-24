@@ -192,7 +192,7 @@ flowchart TD
 | 8. 장애 대응 이력 Wiki | 대응 이력 문서, 원인·조치·PR 링크, Teams 결과 알림 | 🟡 | `02. 운영 > 01. 공통 > 04. 장애 대응 > 01. 프록시 장애 대응 이력` 맨 위에 한 건씩 추가(다른 로컬 커밋은 올리지 않음), Teams 결과 카드 (전 과정 실행 검증 전) |
 
 - 2026-10-24 시험: 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
-- 전 과정 시험: `python proxy_tools\proxy_fault_inject.py apply whitelist-typo --push --deploy <VM_IP>`로 잘못된 설정을 배포한 뒤 실행하면 원인 커밋을 찾아 되돌리는 PR까지 갑니다. 끝나면 PR을 병합·배포하거나 저장소를 되돌려 정상 상태로 돌립니다.
+- 전 과정 시험: `python proxy_tools\proxy_fault_inject.py apply whitelist-typo --push --deploy wjy-proxy01`(VM 이름 또는 공용 IP)로 잘못된 설정을 배포한 뒤 실행하면 원인 커밋을 찾아 되돌리는 PR까지 갑니다. 끝나면 PR을 병합·배포하거나 저장소를 되돌려 정상 상태로 돌립니다.
 
 **실행 화면** (공인 IP는 `x.x.x.x`로 가림)
 

@@ -7,7 +7,7 @@
 사용 예:
     python proxy_tools/proxy_fault_inject.py list
     python proxy_tools/proxy_fault_inject.py apply whitelist-typo                  # 로컬 커밋만
-    python proxy_tools/proxy_fault_inject.py apply bad-dns --push --deploy <VM_IP>
+    python proxy_tools/proxy_fault_inject.py apply bad-dns --push --deploy wjy-proxy01   # VM 이름 또는 공용 IP
     python proxy_tools/proxy_fault_inject.py status                                 # 지금 심어진 장애가 있는지
 
 --deploy 는 proxy-config 의 scripts/deploy.sh 를 --restart 로 실행한 뒤 scripts/traffic.sh 로 로그를 만든다.
@@ -83,6 +83,20 @@ def bash(script: str, *args: str):
         raise RuntimeError(f"{script} 종료 코드 {res.returncode}")
 
 
+def vm_ip(target: str) -> str:
+    """IP 를 그대로 쓰거나, VM 이름(예: wjy-proxy01)이면 Azure 에서 공용 IP 를 찾는다."""
+    if all(part.isdigit() for part in target.split(".")) and target.count(".") == 3:
+        return target
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from proxy_policy_monitor import proxy_targets
+    for vm in proxy_targets():
+        if vm["name"].lower() == target.lower():
+            if vm["state"] != "운영":
+                raise RuntimeError(f"{vm['name']} 이 꺼져 있습니다. 켠 뒤 다시 실행하세요.")
+            return vm["ip"]
+    raise RuntimeError(f"프록시 VM '{target}' 을 찾지 못했습니다.")
+
+
 def active() -> list[str]:
     found = []
     for name, s in SCENARIOS.items():
@@ -109,6 +123,7 @@ def apply(name: str, push: bool, deploy: str | None):
         git("push", "-q", "origin", "HEAD")
         print("push 완료")
     if deploy:
+        deploy = vm_ip(deploy)
         bash("scripts/deploy.sh", deploy, "--restart")
         try:
             bash("scripts/traffic.sh", deploy)
@@ -125,7 +140,7 @@ def main() -> int:
     a = sub.add_parser("apply", help="시나리오 커밋 생성")
     a.add_argument("scenario", choices=sorted(SCENARIOS))
     a.add_argument("--push", action="store_true", help="origin 으로 push")
-    a.add_argument("--deploy", metavar="IP", help="VM 에 배포하고 테스트 트래픽을 보낸다")
+    a.add_argument("--deploy", metavar="VM", help="VM 이름(예: wjy-proxy01) 또는 공용 IP. 배포하고 테스트 트래픽을 보낸다")
     args = p.parse_args()
 
     if not (REPO / ".git").exists():
