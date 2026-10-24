@@ -421,7 +421,8 @@ tr.sel td{background:var(--soft)}
 .title{font-weight:600}.script{color:var(--muted);font-size:12px}a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
 .warn{color:var(--bad);font-size:12px}.muted{color:var(--muted);font-size:12px}.acts{display:flex;gap:6px;flex-wrap:wrap}
 .tabs{display:flex;gap:4px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--soft)}
-.tabs button.on{background:var(--blue);border-color:var(--blue);color:#fff}.tabs .name{margin-left:8px;font-weight:600}
+.tabs button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-color:var(--blue);color:var(--blue);font-weight:700;box-shadow:inset 0 0 0 1px var(--blue)}.tabs .name{margin-left:8px;font-weight:600}
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
@@ -451,13 +452,13 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="scgrid">
 <div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
 <p>Wiki 검색 화면을 새 창으로 엽니다. 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 그 화면에서 합니다.</p>
-<div class="row"><button class="main" id="s1run" onclick="runS1()">실행 (Wiki 검색 화면 열기)</button><button onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button>
+<div class="row"><button class="main" id="s1run" onclick="runS1()">실행 (Wiki 검색 화면 열기)</button><button class="slog" data-key="wiki-search" onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button>
 <span class="jobstate" id="s1state"></span></div></div>
 <div class="card sc"><h2>시나리오 2 · 프록시 현황 Wiki 현행화</h2>
 <p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
-<button onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
+<button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div></div>
 <div class="card sc"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
 <p class="muted">준비 중입니다.</p></div>
@@ -490,7 +491,7 @@ function render(){
 <td><div class="acts"><button ${busy||n?'disabled':''} onclick="act('${s.key}','start')">시작</button>
 <button ${busy?'disabled':''} onclick="act('${s.key}','restart')">재시작</button>
 <button ${busy||!n?'disabled':''} onclick="act('${s.key}','stop')">중지</button>
-<button onclick="pick('${s.key}')">로그</button><button ${s.state!=='running'?'disabled':''} onclick="window.open('${esc(s.url)}','_blank','noopener')" title="새 창으로 열기">화면</button></div></td></tr>`}).join('')}
+<button class="${s.key===selected?'logon':''}" onclick="pick('${s.key}')">로그</button></div></td></tr>`}).join('')}
 async function refresh(){
   try{const r=await fetch('/api/status');const d=await r.json();if(d.error)throw new Error(d.error);
     servers=d.servers;document.getElementById('time').textContent='갱신 '+d.time.slice(11);
@@ -498,7 +499,7 @@ async function refresh(){
   catch(e){const el=document.getElementById('err');el.hidden=false;el.textContent='상태를 읽지 못했습니다: '+e.message}}
 async function loadLog(){const pre=document.getElementById('log');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
   pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(selected))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
-// 하단 패널은 로그만 보여 준다. 서버 화면은 '화면' 버튼으로 새 창에서 연다.
+// 하단 패널은 로그만 보여 준다. 서버 화면은 주소를 눌러 새 창에서 연다. 보고 있는 로그의 버튼은 파랗게 표시한다.
 function pick(key){const s=servers.find(x=>x.key===key);const title=s&&s.title;if(!title)return;selected=key;
   document.getElementById('panel').hidden=false;document.getElementById('pname').textContent=title;
   document.getElementById('phint').textContent='data/logs/'+key+'.log';loadLog();render()}
@@ -524,7 +525,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
   if(slogKey)loadSLog()}
-function showLog(key,title){slogKey=key;document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
+function showLog(key,title){slogKey=key;document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
 async function loadSLog(){const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
   pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(slogKey))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
 // 로그 창은 화면 아래 끝까지만 늘려 페이지 전체 스크롤이 생기지 않게 한다.

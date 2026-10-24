@@ -101,6 +101,23 @@ class Trace:
         print(f"{datetime.now():%H:%M:%S} [{self.id}] {text}", flush=True)
 
 
+def heartbeat(s, detail=None, every: float = 5.0):
+    """오래 걸리는 노드가 도는 동안 every 초마다 '진행 중' 줄을 남긴다(로그가 멈춘 것처럼 보이지 않게).
+    돌려준 함수를 부르면 멈춘다. 트레이스 밖(_NullSpan)이면 아무것도 하지 않는다."""
+    if not isinstance(s, Span):
+        return lambda: None
+    stop = threading.Event()
+
+    def beat():
+        while not stop.wait(every):
+            extra = detail() if detail else ""
+            s.trace.log(f"↻ {'  ' * s.depth}{s.no:02d} {s.name:<16}{time.perf_counter() - s.start:>7.0f}s  진행 중"
+                        + (f" · {extra}" if extra else ""))
+
+    threading.Thread(target=beat, daemon=True, name=f"heartbeat-{s.name}").start()
+    return stop.set
+
+
 @contextmanager
 def span(name: str, **attrs):
     t = _current.get()

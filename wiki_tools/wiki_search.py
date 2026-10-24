@@ -32,7 +32,7 @@ from urllib.parse import quote, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR, ENV_FILE, WIKI_REPO  # noqa: E402
 from common.server import local_server, open_chrome, site_url  # noqa: E402,F401  (다른 도구가 여기서 가져다 쓰던 이름 유지)
-from common.trace import span, trace  # noqa: E402
+from common.trace import heartbeat, span, trace  # noqa: E402
 
 ROOT = WIKI_REPO.resolve()
 CACHE = DATA_DIR / "wiki_search_cache.json"
@@ -905,6 +905,8 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
             n_lines += done.count("\n")
             yield unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), done))
 
+    # 게이트웨이가 응답을 모아 한 번에 보내므로 그동안 로그가 멈춰 보인다 → 5초마다 진행 줄을 남긴다
+    stop_beat = heartbeat(s, lambda: f"받은 글자 {len(text):,}" if text else "LLM 응답 기다리는 중")
     try:
         if hasattr(client, "chat"):  # OpenAI / Azure OpenAI 게이트웨이
             stream = client.chat.completions.create(
@@ -956,6 +958,8 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
     except Exception as exc:
         s.fail(f"LLM 호출 실패 → 템플릿 사용: {type(exc).__name__}: {exc}")
         return None
+    finally:
+        stop_beat()
 
 
 BOX_NOTE = re.compile(r"[ 	]*\(mermaid 다이어그램:.*$", re.M)
