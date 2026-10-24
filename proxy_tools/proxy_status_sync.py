@@ -60,8 +60,8 @@ except ImportError:
 KST = timezone(timedelta(hours=9))
 RESOURCE_GROUP = os.environ.get("SCENARIO2_RESOURCE_GROUP", "WJY-PROXY-RG")
 NAME_PATTERN = r"(?i)(proxy|prxy|pxy)\d*$"
-TEST_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06-네트워크-및-Proxy"
-             / "01-네트워크-및-Proxy-현황-파악" / "Proxy-VM-현황-(테스트-구독).md")
+TEST_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06.-네트워크-및-Proxy"
+             / "01.-네트워크-및-Proxy-현황-파악" / "Proxy-VM-현황-(테스트-구독).md")
 WIKI_PAGE = WIKI_REPO / os.environ["SCENARIO2_WIKI_PAGE"] if os.environ.get("SCENARIO2_WIKI_PAGE") else TEST_PAGE
 PUSH = os.environ.get("SCENARIO2_PUSH", "0") == "1"
 APPROVAL_TIMEOUT = float(os.environ.get("SCENARIO2_TIMEOUT") or 900)

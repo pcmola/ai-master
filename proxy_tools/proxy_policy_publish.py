@@ -37,8 +37,8 @@ from common.paths import ENV_FILE, WIKI_REPO  # noqa: E402
 from common.trace import span, trace  # noqa: E402
 from proxy_policy_monitor import STATE_DIR, check_all, describe, print_result, snapshot_path  # noqa: E402
 
-WIKI_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06-네트워크-및-Proxy"
-             / "01-네트워크-및-Proxy-현황-파악" / "프록시-정책-현황.md")
+WIKI_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06.-네트워크-및-Proxy"
+             / "01.-네트워크-및-Proxy-현황-파악" / "프록시-정책-현황.md")
 HISTORY = STATE_DIR / "publish_history.json"
 KST = timezone(timedelta(hours=9))
 TAGS = "프록시; 정책; 자동등록"
