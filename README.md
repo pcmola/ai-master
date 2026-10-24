@@ -44,10 +44,10 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 |---|---|---|---|
 | 이름 | 프록시 설정 가이드 자동 생성 | 프록시 현황 Wiki 현행화 | 장애 감지 및 자동 조치 |
 | 내용 | 명령어 한 줄로 기존 Wiki를 검색해 LLM이 통합 가이드 문서를 생성 | Wiki 현황과 애저에서 프록시로 추정되는 VM을 비교하고 승인 후 반영 | LLM이 장애 로그·소스를 분석해 원인·수정안 도출 후 승인 요청 |
-| 트리거 | 사용자 명령 | 직접 실행 | 직접 실행 / 스케줄러 |
+| 트리거 | 사용자 명령 | 직접 실행 | 직접 실행 |
 | 승인 | 미리보기 확인 후 "Wiki에 등록" 버튼 | Teams Yes/No | Teams Yes/No |
-| 결과물 | 가이드 Wiki 문서 (링크 제공) | Wiki 현황 갱신 + DevOps Task | 원인·수정안 (PR은 확장) |
-| 구현 | `wiki_tools/wiki_search.py` | `proxy_tools/proxy_status_sync.py` | `proxy_tools/proxy_log_detect.py` 등 (일부) |
+| 결과물 | 가이드 Wiki 문서 (링크 제공) | Wiki 현황 갱신 + DevOps Task | 원인·수정안 + Task + 수정 PR + 장애 대응 이력 Wiki |
+| 구현 | `wiki_tools/wiki_search.py` | `proxy_tools/proxy_status_sync.py` | `proxy_tools/incident_response.py` |
 
 구현 상태 표시: ✅ 구현 · 🟡 일부 · ⬜ 미구현 · (확장) = 자료에서 Nice-to-have로 둔 범위  
 다이어그램 색: 초록 = 구현 · 노랑 = 일부 · 회색 점선 = 미구현 · 주황 = 사용자 판단
@@ -160,41 +160,39 @@ Teams 카드의 Yes/No 버튼이 여는 로컬 승인 화면과, 승인 뒤 진�
 
 ### 1.3 시나리오 3 · 장애 감지 및 자동 조치
 
-LLM이 장애 로그를 Wiki·DevOps 소스로 분석해 원인과 수정안을 도출하고 Teams 승인을 요청합니다(6~8단계는 확장 범위). 지금은 규칙 기반 로그 탐지와 장애 재현 도구까지 있습니다.
+프록시 로그에서 장애를 감지하면 LLM이 로그·Wiki 사례·설정 저장소(proxy-config) 변경 이력으로 원인과 수정안을 도출하고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 만듭니다. 원칙은 시나리오 2와 같이 **감지·검증은 규칙, 읽고 판단하는 일은 LLM**이고, 설정 반영(PR 병합·배포)은 사람이 PR을 검토한 뒤에 합니다. 실행: `python proxy_tools\incident_response.py` (허브 **시나리오 실행** 탭의 "실행"·"분석만")
 
 ```mermaid
 flowchart TD
-    t(["1. 트리거<br/>직접 실행"]) --> d["2. 로그 수집·감지<br/>SSH 로그 수집, 규칙 탐지<br/>(LLM 분석 없음)"]
+    t(["1. 트리거<br/>직접 실행"]) --> d["2. 로그 수집·감지<br/>SSH 로그 수집, 규칙 탐지<br/>+ AI 1차 분석"]
     d --> sim["3. 유사 장애 검색<br/>Wiki 사례(RAG)"]
-    sim --> src["4. DevOps 소스 확인<br/>원인 코드·설정 특정(LLM)"]
+    sim --> src["4. 설정 저장소 확인<br/>원인 커밋·수정안(AI)<br/>+ 규칙 검증"]
     src --> ap{"5. Teams 조치 승인<br/>Yes / No"}
     ap -- "Yes" --> task["6. 장애 조치 Task"]
-    task --> pr["7. 소스 수정·PR"]
-    pr --> hist(["8. 장애 대응 이력 Wiki"])
+    task --> pr["7. 수정 브랜치·PR"]
+    pr --> hist(["8. 장애 대응 이력 Wiki<br/>+ Teams 결과"])
     inj["장애 재현<br/>proxy_fault_inject.py"] -. "잘못된 설정 주입" .-> d
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
     classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
     classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
-    classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
-    classDef io fill:#EEF2FF,stroke:#6366F1,color:#312E81
-    classDef ext fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
-    class t,d part
-    class sim,src,task,pr,hist todo
-    class ap todo
-    class inj done
+    class t,d,sim,src,inj done
+    class ap,task,pr,hist part
 ```
 
 | 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
-| 1. 점검 트리거 | 직접 실행, 스케줄러(확장) | 🟡 | `proxy_log_detect.py detect` 직접 실행, 로그 뷰어 5초 자동 새로고침 |
-| 2. 로그 수집·장애 감지 | 서버 로그 파싱(LLM), 오류 패턴 탐지, 원인 후보 도출(LLM) | 🟡 | SSH로 Squid·NGINX 로그 수집, 규칙 탐지(차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트 등). LLM 분석 없음 |
-| 3. 유사 장애 검색 | Wiki 장애 사례(RAG), 웹 검색(확장), 해결 방법 조회 | ⬜ | 시나리오 1의 검색 엔진을 쓸 수 있으나 연결 안 됨 |
-| 4. DevOps 소스 확인 | Repos 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | ⬜ | 장애 재현용 `proxy_fault_inject.py`(proxy-config 저장소에 잘못된 설정 커밋)만 있음 |
-| 5. Teams 조치 승인 요청 | 원인·수정안 요약(LLM), "조치할까요?" Yes/No | ⬜ | 시나리오 2의 Teams 카드·승인 서버를 재사용할 수 있음 |
-| 6. 장애 조치 Task 생성(확장) | 장애 내용·원인 기록, 담당자·우선순위 | ⬜ | (프록시 정책 변경 → Task 등록은 `proxy_policy_publish.py`에 있음) |
-| 7. 소스 수정 및 PR(확장) | 브랜치 생성·AI 코드 수정, Pull Request, Task와 PR 연결 | ⬜ | 미구현. 고칠 대상(잘못된 설정 커밋)은 `proxy_fault_inject.py`로 proxy-config 저장소에 만들 수 있음 |
-| 8. 장애 대응 이력 Wiki(확장) | 대응 이력 문서(LLM), 원인·조치·PR 링크, Teams 결과 알림 | ⬜ | 미구현. Wiki 등록은 시나리오 1의 `wiki_register.py`, 결과 알림은 `teams_notify.py`를 재사용할 예정 |
+| 1. 점검 트리거 | 직접 실행 | ✅ | 허브 "실행"·"분석만"(`--dry-run`) 또는 명령줄. 스케줄러는 두지 않음 |
+| 2. 로그 수집·장애 감지 | 서버 로그 수집, 오류 패턴 탐지, 원인 후보 도출(LLM) | ✅ | 프록시 VM(Squid·NGINX) 접속 로그를 SSH로 읽어 최근 `SCENARIO3_WINDOW_MIN`(기본 60)분만 규칙 탐지(차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트 등). high·medium이 없으면 "이상 없음"으로 종료. `llm_triage`가 요약·원인 후보·Wiki 검색어를 만듦 |
+| 3. 유사 장애 검색 | Wiki 장애 사례(RAG), 해결 방법 조회 | ✅ | 시나리오 1 검색 엔진(혼합 검색)으로 상위 문서 4개, AI가 만든 문서는 근거에서 제외 |
+| 4. DevOps 소스 확인 | 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | ✅ | proxy-config를 최신으로 받아 최근 커밋 diff·현재 설정을 `llm_fix`에 넘김 → 원인 커밋, 수정안(파일·바꿀 줄·새 줄), 영향. 수정안은 "바꿀 줄이 파일에 정확히 한 번 있는지" 규칙으로 검증하고 아니면 수동 조치로 돌림 |
+| 5. Teams 조치 승인 요청 | 원인·수정안 요약(LLM), "조치할까요?" Yes/No | 🟡 | 시나리오 2의 Teams 카드·로컬 승인 서버·진행 화면 재사용. No·시간 초과는 알리고 종료 (전 과정 실행 검증 전) |
+| 6. 장애 조치 Task 생성 | 장애 내용·원인 기록, 담당자 | 🟡 | Epic → Feature `[공통] 프록시 장애 대응` → 그 달 PBI → `NN. [프록시 장애] …` Task, 담당자는 PAT 소유자 (전 과정 실행 검증 전) |
+| 7. 소스 수정 및 PR | 브랜치 생성·AI 수정, Pull Request, Task와 PR 연결 | 🟡 | `fix/incident-…` 브랜치에 수정안 커밋(`tests/validate.py` 통과 필수) → push → main으로 가는 PR(Task 연결). 병합·배포는 사람이 검토 후 (전 과정 실행 검증 전) |
+| 8. 장애 대응 이력 Wiki | 대응 이력 문서, 원인·조치·PR 링크, Teams 결과 알림 | 🟡 | `02. 운영 > 01. 공통 > 04. 장애 대응 > 01. 프록시 장애 대응 이력` 맨 위에 한 건씩 추가(다른 로컬 커밋은 올리지 않음), Teams 결과 카드 (전 과정 실행 검증 전) |
+
+- 2026-10-24 시험: 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
+- 전 과정 시험: `python proxy_tools\proxy_fault_inject.py apply whitelist-typo --push --deploy <VM_IP>`로 잘못된 설정을 배포한 뒤 실행하면 원인 커밋을 찾아 되돌리는 PR까지 갑니다. 끝나면 PR을 병합·배포하거나 저장소를 되돌려 정상 상태로 돌립니다.
 
 **실행 화면** (공인 IP는 `x.x.x.x`로 가림)
 
@@ -296,6 +294,7 @@ flowchart LR
 | | `wiki_documents.py` | Azure DevOps Wiki 문서 목록·생성·삭제 (REST API) | - |
 | proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/NGINX, podman·docker). Squid 로그는 VM 디스크 `/var/log/proxy`에 남김 | - |
 | | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, NGINX는 journald) | http://proxy-log.local (8768) |
+| | `incident_response.py` | 시나리오 3: 로그 감지 → AI 분석 → Wiki 사례 → proxy-config 원인·수정안 → Teams 승인 → Task → 수정 PR → 장애 대응 이력 Wiki | - |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
 | | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣음 | - |
 | | `proxy_policy_monitor.py` | 프록시 VM 전체(Squid·NGINX) 정책 변경 확인 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
@@ -423,6 +422,9 @@ Copy-Item .env.sample .env
 | `SCENARIO2_TAG` | `role=proxy` | 시나리오 2에서 이 태그가 있는 VM은 이름과 상관없이 Proxy로 봄(`key=value` 또는 `key`). 승인 때 확인한 추정 VM에 이 태그를 붙임 |
 | `SCENARIO2_EXCLUDE_TAG` | `role=not-proxy` | 승인 화면에서 '프록시 아님'으로 고른 VM에 붙이는 태그. 이 태그가 있으면 이름 규칙에 맞아도 비교에서 뺌 |
 | `SCENARIO2_PUSH` | `0` | 시나리오 2 승인 후 Wiki 커밋을 Azure DevOps Wiki로 push할지(`1`). 기본은 wiki-repo 로컬 커밋만(테스트 문서가 올라가지 않게) |
+| `SCENARIO3_WINDOW_MIN` / `SCENARIO3_TIMEOUT` | `60` / `900` | 시나리오 3: 최근 몇 분의 로그로 장애를 볼지, 승인 대기 초 |
+| `SCENARIO3_EPIC_ID` / `SCENARIO3_FEATURE` / `SCENARIO3_PBI` | `1` / `[공통] 프록시 장애 대응` / `프록시 장애 대응` | 시나리오 3 Task가 달릴 백로그 |
+| `PROXY_CONFIG_DIR` | `../proxy-config` | 시나리오 3이 원인을 찾고 PR을 만드는 Squid 설정 저장소(Azure Repos) 로컬 경로 |
 | `SCENARIO2_TIMEOUT` / `SCENARIO2_WIKI_PAGE` | `900` / (비움) | 승인 대기 초, 비교할 Wiki 문서(wiki-repo 기준 경로, 비우면 테스트 문서) |
 | `GUIDE_CHUNKS` / `GUIDE_CHUNK_CHARS` / `GUIDE_CONTEXT_CHARS` | `24` / `1500` / `16000` | 시나리오 1 RAG: LLM에 넘길 조각 수, 조각 하나의 대략 길이, 전체 글자 수 상한. 조각 임베딩은 `data/wiki_search_chunks.json`에 캐시 |
 | `WIKI_REGISTER_PUSH` | `1` | 시나리오 1 "Wiki에 등록" 때 Azure DevOps Wiki로 push(`0`이면 로컬 커밋만) |
@@ -446,6 +448,7 @@ Copy-Item .env.sample .env
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
 | `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 "시나리오 실행" 탭에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py·proxy_status_sync.py·proxy_log_viewer.py (요청·실행별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
+| `logs/scenario3.log` | incident_response.py (시나리오 3 실행 출력. 허브 "시나리오 실행" 탭에서 봄) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
 <sub>[↑ 목차로](#목차)</sub>
@@ -845,6 +848,7 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 | `proxy_status_sync.py` (시나리오 2) | `--dry-run` | `SCENARIO2_*` (push, 승인 대기, 비교 문서 등) |
 | `test\scenario2\setup_env.py` | `--check` | 옵션 없이 실행하면 VM 켜기 + 표·정답 재생성 + 문서 초기화 |
 | `wiki_register.py` (시나리오 1 명령줄 등록) | `--query`, `--model` | `WIKI_REGISTER_PUSH` |
+| `incident_response.py` (시나리오 3) | `--dry-run` | `SCENARIO3_*`, `PROXY_CONFIG_DIR` |
 | `proxy_policy_publish.py` | `--dry-run` | `PROXY_SSH_*` |
 | `proxy_policy_monitor.py` | 없음 | `PROXY_SSH_*` |
 | `proxy_log_detect.py` | `simulate` / `detect` 하위 명령 | `PROXY_ALLOWED_CLIENTS` |

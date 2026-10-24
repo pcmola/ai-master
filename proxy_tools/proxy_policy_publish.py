@@ -200,42 +200,49 @@ def git(*args: str, check: bool = True) -> str:
     return out
 
 
-def publish_wiki(text: str, message: str):
-    """이 문서만 바꾼 커밋을 원격 최신 위에 만들어 push 한다. wiki-repo 에 아직 올리지 않은 다른 로컬 커밋
-    (예: 시나리오 2 테스트 문서)은 함께 올라가지 않고, push 뒤 로컬 브랜치를 원격 위로 다시 얹어(rebase) 그대로 둔다."""
+def publish_files(files: dict[Path, str], message: str) -> str | None:
+    """files(wiki-repo 안 경로 → 내용)만 바꾼 커밋을 원격 최신 위에 만들어 push 한다. wiki-repo 에 아직 올리지 않은
+    다른 로컬 커밋(예: 시나리오 2 테스트 문서)은 함께 올라가지 않고, push 뒤 로컬 브랜치를 원격 위로 다시 얹어(rebase)
+    그대로 둔다. 바뀐 것이 없으면 None, 있으면 커밋 해시."""
     if not (WIKI_REPO / ".git").exists():
         raise RuntimeError(f"wiki-repo 가 git 저장소가 아닙니다: {WIKI_REPO}")
-    # WIKI_DOCUMENT_RULES: UTF-8 로 쓰고 깨짐 문자열·대체문자를 검사한다.
-    if "�" in text or "???" in text:
-        raise RuntimeError("Wiki 문서 인코딩 검사 실패(대체문자 또는 ??? 포함)")
-    rel = WIKI_PAGE.relative_to(WIKI_REPO).as_posix()
+    for text in files.values():  # WIKI_DOCUMENT_RULES: UTF-8, 깨짐 문자열·대체문자 검사
+        if "�" in text or "???" in text:
+            raise RuntimeError("Wiki 문서 인코딩 검사 실패(대체문자 또는 ??? 포함)")
     branch = git("rev-parse", "--abbrev-ref", "HEAD")
     git("fetch", "-q", "origin", branch)
     base = git("rev-parse", f"origin/{branch}")
-    blob_file = STATE_DIR / "wiki_page.tmp.md"
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    blob_file.write_text(text, encoding="utf-8")
-    blob = git("hash-object", "-w", str(blob_file))
-    blob_file.unlink(missing_ok=True)
     index = STATE_DIR / "wiki_index.tmp"
     env = {**os.environ, "GIT_INDEX_FILE": str(index)}
     run_git = lambda *a: subprocess.run(["git", "-C", str(WIKI_REPO), *a], capture_output=True, env=env, check=True
                                         ).stdout.decode("utf-8").strip()
     try:
         run_git("read-tree", base)
-        run_git("update-index", "--add", "--cacheinfo", f"100644,{blob},{rel}")
+        for path, text in files.items():
+            blob_file = STATE_DIR / "wiki_blob.tmp"
+            blob_file.write_bytes(text.encode("utf-8"))
+            blob = git("hash-object", "-w", str(blob_file))
+            blob_file.unlink(missing_ok=True)
+            run_git("update-index", "--add", "--cacheinfo", f"100644,{blob},{path.relative_to(WIKI_REPO).as_posix()}")
         tree = run_git("write-tree")
     finally:
         index.unlink(missing_ok=True)
     if tree == git("rev-parse", f"{base}^{{tree}}"):
         print("  Wiki 문서 내용이 원격과 같아 커밋하지 않습니다.")
-        return
+        return None
     commit = git("commit-tree", tree, "-p", base, "-m", message)
     git("push", "origin", f"{commit}:refs/heads/{branch}")
     git("fetch", "-q", "origin", branch)
     git("rebase", "--autostash", f"origin/{branch}")  # 로컬 전용 커밋은 방금 올린 커밋 위로 옮겨 그대로 둔다
-    if WIKI_PAGE.read_text(encoding="utf-8") != text:
-        raise RuntimeError(f"push 뒤 로컬 문서가 올린 내용과 다릅니다: {WIKI_PAGE}")
+    for path, text in files.items():
+        if path.read_bytes().decode("utf-8") != text:
+            raise RuntimeError(f"push 뒤 로컬 문서가 올린 내용과 다릅니다: {path}")
+    return commit[:7]
+
+
+def publish_wiki(text: str, message: str):
+    publish_files({WIKI_PAGE: text}, message)
 
 
 # ---------------------------------------------------------------- main

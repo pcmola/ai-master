@@ -258,6 +258,8 @@ JOBS = {
     "scenario2": {"title": "시나리오 2 · Wiki 현행화", "script": "proxy_tools/proxy_status_sync.py", "log": "scenario2",
                   "self_log": True,
                   "options": {}},
+    "scenario3": {"title": "시나리오 3 · 장애 감지 및 조치", "script": "proxy_tools/incident_response.py", "log": "scenario3",
+                  "self_log": True, "options": {"dry_run": "--dry-run"}},
     "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
                         "self_log": False, "options": {}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
 }
@@ -461,7 +463,11 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div></div>
 <div class="card sc"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
-<p class="muted">준비 중입니다.</p></div>
+<p>프록시 로그에서 장애를 감지하면 Wiki 사례와 proxy-config 변경 이력으로 원인·수정안을 찾고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 만듭니다.</p>
+<div class="row"><button id="s3dry" onclick="runJob('scenario3',{dry_run:true})" title="감지·분석·수정안까지만 하고 아무것도 바꾸지 않음">분석만</button>
+<button class="main" id="s3run" onclick="runJob('scenario3')">실행</button>
+<button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')">로그</button></div>
+<div class="jobstate" id="s3state"></div></div>
 </div>
 <div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span></div>
 <pre id="slog"></pre></div>
@@ -513,14 +519,17 @@ let jobs={}, slogKey=null;
 function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
   window.open(s.url+'/','_blank','noopener');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
-async function runJob(job){const options={};
+async function runJob(job,options={}){
   const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
-  const d=await r.json();if(d.error){alert(d.error);return}showLog('scenario2','시나리오 2 로그');setTimeout(refreshJobs,300)}
+  const d=await r.json();if(d.error){alert(d.error);return}const lk=JOBS_LOG[job];showLog(lk,lk==='scenario3'?'시나리오 3 로그':'시나리오 2 로그');setTimeout(refreshJobs,300)}
+const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3'};
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11),arg=j.args.length?' '+j.args.join(' '):'';
   if(j.state==='running')return`<span class="jobstate running">● ${esc(j.title)} 실행 중 (PID ${j.pid}, ${since(j.started)}째)${esc(arg)}</span>`;
   return`<span class="jobstate ${j.code===0?'ok':'fail'}">${j.code===0?'✓':'✗'} ${esc(j.title)} 종료 코드 ${j.code} (${t} 시작${esc(arg)})</span>`}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
-  const run=Object.values(jobs).some(j=>j.state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
+  const run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
+  const run3=jobs.scenario3&&jobs.scenario3.state==='running';document.getElementById('s3run').disabled=run3;document.getElementById('s3dry').disabled=run3;
+  document.getElementById('s3state').innerHTML=jobLine(jobs.scenario3)||'<span class="muted">아직 실행하지 않았습니다.</span>';
   document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';

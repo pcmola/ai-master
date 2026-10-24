@@ -438,7 +438,8 @@ def parent_link(dv, parent_id: int) -> dict:
                       "url": f"https://dev.azure.com/{dv.org}/_apis/wit/workItems/{parent_id}"}}
 
 
-def ensure_child(dv, parent_id: int, kind: str, title: str, description: str) -> tuple[int, bool]:
+def ensure_child(dv, parent_id: int, kind: str, title: str, description: str,
+                 tags: str = "proxy-status; scenario2") -> tuple[int, bool]:
     """parent 아래에 같은 유형·제목의 항목이 있으면 그 id, 없으면 만들고 (id, 만들었는지)."""
     for c in children(dv, parent_id):
         if c["type"] == kind and c["title"] == title:
@@ -448,7 +449,7 @@ def ensure_child(dv, parent_id: int, kind: str, title: str, description: str) ->
            {"op": "add", "path": "/fields/System.Description", "value": description},
            {"op": "add", "path": "/fields/System.AreaPath", "value": pf["System.AreaPath"]},
            {"op": "add", "path": "/fields/System.IterationPath", "value": pf["System.IterationPath"]},
-           {"op": "add", "path": "/fields/System.Tags", "value": "proxy-status; scenario2"},
+           {"op": "add", "path": "/fields/System.Tags", "value": tags},
            parent_link(dv, parent_id)]
     item = dv.request("POST", f"/_apis/wit/workitems/${quote_type(kind)}?api-version=7.1", ops, "application/json-patch+json")
     return item["id"], True
