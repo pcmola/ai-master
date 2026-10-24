@@ -459,6 +459,8 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
 <button onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div></div>
+<div class="card sc"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
+<p class="muted">준비 중입니다.</p></div>
 </div>
 <div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span></div>
 <pre id="slog"></pre></div>
@@ -502,7 +504,7 @@ function pick(key){const s=servers.find(x=>x.key===key);const title=s&&s.title;i
   document.getElementById('phint').textContent='data/logs/'+key+'.log';loadLog();render()}
 // ---------------------------------------------------------------- 탭
 function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t!=='servers';
-  document.getElementById('pane-scenarios').hidden=t!=='scenarios';document.getElementById('allbtns').hidden=t!=='servers';
+  document.getElementById('pane-scenarios').hidden=t!=='scenarios';document.getElementById('allbtns').style.visibility=t==='servers'?'':'hidden';
   document.getElementById('mt-servers').classList.toggle('on',t==='servers');document.getElementById('mt-scenarios').classList.toggle('on',t==='scenarios');
   if(t==='scenarios'){refreshJobs();if(!slogKey)showLog('scenario2','시나리오 2 로그')}}
 // ---------------------------------------------------------------- 시나리오 실행
@@ -525,6 +527,10 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
 function showLog(key,title){slogKey=key;document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
 async function loadSLog(){const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
   pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(slogKey))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
+// 로그 창은 화면 아래 끝까지만 늘려 페이지 전체 스크롤이 생기지 않게 한다.
+function fit(){for(const id of ['log','slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
+  if(top>0)pre.style.height=Math.max(160,innerHeight-top-22)+'px'}}
+addEventListener('resize',fit);setInterval(fit,500);
 refresh();setInterval(refresh,3000);setInterval(()=>{if(!document.getElementById('pane-scenarios').hidden)refreshJobs()},2000);
 tab(location.hash==='#scenarios'?'scenarios':'servers');
 </script></body></html>"""

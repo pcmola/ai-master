@@ -3,6 +3,8 @@
 - Teams 의 Workflows 앱에서 "Teams 웹후크 요청을 받으면 채팅 또는 채널에 게시" 흐름을 만들고,
   발급된 URL 을 .env 의 TEAMS_WEBHOOK_URL 에 넣는다. 이 URL 자체가 인증 수단이므로 외부에 노출하지 않는다.
 - 메시지는 Adaptive Card 로 보낸다. 웹후크는 정상 접수 시 202 를 돌려준다(실제 게시는 흐름이 비동기로 처리).
+- 채널 게시만으로는 Teams '활동' 피드에 알림이 오지 않는다. .env 의 TEAMS_MENTION(받을 사람 UPN)을 넣으면
+  카드 첫 줄에 그 사람을 @멘션해서 활동 피드에 알림이 뜨게 한다(TEAMS_MENTION_NAME 은 표시 이름).
 
 사용 예:
     python teams_tools/teams_notify.py "배포가 끝났습니다"
@@ -30,10 +32,22 @@ except ImportError:
     pass
 
 
+def mention_entity() -> dict | None:
+    """TEAMS_MENTION 이 있으면 Adaptive Card 멘션 항목을 만든다."""
+    upn = os.environ.get("TEAMS_MENTION", "").strip()
+    if not upn:
+        return None
+    name = os.environ.get("TEAMS_MENTION_NAME", "").strip() or upn.split("@")[0]
+    return {"type": "mention", "text": f"<at>{name}</at>", "mentioned": {"id": upn, "name": name}}
+
+
 def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]] | None = None,
                buttons: list[tuple[str, str]] | None = None) -> dict:
     """facts: (이름, 값) 표. buttons: (글자, URL) — 누르면 그 URL 을 브라우저로 연다(Action.OpenUrl)."""
     body = []
+    mention = mention_entity()
+    if mention:
+        body.append({"type": "TextBlock", "text": mention["text"], "wrap": True})
     if title:
         body.append({"type": "TextBlock", "text": title, "weight": "Bolder", "size": "Medium", "wrap": True})
     body.append({"type": "TextBlock", "text": text, "wrap": True})
@@ -45,6 +59,8 @@ def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]]
         "version": "1.4",
         "body": body,
     }
+    if mention:
+        content["msteams"] = {"entities": [mention]}
     if buttons:
         content["actions"] = [{"type": "Action.OpenUrl", "title": label, "url": url} for label, url in buttons]
     return {
