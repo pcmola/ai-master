@@ -142,9 +142,9 @@ flowchart TD
 | 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | ✅ | 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있으면 이름과 상관없이 대상, 없으면 이름 규칙. 트레이스에 `by_tag`·`by_name` |
 | 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | ✅ | 테스트 정답 대조(`--verify`) |
 | 5. Teams 알림·승인 요청 | 이상 징후 + AI 요약(참고용) + 변경 목록 + Wiki 문서 링크, "현행화할까요?" Yes/No, No·시간 초과는 기록 후 종료 | ✅ | Teams 웹후크 카드, 로컬 승인 서버, 진행 화면 |
-| 6. DevOps Task 생성 | Epic → Feature → 월별 PBI 아래 Task, 변경 내역, 담당자 | ✅ | |
+| 6. DevOps Task 생성 | Epic → Feature → 월별 PBI 아래 Task, 변경 내역, 담당자 | ✅ | Feature·그 달 PBI가 없으면 만들고 `NN. …` Task에 변경 표를 적음. 담당자는 `SCENARIO2_ASSIGNEE`(비우면 PAT 소유자). 예: Task #2505 |
 | 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | ✅ | `--push`일 때 반영 |
-| 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | ✅ | |
+| 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | ✅ | Task 상태를 Done으로 바꾸고 Teams 결과 카드 전송, 로컬 승인 진행 화면에도 완료와 링크 표시. No·시간 초과도 결과 카드로 알림 |
 
 **실행 화면**
 
@@ -185,7 +185,7 @@ flowchart TD
     class inj done
 ```
 
-| 단계 | 내용 | 상태 | 구현 |
+| 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
 | 1. 점검 트리거 | 직접 실행, 스케줄러(확장) | 🟡 | `proxy_log_detect.py detect` 직접 실행, 로그 뷰어 5초 자동 새로고침 |
 | 2. 로그 수집·장애 감지 | 서버 로그 파싱(LLM), 오류 패턴 탐지, 원인 후보 도출(LLM) | 🟡 | SSH로 Squid·nginx 로그 수집, 규칙 탐지(차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트 등). LLM 분석 없음 |
@@ -193,14 +193,16 @@ flowchart TD
 | 4. DevOps 소스 확인 | Repos 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | ⬜ | 장애 재현용 `proxy_fault_inject.py`(proxy-config 저장소에 잘못된 설정 커밋)만 있음 |
 | 5. Teams 조치 승인 요청 | 원인·수정안 요약(LLM), "조치할까요?" Yes/No | ⬜ | 시나리오 2의 Teams 카드·승인 서버를 재사용할 수 있음 |
 | 6. 장애 조치 Task 생성(확장) | 장애 내용·원인 기록, 담당자·우선순위 | ⬜ | (Squid 정책 변경 → Task 등록은 `squid_policy_publish.py`에 있음) |
-| 7. 소스 수정 및 PR(확장) | 브랜치 생성·AI 코드 수정, Pull Request, Task와 PR 연결 | ⬜ | |
-| 8. 장애 대응 이력 Wiki(확장) | 대응 이력 문서(LLM), 원인·조치·PR 링크, Teams 결과 알림 | ⬜ | |
+| 7. 소스 수정 및 PR(확장) | 브랜치 생성·AI 코드 수정, Pull Request, Task와 PR 연결 | ⬜ | 미구현. 고칠 대상(잘못된 설정 커밋)은 `proxy_fault_inject.py`로 proxy-config 저장소에 만들 수 있음 |
+| 8. 장애 대응 이력 Wiki(확장) | 대응 이력 문서(LLM), 원인·조치·PR 링크, Teams 결과 알림 | ⬜ | 미구현. Wiki 등록은 시나리오 1의 `wiki_register.py`, 결과 알림은 `teams_notify.py`를 재사용할 예정 |
 
 **실행 화면** (공인 IP는 `x.x.x.x`로 가림)
 
 프록시 로그 뷰어: 실제 Squid·nginx 접속 로그, 허용 목록, 탐지 결과:
 
 ![프록시 로그 뷰어](docs/images/proxy-log.png)
+
+<sub>[↑ 목차로](#목차)</sub>
 
 ## 2. 구성
 
@@ -308,6 +310,8 @@ flowchart LR
 
 ![Wiki 뷰어](docs/images/wiki-viewer.png)
 
+<sub>[↑ 목차로](#목차)</sub>
+
 ## 3. 사전 준비
 
 처음 설치할 때 한 번 해 두는 작업입니다. 키·URL·IP 같은 실제 값은 모두 `.env`에만 넣고 커밋하지 않습니다.
@@ -392,6 +396,8 @@ flowchart LR
 - Teams 카드의 Yes/No 응답을 이 PC로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다. 그래서 승인 버튼은 이 PC의 로컬 승인 화면(`approval_local.py`, http://127.0.0.1:8771)을 엽니다.
 - 카드가 채널에 안 올라오면 Teams 로그인이나 흐름의 연결이 만료된 경우가 많습니다. https://make.powerautomate.com 의 **연결**에서 오류 난 Microsoft Teams 연결을 다시 맺고, **내 흐름** › 해당 흐름 › **28일 실행 기록**에서 성공했는지 봅니다. 흐름의 게시 주체는 **흐름 봇**(Flow bot)이어야 합니다(기본값).
 
+<sub>[↑ 목차로](#목차)</sub>
+
 ## 4. 설정
 
 `.env.sample`을 복사해 `.env`를 만들고 실제 인증정보를 입력합니다. `.env`는 프로젝트 루트에 하나만 두고 모든 도구가 함께 씁니다.
@@ -438,6 +444,8 @@ Copy-Item .env.sample .env
 | `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 "시나리오 실행" 탭에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py (요청별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
+
+<sub>[↑ 목차로](#목차)</sub>
 
 ## 5. 로컬 웹서버
 
@@ -543,6 +551,8 @@ Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | For
 **허브 - 로컬 서버 탭:**
 
 ![허브 - 로컬 서버 탭](docs/images/hub-servers.png)
+
+<sub>[↑ 목차로](#목차)</sub>
 
 ## 6. 주요 흐름
 
@@ -690,6 +700,8 @@ flowchart LR
     class report,viewer done
 ```
 
+<sub>[↑ 목차로](#목차)</sub>
+
 ## 7. 프록시 VM 운영
 
 리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트를 허용 클라이언트 IP 한 곳에만 엽니다.
@@ -714,6 +726,8 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 리버스 프록시의 `data.wjy.test`·`law.wjy.test`는 nginx 설정(`server_name`)에만 있는 이름입니다. 요청은 IP로 보내고 이름은 `Host` 머리글에만 실으므로 hosts·DNS가 필요 없습니다.
 
 로그 뷰어(http://proxy-log.local)는 새로고침하는 동안 상단 진행 막대·회전 아이콘·흐린 표를 보여 주고, 끝나면 `갱신 HH:MM:SS · 새 로그 N건`(또는 `변경 없음`)을 잠깐 강조합니다. 로그 소스가 "실제 로그"면 VM의 진짜 로그이고, "가상 로그"일 때만 만들어 낸 데이터입니다.
+
+<sub>[↑ 목차로](#목차)</sub>
 
 ## 8. 시나리오 2 테스트 환경
 
@@ -787,6 +801,8 @@ python proxy_tools\proxy_status_sync.py --dry-run --wiki-page "AI-Master-프로�
 - 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **시나리오 실행** 탭에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
 
+<sub>[↑ 목차로](#목차)</sub>
+
 ## 9. 실행 예시
 
 프로젝트 루트에서 실행합니다. 다른 폴더에서 실행해도 `.env`·`wiki-repo`·`data`는 프로젝트 루트 기준으로 찾습니다.
@@ -801,6 +817,8 @@ python proxy_tools\squid_policy_publish.py --dry-run
 python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --dry-run
 ```
 
+<sub>[↑ 목차로](#목차)</sub>
+
 ## 10. 주의사항
 
 - `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`, `TAVILY_API_KEY`를 소스에 직접 작성하지 마세요. `.env.sample`에도 실제 값을 넣지 않습니다(공개 저장소에 올라감).
@@ -808,3 +826,5 @@ python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --dry-run
 - 이 저장소는 공개입니다. 실제 VM IP, 허용 클라이언트 IP, 구독 ID, 사내 게이트웨이 주소는 소스·README에 쓰지 말고 `.env` 또는 `data/`(Git 제외)에만 둡니다. 예시에는 `<VM_IP>`나 문서용 IP(`203.0.113.x`)를 씁니다.
 - `wiki-repo`는 별도 Git 저장소(Azure DevOps Wiki)이며 ai-master의 `.gitignore`에 들어 있습니다. Wiki 변경은 `wiki-repo` 안에서 따로 커밋·push합니다. Wiki 문서를 만들거나 고칠 때는 `WIKI_DOCUMENT_RULES.md`를 먼저 따릅니다.
 - 같은 주소로 서버를 두 번 띄우면 두 번째 실행은 "이미 사용 중" 메시지로 끝납니다. 코드를 바꾼 뒤에는 기존 서버를 끄고 다시 실행하세요(허브의 재시작 버튼).
+
+<sub>[↑ 목차로](#목차)</sub>
