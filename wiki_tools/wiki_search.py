@@ -1036,6 +1036,8 @@ try{const r=await fetch('/api/guide/stream',{method:'POST',headers:{'Content-Typ
 const rd=r.body.getReader(),dec=new TextDecoder();let buf='';for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(line.trim())on(JSON.parse(line))}}}
 catch(err){if(err.name==='AbortError')return;$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+' ('+sec()+'초)</div>'}finally{clearInterval(tick)}}
 $('#form').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)search(q).catch(err=>{$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+'</div>'})};
+// 허브의 '시나리오 실행' 탭에서 ?q=질의 로 열면 바로 검색한다.
+{const q0=new URLSearchParams(location.search).get('q');if(q0){$('#q').value=q0;search(q0).catch(err=>{$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+'</div>'})}}
 $('#copy').onclick=()=>navigator.clipboard.writeText(state.md).then(()=>{$('#copy').textContent='복사됨';setTimeout(()=>$('#copy').textContent='Markdown 복사',1200)});
 $('#dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([state.md],{type:'text/markdown'}));a.download=state.title.replace(/\s+/g,'-')+'.md';a.click()};
 $('#regen').onclick=()=>guide(state.key,state.variant,state.label);

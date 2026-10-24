@@ -93,7 +93,7 @@ flowchart TD
 
 | 단계 | 내용 | 상태 | 지금 구현 |
 |---|---|---|---|
-| 1. 점검 트리거 | 직접 실행 | ✅ | 직접 실행. 스케줄러는 하지 않기로 함(2026-10-24). 출력은 `data/logs/scenario2.log`에도 남고 허브 "작업 로그"에서 봄 |
+| 1. 점검 트리거 | 직접 실행 | ✅ | 직접 실행. 스케줄러는 하지 않기로 함(2026-10-24). 허브 **시나리오 실행** 탭에서 실행하고 `data/logs/scenario2.log`를 봄 |
 | 2. Wiki 현황 조회 | 표준 표는 규칙으로 파싱, 형식이 다른 문서는 LLM이 표준 형식으로 바꾸고 원문 대조로 검증 | ✅ | `wiki_parse_llm`: VM 이름이 원문에 없으면 버리고, IP·SIZE가 원문에 없으면 비움. 실제 문서 `Proxy VM 정리 ('26.09.17 기준)` 11행 확인. LLM으로 읽은 문서는 7단계에서 자동 수정하지 않고 Task에 수동 반영 요청 |
 | 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | ✅ | 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있으면 이름과 상관없이 대상, 없으면 이름 규칙. 트레이스에 `by_tag`·`by_name` |
 | 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | ✅ | 테스트 정답 대조(`--verify`) |
@@ -144,7 +144,7 @@ flowchart TD
 
 ```
 ai-master/
-├─ hub.py          로컬 웹서버 허브: 한 화면에서 서버 시작·중지·재시작, 로그 보기
+├─ hub.py          로컬 웹서버 허브: 로컬 서버 탭(시작·중지·재시작, 로그) + 시나리오 실행 탭
 ├─ common/         공통 모듈: 프로젝트 경로(paths.py), 로컬 웹서버·크롬 열기(server.py), 노드별 트레이싱(trace.py)
 ├─ wiki_tools/     Wiki 검색·가이드 생성, 로컬 뷰어, Azure DevOps Wiki 문서 관리
 ├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, Squid 정책 변경 감지·Task/Wiki 반영
@@ -282,7 +282,7 @@ Copy-Item .env.sample .env
 | `proxy_policy_state/` | squid_policy_publish.py (정책 기준 스냅샷, 변경 이력) |
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
-| `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력. 허브 "작업 로그"에서 봄, 2MB 넘으면 `.old.log`) |
+| `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 "시나리오 실행" 탭에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py (요청별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
@@ -332,10 +332,18 @@ hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다.
 
 ### 허브 (hub.py)
 
-http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 실행하고 끝나는 작업(시나리오 2)의 출력은 "작업 로그" 줄에서 봅니다. 서버 화면은 "화면" 버튼으로 새 창에서 엽니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
+http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 화면은 탭 두 개입니다.
+
+| 탭 | 내용 |
+|---|---|
+| 로컬 서버 | 서버 표(상태·PID·가동 시간, 시작·중지·재시작·로그·화면)와 로그 창 |
+| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "점검만(반영하지 않음, `--dry-run`)"(기본 체크)을 켜거나 끄고 실행, "테스트 환경 준비"(`setup_env.py --start-vms`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦), 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음 |
+
+`http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 "화면" 버튼으로 새 창에서 엽니다. 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
 
 ```powershell
-python hub.py                # 허브를 켜고 크롬으로 연다
+python hub.py                # 허브를 켜고 크롬으로 연다 (이미 떠 있는 허브는 끄고 새로 띄움)
+python hub.py --keep         # 이미 떠 있는 허브가 있으면 끄지 않고 종료
 python hub.py --start-all    # 꺼져 있는 서버를 모두 시작
 python hub.py --restart-all  # 모두 다시 시작 (중복 실행·예전 주소로 뜬 서버 정리)
 python hub.py --no-browser   # 크롬을 열지 않음 (다른 옵션과 함께 사용)
@@ -370,7 +378,7 @@ flowchart LR
 - 실행 여부는 프로세스 명령줄의 스크립트 이름으로 찾으므로 직접 띄운 서버도 허브에 보이고 끌 수 있습니다(로그는 허브에서 시작한 서버만 남음).
 - 허브 콘솔에는 시각과 함께 시작 설정, 시작·중지 요청, 생성·종료한 PID, 상태 변화(직접 끄거나 서버가 죽은 경우 포함), 거부된 요청, 오류가 찍힙니다. 서버가 시작하자마자 죽으면 그 서버 출력의 마지막 줄도 함께 찍힙니다.
 
-허브가 이미 떠 있으면 다시 실행할 때 "이미 사용 중"과 함께 PID가 나옵니다. 떠 있는 허브는 브라우저로 열면 되고, 끄려면 다음을 실행합니다.
+허브가 이미 떠 있으면 `python hub.py`가 그 허브 프로세스만 끄고 새로 띄웁니다(허브가 띄운 서버들은 그대로 돕니다). 끄지 않으려면 `--keep`을 붙이며, 이때는 "이미 사용 중"과 함께 PID가 나오고 종료합니다. 허브만 끄려면 다음을 실행합니다.
 
 ```powershell
 Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | ForEach-Object { taskkill /PID $_.OwningProcess /F }
@@ -618,7 +626,7 @@ python proxy_tools\proxy_status_sync.py --dry-run --wiki-page "AI-Master-프로�
 
 - 버튼을 누르면 열린 브라우저 창이 진행 화면으로 바뀌어 단계(Task 생성 → Wiki 현행화 → 완료 처리)를 실시간으로 보여 주고, 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다. 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있고, 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
-- 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **작업 로그 › 시나리오 2**에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
+- 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **시나리오 실행** 탭에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
 
 ## 실행 예시

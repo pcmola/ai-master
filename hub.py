@@ -1,6 +1,8 @@
 """Local hub: one page to start, stop and watch the ai-master local web servers.
 
     python hub.py                # http://ai-master.local (hosts 등록 시), 없으면 http://127.0.0.1:8764
+                                 # 이미 떠 있는 허브가 있으면 그 허브만 끄고 새로 띄운다(서버들은 그대로)
+    python hub.py --keep         # 이미 떠 있는 허브가 있으면 끄지 않고 종료
     python hub.py --start-all    # 허브를 켜면서 꺼져 있는 서버를 모두 시작
     python hub.py --restart-all  # 허브를 켜면서 모든 서버를 다시 시작(중복 실행도 정리)
     python hub.py --no-browser
@@ -250,14 +252,66 @@ def watch(interval: float = 5):
         time.sleep(interval)
 
 
-# 서버가 아니라 실행하고 끝나는 작업. 작업이 스스로 data/logs/<key>.log 에 출력을 남긴다.
-JOBS = {"scenario2": "시나리오 2 · Wiki 현행화 (proxy_status_sync.py)"}
+# 서버가 아니라 실행하고 끝나는 작업(시나리오 실행 탭). log 는 data/logs/<log>.log.
+# self_log=True 인 작업은 스스로 그 파일에 출력을 남기므로 허브는 출력을 버린다(중복 방지).
+JOBS = {
+    "scenario2": {"title": "시나리오 2 · 위키 현행화", "script": "proxy_tools/proxy_status_sync.py", "log": "scenario2",
+                  "self_log": True,
+                  "options": {"dry_run": "--dry-run"}},
+    "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
+                        "self_log": False, "options": {"start_vms": "--start-vms"}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
+}
+JOB_LOGS = {j["log"] for j in JOBS.values()}
+RUNNING: dict[str, dict] = {}  # 작업 → {proc, pid, started, args, finished, code}
+_job_lock = threading.Lock()
+
+
+def run_job(job: str, options: dict) -> dict:
+    """작업을 창 없이 실행한다. 같은 로그를 쓰는 작업(예: 시나리오 2 실행과 테스트 환경 준비)은 동시에 돌리지 않는다."""
+    spec = JOBS[job]
+    with _job_lock:
+        busy = [k for k, r in RUNNING.items() if JOBS[k]["log"] == spec["log"] and r["proc"].poll() is None]
+        if busy:
+            return {"error": f"이미 실행 중입니다: {JOBS[busy[0]]['title']}"}
+        args = [flag for opt, flag in spec["options"].items() if options.get(opt)]
+        cmd = [sys.executable, spec["script"], *args]
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        if spec["self_log"]:
+            proc = subprocess.Popen(cmd, cwd=PROJECT_ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    stdin=subprocess.DEVNULL, env=env, creationflags=NO_WINDOW)
+        else:
+            with open(LOG_DIR / f"{spec['log']}.log", "ab") as f:
+                f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 시작: {spec['script']} {' '.join(args)} =====\n".encode("utf-8"))
+                f.flush()
+                proc = subprocess.Popen(cmd, cwd=PROJECT_ROOT, stdout=f, stderr=subprocess.STDOUT,
+                                        stdin=subprocess.DEVNULL, env=env, creationflags=NO_WINDOW)
+        RUNNING[job] = {"proc": proc, "pid": proc.pid, "started": datetime.now().isoformat(timespec="seconds"),
+                        "args": args, "finished": None, "code": None}
+    log(f"[{job}] 작업 실행 PID {proc.pid}: {' '.join(cmd)}")
+    return {"pid": proc.pid, "args": args}
+
+
+def job_status() -> dict:
+    out = {}
+    for job, spec in JOBS.items():
+        r = RUNNING.get(job)
+        if not r:
+            out[job] = {"title": spec["title"], "state": "idle"}
+            continue
+        code = r["proc"].poll()
+        if code is not None and r["finished"] is None:
+            r["finished"], r["code"] = datetime.now().isoformat(timespec="seconds"), code
+            log(f"[{job}] 작업 종료 PID {r['pid']} → 종료 코드 {code}")
+        out[job] = {"title": spec["title"], "state": "running" if code is None else "finished", "pid": r["pid"],
+                    "started": r["started"], "finished": r["finished"], "code": r["code"], "args": r["args"]}
+    return out
 
 
 def log_tail(key: str, lines: int = 300) -> str:
     log = LOG_DIR / f"{key}.log"
     if not log.is_file():
-        return ("(로그 없음: 작업을 실행하면 남습니다)" if key in JOBS
+        return ("(로그 없음: 작업을 실행하면 남습니다)" if key in JOB_LOGS
                 else "(로그 없음: 허브에서 시작한 서버만 로그가 남습니다)")
     with open(log, "rb") as f:
         f.seek(max(0, log.stat().st_size - 128 * 1024))
@@ -287,8 +341,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         if url.path == "/":
-            self.send_body(PAGE.replace("__TITLE__", HUB_TITLE).replace("__JOBS__", json.dumps(JOBS, ensure_ascii=False))
-                           .encode("utf-8"), "text/html; charset=utf-8")
+            self.send_body(PAGE.replace("__TITLE__", HUB_TITLE).encode("utf-8"), "text/html; charset=utf-8")
         elif url.path == "/api/status":
             try:
                 self.send_json({"servers": server_status(), "time": datetime.now().isoformat(timespec="seconds")})
@@ -297,15 +350,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 500)
         elif url.path == "/api/log":
             key = parse_qs(url.query).get("key", [""])[0]
-            if key not in BY_KEY and key not in JOBS:
+            if key not in BY_KEY and key not in JOB_LOGS:
                 self.send_error(404)
                 return
             self.send_body(log_tail(key).encode("utf-8"), "text/plain; charset=utf-8")
+        elif url.path == "/api/jobs":
+            self.send_json(job_status())
         else:
             self.send_error(404)
 
     def do_POST(self):
-        if urlparse(self.path).path != "/api/action":
+        path = urlparse(self.path).path
+        if path not in ("/api/action", "/api/job"):
             self.send_error(404)
             return
         client = self.client_address[0]
@@ -318,6 +374,15 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             log(f"요청 거부(400) {client}: JSON 형식 오류")
             self.send_json({"error": "bad json"}, 400)
+            return
+        if path == "/api/job":
+            job = body.get("job")
+            if job not in JOBS:
+                self.send_json({"error": "bad job"}, 400)
+                return
+            result = run_job(job, body.get("options") or {})
+            log(f"요청 {client}: 작업 {job} {body.get('options') or {}} → {result}")
+            self.send_json(result, 409 if "error" in result else 200)
             return
         key, action = body.get("key"), body.get("action")
         if action not in ("start", "stop", "restart") or (key != "all" and key not in BY_KEY):
@@ -359,24 +424,49 @@ tr.sel td{background:var(--soft)}
 .tabs button.on{background:var(--blue);border-color:var(--blue);color:#fff}.tabs .name{margin-left:8px;font-weight:600}
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
+[hidden]{display:none!important}
+nav.maintabs{display:flex;gap:4px;padding:0 24px;background:var(--top);border-top:1px solid #22324f}
+nav.maintabs button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;color:#aebbd0;padding:10px 14px;font-weight:600}
+nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
+.scgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px}
+.sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
+.sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
+.sc .opts{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}.sc .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sc button.main{background:var(--blue);border-color:var(--blue);color:#fff}.jobstate{font-size:13px}
+.jobstate.running{color:var(--warn)}.jobstate.ok{color:var(--ok)}.jobstate.fail{color:var(--bad)}
 @media(max-width:820px){.hide-sm{display:none}main{padding:12px}}
 </style></head><body>
 <header><h1>__TITLE__</h1><span class="time" id="time"></span>
-<button onclick="act('all','start')">모두 시작</button><button onclick="act('all','restart')">모두 재시작</button>
-<button onclick="if(confirm('모든 서버를 끌까요?'))act('all','stop')">모두 중지</button></header>
-<main>
+<span id="allbtns"><button onclick="act('all','start')">모두 시작</button> <button onclick="act('all','restart')">모두 재시작</button>
+<button onclick="if(confirm('모든 서버를 끌까요?'))act('all','stop')">모두 중지</button></span></header>
+<nav class="maintabs"><button id="mt-servers" onclick="tab('servers')">로컬 서버</button><button id="mt-scenarios" onclick="tab('scenarios')">시나리오 실행</button></nav>
+<main id="pane-servers">
 <div class="card"><table><thead><tr><th>상태</th><th>서버</th><th>주소</th><th class="hide-sm">PID · 실행 시간</th><th>관리</th></tr></thead>
 <tbody id="rows"><tr><td colspan="5" class="muted">불러오는 중…</td></tr></tbody></table><div id="err" class="err" hidden></div></div>
-<div class="card"><div class="tabs"><b>작업 로그</b><span id="jobs"></span>
-<span class="muted" style="margin-left:auto">실행하고 끝나는 작업의 출력 (data/logs)</span></div></div>
 <div class="card" id="panel" hidden><div class="tabs"><button id="tab-log" class="on">로그</button><span class="name" id="pname"></span>
 <span class="muted" style="margin-left:auto" id="phint"></span></div>
 <pre id="log"></pre></div>
 </main>
+<main id="pane-scenarios" hidden>
+<div class="scgrid">
+<div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
+<p>위키 검색 화면을 새 창으로 엽니다. 질의 입력·유형 선택·미리보기·수정 요청·위키 등록은 그 화면에서 합니다.</p>
+<div class="row"><button class="main" id="s1run" onclick="runS1()">실행 (위키 검색 화면 열기)</button><button onclick="showLog('wiki-search','시나리오 1 · 위키 검색 서버 로그')">로그</button>
+<span class="jobstate" id="s1state"></span></div></div>
+<div class="card sc"><h2>시나리오 2 · 프록시 현황 위키 현행화</h2>
+<p>위키 현황 문서와 애저 가상 머신을 비교하고, 차이가 있으면 팀즈 승인 후 작업 항목과 위키에 반영합니다. 승인 카드는 팀즈 일반 채널로 갑니다.</p>
+<div class="opts"><label><input type="checkbox" id="o-dry_run" checked> 점검만 (반영하지 않음)</label></div>
+<div class="row"><button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
+<button id="s2setup" onclick="runJob('scenario2-setup')" title="꺼진 프록시 가상 머신을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만듭니다">테스트 환경 준비</button>
+<button onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
+<div class="jobstate" id="s2state"></div></div>
+</div>
+<div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span></div>
+<pre id="slog"></pre></div>
+</main>
 <script>
 let servers=[], selected=null;
-const JOBS=__JOBS__;
-document.getElementById('jobs').innerHTML=Object.entries(JOBS).map(([k,t])=>`<button style="margin-left:8px" onclick="pick('${k}')">${t}</button>`).join('');
+
 const LABEL={running:'실행 중',starting:'시작 중',stopped:'꺼짐'};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function since(iso){if(!iso)return'';const s=Math.max(0,(Date.now()-new Date(iso))/1000);
@@ -408,23 +498,68 @@ async function refresh(){
 async function loadLog(){const pre=document.getElementById('log');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
   pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(selected))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
 // 하단 패널은 로그만 보여 준다. 서버 화면은 '화면' 버튼으로 새 창에서 연다.
-function pick(key){const s=servers.find(x=>x.key===key);const title=s?s.title:JOBS[key];if(!title)return;selected=key;
+function pick(key){const s=servers.find(x=>x.key===key);const title=s&&s.title;if(!title)return;selected=key;
   document.getElementById('panel').hidden=false;document.getElementById('pname').textContent=title;
   document.getElementById('phint').textContent='data/logs/'+key+'.log';loadLog();render()}
-refresh();setInterval(refresh,3000);
+// ---------------------------------------------------------------- 탭
+function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t!=='servers';
+  document.getElementById('pane-scenarios').hidden=t!=='scenarios';document.getElementById('allbtns').hidden=t!=='servers';
+  document.getElementById('mt-servers').classList.toggle('on',t==='servers');document.getElementById('mt-scenarios').classList.toggle('on',t==='scenarios');
+  if(t==='scenarios'){refreshJobs();if(!slogKey)showLog('scenario2','시나리오 2 로그')}}
+// ---------------------------------------------------------------- 시나리오 실행
+let jobs={}, slogKey=null;
+function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
+function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
+  window.open(s.url+'/','_blank','noopener');showLog('wiki-search','시나리오 1 · 위키 검색 서버 로그')}
+async function runJob(job){const options=job==='scenario2'?{dry_run:document.getElementById('o-dry_run').checked}:{start_vms:true};
+  const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
+  const d=await r.json();if(d.error){alert(d.error);return}showLog('scenario2','시나리오 2 로그');setTimeout(refreshJobs,300)}
+function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11),arg=j.args.length?' '+j.args.join(' '):'';
+  if(j.state==='running')return`<span class="jobstate running">● ${esc(j.title)} 실행 중 (PID ${j.pid}, ${since(j.started)}째)${esc(arg)}</span>`;
+  return`<span class="jobstate ${j.code===0?'ok':'fail'}">${j.code===0?'✓':'✗'} ${esc(j.title)} 종료 코드 ${j.code} (${t} 시작${esc(arg)})</span>`}
+async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
+  const run=Object.values(jobs).some(j=>j.state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
+  document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
+  const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
+  document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:'<span class="jobstate fail">위키 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
+  if(slogKey)loadSLog()}
+function showLog(key,title){slogKey=key;document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
+async function loadSLog(){const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
+  pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(slogKey))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
+refresh();setInterval(refresh,3000);setInterval(()=>{if(!document.getElementById('pane-scenarios').hidden)refreshJobs()},2000);
+tab(location.hash==='#scenarios'?'scenarios':'servers');
 </script></body></html>"""
+
+
+def port_owner(ip: str, port: int) -> int | None:
+    return next((pid for pid, addrs in listeners().items() if f"{ip}:{port}" in addrs and pid != os.getpid()), None)
+
+
+def replace_old_hub(ip: str, port: int) -> None:
+    """이미 떠 있는 허브를 끈다. /T 를 쓰지 않으므로 그 허브가 띄운 서버들은 계속 돈다."""
+    owner = port_owner(ip, port)
+    if not owner:
+        return
+    log(f"이미 떠 있는 허브(PID {owner})를 끄고 새로 띄웁니다. 끄지 않으려면 --keep")
+    subprocess.run(["taskkill", "/PID", str(owner), "/F"], capture_output=True, timeout=30, creationflags=NO_WINDOW)
+    for _ in range(20):
+        if not port_owner(ip, port):
+            return
+        time.sleep(0.25)
 
 
 def main():
     flags = set(sys.argv[1:])
     ip, port, _ = site_url(HUB_SITE, HUB_PORT)
+    if "--keep" not in flags:
+        replace_old_hub(ip, port)
     try:
         server = local_server(HUB_PORT, Handler, HUB_SITE)
     except SystemExit:
-        owner = next((pid for pid, addrs in listeners().items() if f"{ip}:{port}" in addrs), None)
+        owner = port_owner(ip, port)
         log(f"{HUB_TITLE} 를 띄우지 못했습니다: {ip}:{port} 를 이미 사용 중입니다"
             + (f" (PID {owner}). 이미 떠 있는 허브라면 브라우저로 http://{HUB_SITE} 를 열거나, "
-               f"끄고 다시 실행하세요: taskkill /PID {owner} /T /F" if owner else "."))
+               f"--keep 없이 다시 실행하세요(그 허브만 끄고 새로 띄움)." if owner else "."))
         raise SystemExit(1)
     log(f"{HUB_TITLE} 시작: {server.url} (수신 {ip}:{port}, PID {os.getpid()})")
     log(f"  파이썬 {sys.executable}")
