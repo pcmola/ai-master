@@ -76,7 +76,7 @@ def read_files(ip: str) -> dict[str, str]:
         command += ["-i", ssh_key()]
     command += [f"{ssh_user()}@{ip}", READ_COMMAND]
     try:
-        res = subprocess.run(command, capture_output=True, timeout=45)
+        res = subprocess.run(command, capture_output=True, timeout=45, stdin=subprocess.DEVNULL)  # ssh 가 콘솔 입력을 먹지 않게
     except FileNotFoundError as exc:
         raise RuntimeError("ssh 명령을 찾지 못했습니다") from exc
     except subprocess.TimeoutExpired as exc:

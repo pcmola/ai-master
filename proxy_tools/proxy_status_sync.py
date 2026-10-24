@@ -79,7 +79,8 @@ def az(*args: str):
     exe = shutil.which("az") or shutil.which("az.cmd")
     if not exe:
         raise RuntimeError("az CLI 를 찾지 못했습니다.")
-    out = subprocess.run([exe, *args, "-o", "json"], capture_output=True, text=True, encoding="utf-8", timeout=180)
+    out = subprocess.run([exe, *args, "-o", "json"], capture_output=True, text=True, encoding="utf-8", timeout=180,
+                         stdin=subprocess.DEVNULL)
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip() or f"az {' '.join(args)} 실패 (az login 필요할 수 있음)")
     return json.loads(out.stdout)
