@@ -2,10 +2,6 @@
 
 **Azure DevOps 기반 AI 운영 자동화 시나리오** (2026. 10)
 
-## Android 사용량 모니터
-
-Claude·ChatGPT 사용량 화면을 Android 앱으로 볼 수 있습니다. 앱 소스와 설치·빌드 방법은 [android-usage-monitor](android-usage-monitor/README.md)에 있습니다. PC에서 `python mobile_tools/usage_bridge.py`로 중계 서버를 실행한 뒤, 같은 Wi-Fi의 휴대폰에서 서버 주소와 연결 키를 설정합니다.
-
 ## 목적
 
 Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으로 연결해, 사람이 반복하던 운영 업무를 자동화합니다. 문서를 찾아 정리하고(시나리오 1), 문서와 실제 상태를 맞추고(시나리오 2), 장애 원인을 찾아 조치를 제안합니다(시나리오 3). 사람의 판단이 필요한 변경은 Teams에서 Yes/No 승인을 받은 뒤에만 반영합니다.
