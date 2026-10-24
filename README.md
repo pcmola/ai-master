@@ -243,6 +243,90 @@ flowchart LR
 | test | `teams_test.py` | Teams 연동 테스트: 웹후크·Graph 를 차례로 시험하고 실패 원인을 안내 (`.env`의 `TEAMS_*`) | - |
 | | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
 
+## 사전 준비
+
+처음 설치할 때 한 번 해 두는 작업입니다. 키·URL·IP 같은 실제 값은 모두 `.env`에만 넣고 커밋하지 않습니다.
+
+| 준비 항목 | 필요한 시나리오 | 없으면 |
+|---|---|---|
+| PC 도구 (Python·Git·Azure CLI) | 전부 | 실행 불가 |
+| hosts 등록 | 전부(허브·화면) | `127.0.0.1:포트` 주소로 뜸 |
+| Azure DevOps (Wiki·PAT·백로그) | 1, 2 | 문서 검색·등록, Task 생성 불가 |
+| LLM 게이트웨이 (Azure OpenAI 호환) | 1, 2 | 가이드 생성·검색 임베딩·AI 요약 불가(시나리오 2는 `--no-ai`로 요약만 끄고 실행 가능) |
+| 웹 검색 (Tavily API 키) | 1 | 위키 근거가 약해도 웹 검색 없이 위키만 씀 |
+| Azure 구독과 Proxy VM | 2, 3 | 비교할 실제 VM이 없음 |
+| Microsoft Teams (회사·학교 계정, Workflows 웹후크) | 2 | 승인 요청·결과 알림 카드를 못 보냄 |
+
+### 1. PC 도구
+
+- Windows, Python 3.11 이상, Git, [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli-windows), Chrome(없으면 기본 브라우저).
+- Python 패키지:
+
+  ```powershell
+  pip install python-dotenv openai
+  pip install anthropic msal   # 선택: Anthropic 모델을 쓸 때, Teams Graph API를 시험할 때
+  ```
+
+- `.env.sample`을 `.env`로 복사합니다([설정](#설정) 참고).
+
+### 2. hosts 등록
+
+허브·Wiki 뷰어·Wiki 검색·프록시 로그 뷰어를 포트 없는 주소(`http://ai-master.local` 등)로 열기 위해 관리자 권한으로 `C:\Windows\System32\drivers\etc\hosts`에 줄을 추가합니다. 값은 [포트 없는 주소 (hosts)](#포트-없는-주소-hosts)에 있습니다. hosts 주석은 ASCII로만 씁니다(한글 주석이 있으면 이름 풀이가 깨짐).
+
+### 3. Azure DevOps
+
+1. 조직·프로젝트를 만들고 프로젝트 Wiki를 켭니다. 프로세스는 Epic → Feature → Product Backlog Item → Task를 쓰는 **Scrum**입니다.
+2. **User settings › Personal access tokens**에서 PAT를 만듭니다. 범위: **Wiki (Read & write)**, **Work Items (Read & write)**, **Code (Read & write)**. `.env`의 `AZURE_DEVOPS_ORG`, `AZURE_DEVOPS_PROJECT`, `AZURE_DEVOPS_WIKI`, `AZURE_DEVOPS_PAT`에 넣습니다.
+3. Wiki 저장소를 프로젝트 폴더 아래 `wiki-repo`로 받습니다(ai-master Git에서는 추적하지 않음).
+
+   ```powershell
+   git clone https://dev.azure.com/<조직>/<프로젝트>/_git/<프로젝트>.wiki wiki-repo
+   ```
+
+4. 시나리오 2의 Task가 달릴 Epic을 하나 만들고 번호를 `SCENARIO2_EPIC_ID`에 넣습니다. Feature(`SCENARIO2_FEATURE`)와 그 달 PBI(`SCENARIO2_PBI`)는 없으면 자동으로 만듭니다.
+
+### 4. LLM 게이트웨이
+
+- Azure OpenAI 호환 게이트웨이의 주소와 키를 `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`에 넣습니다.
+- 모델 두 개가 필요합니다: 답변용 `OPENAI_MODEL`(기본 `gpt-6.1-sol`), 임베딩용 `OPENAI_EMBED_MODEL`(기본 `text-embedding-3-large`).
+
+### 5. 웹 검색 (Tavily)
+
+1. https://tavily.com 에 가입하고 대시보드에서 API 키를 발급합니다(무료 플랜으로 시험 가능).
+2. `.env`의 `TAVILY_API_KEY`에 넣고 Wiki 검색 서버를 재시작합니다.
+
+위키 근거가 약할 때만 웹을 검색합니다(기준: `WEB_SEARCH_MIN_SIM`, `WEB_SEARCH_MIN_VARIANT_SIM`). 키를 비우면 웹 검색을 하지 않습니다.
+
+### 6. Azure 구독과 Proxy VM
+
+1. Azure 구독에 로그인합니다. 브라우저 로그인이 안 되면 `az login --use-device-code`를 씁니다.
+
+   ```powershell
+   az login
+   az account set --subscription <구독 이름>
+   ```
+
+2. Proxy VM을 만듭니다. `azure_proxy_vm.py`가 가장 싼 B 시리즈 VM에 Squid(포워드)나 HAProxy를 podman으로 올리고, NSG는 이 PC의 공인 IP에만 열고, 매일 01:00 자동 종료를 겁니다. nginx 리버스 프록시(wjy-proxy03)는 같은 리소스 그룹에 따로 둡니다([프록시 VM 운영](#프록시-vm-운영)).
+
+   ```powershell
+   python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --count 2
+   ```
+
+3. 시나리오 2가 VM을 찾는 기준: 리소스 그룹 `SCENARIO2_RESOURCE_GROUP`(기본 `WJY-PROXY-RG`) 안에서 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있거나 이름이 `proxy`·`prxy`·`pxy`(+숫자)로 끝나는 VM.
+4. 권한: 조회만 하려면 리소스 그룹 **Reader**, "테스트 환경 준비"에서 꺼진 VM을 켜려면 **Virtual Machine Contributor**가 필요합니다.
+5. 시나리오 3: 프록시 로그 뷰어는 이 PC의 기본 SSH 키로 `azureuser@<VM 공용 IP>`에 접속해 로그를 읽습니다(VM을 만들 때 넣은 키, NSG에서 이 PC IP 허용). 허용 클라이언트 대역은 `PROXY_ALLOWED_CLIENTS`에 넣습니다. Squid 정책 변경 감지(`squid_policy_*.py`)를 쓰려면 `SQUID_HOST`, `SQUID_SSH_USER`, `SQUID_SSH_KEY`도 넣습니다.
+
+### 7. Microsoft Teams
+
+1. **회사·학교용 Microsoft 365 계정**이 필요합니다. 무료 개인 Teams에는 Workflows가 없습니다. Teams Essentials나 Microsoft 365 Business Basic이면 됩니다.
+2. 알림을 받을 팀과 채널을 만듭니다(예: 기본 채널 `일반`).
+3. 채널 이름 옆 **…** > **워크플로**에서 **채널에 웹후크 경고 보내기**(Send webhook alerts to a channel) 템플릿으로 흐름을 만들고, 발급된 URL 전체를 `.env`의 `TEAMS_WEBHOOK_URL`에 넣습니다. **이 URL은 비밀번호와 같으므로 공개하지 않습니다.**
+4. 카드가 Teams **활동**(종 모양)에도 뜨게 하려면 받을 사람의 계정을 `TEAMS_MENTION`(UPN), `TEAMS_MENTION_NAME`(표시 이름)에 넣습니다. 카드마다 그 사람을 @멘션합니다.
+5. 시험: `python teams_tools\teams_notify.py --title 테스트 "연동 확인"` → 채널에 카드가 오면 성공(HTTP 202).
+
+- Teams 카드의 Yes/No 응답을 이 PC로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다. 그래서 승인 버튼은 이 PC의 로컬 승인 화면(`approval_local.py`, http://127.0.0.1:8771)을 엽니다.
+- 카드가 채널에 안 올라오면 Teams 로그인이나 흐름의 연결이 만료된 경우가 많습니다. https://make.powerautomate.com 의 **연결**에서 오류 난 Microsoft Teams 연결을 다시 맺고, **내 흐름** › 해당 흐름 › **28일 실행 기록**에서 성공했는지 봅니다. 흐름의 게시 주체는 **흐름 봇**(Flow bot)이어야 합니다(기본값).
+
 ## 설정
 
 `.env.sample`을 복사해 `.env`를 만들고 실제 인증정보를 입력합니다. `.env`는 프로젝트 루트에 하나만 두고 모든 도구가 함께 씁니다.
