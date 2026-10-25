@@ -258,8 +258,6 @@ JOBS = {
     "scenario2": {"title": "시나리오 2 · Wiki 현행화", "script": "proxy_tools/proxy_status_sync.py", "log": "scenario2",
                   "self_log": True,
                   "options": {}},
-    "wiki-recent": {"title": "Wiki 최근 수정 갱신", "script": "wiki_tools/wiki_recent.py", "log": "wiki-recent",
-                    "self_log": False, "options": {}},
     "scenario3": {"title": "시나리오 3 · 장애 감지 및 조치", "script": "proxy_tools/incident_response.py", "log": "scenario3",
                   "self_log": True, "options": {"dry_run": "--dry-run"}},
     # 시험용: proxy-config 에 잘못된 설정을 넣어 wjy-proxy01 에 배포(장애 재현), 그리고 되돌리기
@@ -494,9 +492,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
 <p>Wiki 검색 화면을 새 창으로 엽니다. 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 그 화면에서 합니다.</p>
 <div class="row"><button class="main" id="s1run" onclick="runS1()">실행 (Wiki 검색 화면 열기)</button><button class="slog" data-key="wiki-search" onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button>
-<span class="jobstate" id="s1state"></span></div>
-<div class="row"><button id="s1recent" onclick="runJob('wiki-recent')" title="Azure DevOps 화면에서 직접 고친 문서까지 반영해 Wiki 첫 페이지(프로젝트 메인 About)의 최근 수정 문서 5개를 갱신 (wiki_tools/wiki_recent.py)">Wiki 최근 수정 갱신</button>
-<span class="jobstate" id="s1recentstate"></span></div></div>
+<span class="jobstate" id="s1state"></span></div></div>
 <div class="card sc"><h2>시나리오 2 · 프록시 현황 Wiki 현행화</h2>
 <p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
@@ -577,15 +573,13 @@ function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
   window.open(s.url+'/','_blank','noopener');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
 async function runJob(job,options={}){
   const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
-  const d=await r.json();if(d.error){alert(d.error);return}const lk=JOBS_LOG[job];showLog(lk,{scenario3:'시나리오 3 로그','wiki-recent':'Wiki 최근 수정 갱신 로그'}[lk]||'시나리오 2 로그');setTimeout(refreshJobs,300)}
-const JOBS_LOG={'wiki-recent':'wiki-recent',scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3'};
+  const d=await r.json();if(d.error){alert(d.error);return}const lk=JOBS_LOG[job];showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');setTimeout(refreshJobs,300)}
+const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3'};
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11),arg=j.args.length?' '+j.args.join(' '):'';
   if(j.state==='running')return`<span class="jobstate running">● ${esc(j.title)} 실행 중 (PID ${j.pid}, ${since(j.started)}째)${esc(arg)}</span>`;
   return`<span class="jobstate ${j.code===0?'ok':'fail'}">${j.code===0?'✓':'✗'} ${esc(j.title)} 종료 코드 ${j.code} (${t} 시작${esc(arg)})</span>`}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
   const run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
-  const wr=jobs['wiki-recent'];document.getElementById('s1recent').disabled=!!(wr&&wr.state==='running');
-  document.getElementById('s1recentstate').innerHTML=wr&&wr.state!=='idle'?jobLine(wr):'';
   const s3=['scenario3','scenario3-fault','scenario3-restore'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
   ['s3run','s3inject','s3restore'].forEach(id=>document.getElementById(id).disabled=run3);
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.

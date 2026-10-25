@@ -286,13 +286,6 @@ def publish_files(files: dict[Path, str], message: str) -> str | None:
     for path, text in files.items():
         if path.read_bytes().decode("utf-8").replace("\r\n", "\n") != text.replace("\r\n", "\n"):  # 체크아웃 때 CRLF 로 바뀔 수 있음
             raise RuntimeError(f"push 뒤 로컬 문서가 올린 내용과 다릅니다: {path}")
-    if not any(p.name == "AI-Master-프로젝트.md" and p.parent == WIKI_REPO for p in files):  # 첫 페이지 갱신 자신은 다시 부르지 않음
-        try:  # Wiki 첫 페이지의 '최근 수정 문서' 갱신
-            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "wiki_tools"))
-            from wiki_recent import refresh_quietly
-            refresh_quietly()
-        except ImportError:
-            pass
     return commit[:7]
 
 

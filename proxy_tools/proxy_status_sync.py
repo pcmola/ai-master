@@ -559,12 +559,6 @@ def write_wiki(text: str, message: str, push: bool) -> str:
     commit = git("rev-parse", "--short", "HEAD")
     if push:
         git("push")
-        try:  # Wiki 첫 페이지의 '최근 수정 문서' 갱신
-            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "wiki_tools"))
-            from wiki_recent import refresh_quietly
-            refresh_quietly()
-        except ImportError:
-            pass
     return commit
 
 

@@ -8,8 +8,9 @@
 - 첫 페이지의 <!-- recent:start --> … <!-- recent:end --> 사이만 다시 쓴다(없으면 맨 위에 넣는다).
   나머지 내용([[_TOSP_]] 하위 문서 목록 등)은 그대로 둔다.
 - 목록이 바뀌지 않았으면 커밋하지 않는다. push 는 다른 로컬 커밋을 섞지 않는 publish_files 로 한다.
-- 우리 도구(시나리오 1 등록·2 현행화·3 이력·프록시 정책 현황)가 Wiki 에 push 할 때마다 자동으로 불린다.
-  Azure DevOps 화면에서 직접 고친 문서는 다음 갱신 때 반영된다.
+- Azure Pipelines(pipelines/wiki-recent.yml)가 Wiki 저장소에 push 가 생길 때마다 실행한다.
+  우리 도구가 올린 문서든 Azure DevOps 화면에서 직접 고친 문서든 1~2분 안에 반영된다.
+  이 갱신 커밋도 파이프라인을 다시 부르지만, 목록이 그대로라 커밋 없이 끝난다.
 
     python wiki_tools/wiki_recent.py            # 갱신(바뀌었으면 push)
     python wiki_tools/wiki_recent.py --dry-run  # 만들 목록만 출력
@@ -80,7 +81,7 @@ def block(items: list[dict]) -> str:
     rows = [f"| [{i['title']}](/{i['path'].removesuffix('.md')}) | {i['where']} | {i['when']} | {i['who']} |" for i in items]
     return "\n".join([START, "## 최근 수정 문서", "",
                       "| 문서 | 위치 | 수정 시각 | 수정자 |", "|---|---|---|---|", *rows, "",
-                      f"<sub>최근 {len(items)}건 · Wiki 저장소 커밋 기준, 우리 도구가 Wiki 에 올릴 때마다 자동 갱신 (wiki_tools/wiki_recent.py)</sub>",
+                      f"<sub>최근 {len(items)}건 · Wiki 저장소 커밋 기준, Wiki 가 바뀔 때마다 Azure Pipelines 가 자동 갱신 (wiki_tools/wiki_recent.py)</sub>",
                       END])
 
 
@@ -107,14 +108,6 @@ def refresh(dry_run: bool = False) -> str | None:
     commit = publish_files({HOME: page}, "Wiki 첫 페이지 최근 수정 문서 갱신")
     print(f"Wiki 첫 페이지 최근 수정 목록 갱신: {commit}")
     return commit
-
-
-def refresh_quietly():
-    """다른 도구가 Wiki 에 push 한 뒤 부른다. 실패해도 그 도구의 작업은 성공으로 둔다."""
-    try:
-        refresh()
-    except Exception as exc:  # noqa: BLE001
-        print(f"(참고) Wiki 첫 페이지 최근 수정 목록 갱신 실패: {exc}")
 
 
 def main() -> int:

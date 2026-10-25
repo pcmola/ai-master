@@ -1,0 +1,48 @@
+# Wiki 첫 페이지 '최근 수정 문서' 자동 갱신 (Azure Pipelines)
+#
+# Wiki 저장소(AI-Master.wiki, wikiMaster)에 push 가 생기면 실행해 wiki_tools/wiki_recent.py 로 첫 페이지 목록을 갱신한다.
+# Azure DevOps 화면에서 직접 만든·고친 문서도 반영된다. 갱신 커밋(첫 페이지만 바뀜)은 트리거에서 빼고,
+# 혹시 다시 실행돼도 목록이 그대로라 커밋 없이 끝난다(무한 반복 없음).
+#
+# 이 파일은 Azure Repos 'AI Master' 저장소에 같은 내용으로 올려 파이프라인을 만든다.
+# 코드는 실행할 때마다 공개 GitHub 저장소의 최신본을 받아 쓴다(따로 맞출 필요 없음).
+# 필요 권한: Wiki › ⋮ › Wiki security › 'AI Master Build Service' 에 Contribute 허용.
+
+trigger: none   # 이 파일이 있는 저장소의 push 로는 실행하지 않는다
+pr: none
+
+resources:
+  repositories:
+    - repository: wiki
+      type: git
+      name: AI Master/AI-Master.wiki
+      ref: wikiMaster
+      trigger:
+        branches:
+          include: [wikiMaster]
+        paths:
+          exclude: [AI-Master-프로젝트.md]   # 첫 페이지만 바뀐 push(이 파이프라인의 갱신 커밋)는 무시
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  TZ: Asia/Seoul            # 수정 시각을 한국 시각으로
+
+steps:
+  - script: git clone -q --depth 1 https://github.com/pcmola/ai-master.git ai-master
+    displayName: ai-master 코드 받기
+    workingDirectory: $(Pipeline.Workspace)
+  - checkout: wiki
+    path: ai-master/wiki-repo   # common/paths.py 의 WIKI_REPO 위치
+    fetchDepth: 0               # 최근 수정 목록에 커밋 이력이 필요
+    persistCredentials: true    # 갱신 커밋 push
+  - script: |
+      set -e
+      git config --global core.quotepath false
+      git config --global user.name "AI Master Pipeline"
+      git config --global user.email "pipeline@ai-master.local"
+      git -C wiki-repo checkout -q -B wikiMaster origin/wikiMaster
+      python3 wiki_tools/wiki_recent.py
+    displayName: 최근 수정 문서 갱신
+    workingDirectory: $(Pipeline.Workspace)/ai-master
