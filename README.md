@@ -38,7 +38,7 @@
 
 ## 1. 목적
 
-Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으로 연결해, 사람이 반복하던 운영 업무를 자동화합니다. 문서를 찾아 정리하고(시나리오 1), 문서와 실제 상태를 맞추고(시나리오 2), 장애 원인을 찾아 조치를 제안합니다(시나리오 3). 사람의 판단이 필요한 변경은 Teams에서 Yes/No 승인을 받은 뒤에만 반영합니다.
+Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으로 연결해, 사람이 반복하던 운영 업무를 자동화합니다. 문서를 찾아 정리하고(시나리오 1), 문서와 실제 상태를 맞추고(시나리오 2), 장애 원인을 찾아 조치합니다(시나리오 3). 사람의 판단이 필요한 변경은 Teams에서 Yes/No 승인을 받은 뒤에만 반영합니다.
 
 | | 시나리오 1 | 시나리오 2 | 시나리오 3 |
 |---|---|---|---|
@@ -176,8 +176,7 @@ flowchart TD
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
     classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
     classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
-    class t,d,sim,src,inj done
-    class ap,task,pr,hist part
+    class t,d,sim,src,inj,ap,task,pr,hist done
 ```
 
 | 단계 | 내용 | 상태 | 지금 구현 |
@@ -186,12 +185,13 @@ flowchart TD
 | 2. 로그 수집·장애 감지 | 서버 로그 수집, 오류 패턴 탐지, 원인 후보 도출(LLM) | ✅ | 프록시 VM(Squid·NGINX) 접속 로그를 SSH로 읽어 최근 `SCENARIO3_WINDOW_MIN`(기본 60)분만 규칙 탐지(차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트 등). high·medium이 없으면 "이상 없음"으로 종료. `llm_triage`가 요약·원인 후보·Wiki 검색어를 만듦 |
 | 3. 유사 장애 검색 | Wiki 장애 사례(RAG), 해결 방법 조회 | ✅ | 시나리오 1 검색 엔진(혼합 검색)으로 상위 문서 4개, AI가 만든 문서는 근거에서 제외 |
 | 4. DevOps 소스 확인 | 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | ✅ | proxy-config를 최신으로 받아 최근 커밋 diff·현재 설정을 `llm_fix`에 넘김 → 원인 커밋, 수정안(파일·바꿀 줄·새 줄), 영향. 수정안은 "바꿀 줄이 파일에 정확히 한 번 있는지" 규칙으로 검증하고 아니면 수동 조치로 돌림 |
-| 5. Teams 조치 승인 요청 | 원인·수정안 요약(LLM), "조치할까요?" Yes/No | 🟡 | 시나리오 2의 Teams 카드·로컬 승인 서버·진행 화면 재사용. No·시간 초과는 알리고 종료 (전 과정 실행 검증 전) |
-| 6. 장애 조치 Task 생성 | 장애 내용·원인 기록, 담당자 | 🟡 | Epic → Feature `[공통] 프록시 장애 대응` → 그 달 PBI → `NN. [프록시 장애] …` Task, 담당자는 PAT 소유자 (전 과정 실행 검증 전) |
-| 7. 소스 수정 및 PR | 브랜치 생성·AI 수정, Pull Request, Task와 PR 연결 | 🟡 | `fix/incident-…` 브랜치에 수정안 커밋(`tests/validate.py` 통과 필수) → push → main으로 가는 PR(Task 연결). 병합·배포는 사람이 검토 후 (전 과정 실행 검증 전) |
-| 8. 장애 대응 이력 Wiki | 대응 이력 문서, 원인·조치·PR 링크, Teams 결과 알림 | 🟡 | `02. 운영 > 01. 공통 > 04. 장애 대응 > 01. 프록시 장애 대응 이력` 맨 위에 한 건씩 추가(다른 로컬 커밋은 올리지 않음), Teams 결과 카드 (전 과정 실행 검증 전) |
+| 5. Teams 조치 승인 요청 | 원인·수정안 요약(LLM), "조치할까요?" Yes/No | ✅ | 시나리오 2의 Teams 카드·로컬 승인 서버·진행 화면 재사용. No·시간 초과는 알리고 종료 |
+| 6. 장애 조치 Task 생성 | 장애 내용·원인 기록, 담당자 | ✅ | Epic → Feature `[공통] 프록시 장애 대응` → 그 달 PBI → `NN. [프록시 장애] …` Task, 담당자는 PAT 소유자. PR 병합 때 "연결된 작업 항목 완료"를 고르면 Done |
+| 7. 소스 수정 및 PR | 브랜치 생성·AI 수정, Pull Request, Task와 PR 연결 | ✅ | `fix/incident-…` 브랜치에 수정안 커밋(`tests/validate.py` 통과 필수) → push → main으로 가는 PR(Task 연결). 병합·배포는 사람이 검토 후 |
+| 8. 장애 대응 이력 Wiki | 대응 이력 문서, 원인·조치·PR 링크, Teams 결과 알림 | ✅ | `02. 운영 > 01. 공통 > 04. 장애 대응 > 01. 프록시 장애 대응 이력` 맨 위에 한 건씩 추가(다른 로컬 커밋은 올리지 않음), Teams 결과 카드 |
 
 - 2026-10-24 시험: 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
+- 2026-10-25 전 과정 시험: 허용 도메인 오타(`.data.go.kr` → `.date.go.kr`)를 wjy-proxy01에 배포 → 감지(허용 도메인이 차단됨·차단 반복) → AI가 원인 커밋 `f7e50de`와 한 줄 수정안을 찾음 → Teams 승인 → Task #2508(PBI #2507) → proxy-config PR !1 → 장애 대응 이력 Wiki·Teams 결과 카드. PR을 병합(Task Done)하고 배포해 `traffic.sh` ok=20 fail=0으로 정상화했습니다. 이때 나온 문제(Wiki push 경고 섞임, CRLF 비교, Teams 링크에 조사 포함)는 고쳤습니다.
 - 전 과정 시험(허브 시나리오 3 칸의 **시험용** 줄):
   1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
   2. 60분 안에 **실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
