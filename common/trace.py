@@ -14,6 +14,16 @@
 - 현재 트레이스는 contextvars 로 찾으므로 인자로 넘기지 않는다. 트레이스 밖의 span() 은 기록하지 않고,
   fail() 메시지만 콘솔에 찍는다(서버 시작 중 오류 등).
 - 오래된 JSONL 은 TRACE_KEEP_DAYS(기본 14)일이 지나면 지운다. 질의 원문이 들어가므로 data/(Git 제외)에만 둔다.
+
+에이전트 추론 로그(노드 줄과 따로, ◆ 로 시작). 노드 줄이 '무엇을 얼마나 걸려 했나'라면 이 줄은 '왜 그렇게 했나'다.
+
+    plan("장애 원인 분석·조치", [("collect", "로그 수집·규칙 탐지"), ("llm_fix", "수정안 생성")])  # Planning: 2-step plan generated
+    simulate([("LLM", True, "gpt-6.1-sol"), ("Teams", False, "로컬 승인 화면으로 대체")])   # Simulating plan… 사전 점검
+    step("collect")                                     # Step 1/2 collect — 로그 수집·규칙 탐지
+    think("Tool Call", "ssh.read_logs(vm=wjy-proxy01)")  # Tool Call / Observation / Self-Correction / Decision / Reflection
+    replan("자동 수정안 없음 → PR 단계 제외", drop=["pull_request"])   # Replan: 계획 수정 후 남은 단계
+
+  JSONL 에는 plan(단계 목록·실행 여부)과 reasoning(시각·종류·내용)으로 남는다.
 """
 
 from __future__ import annotations
@@ -93,6 +103,8 @@ class Trace:
         self.spans: list[Span] = []
         self.stack: list[Span] = []
         self.status, self.error = "ok", None
+        self.plan: list[dict] = []        # [{name, desc, status: planned|running|done|skipped}]
+        self.reasoning: list[dict] = []   # 추론 로그(◆ 줄)
 
     def set(self, **attrs) -> Trace:
         self.attrs.update(attrs)
@@ -166,6 +178,9 @@ def trace(service: str, name: str, **attrs):
         raise
     finally:
         _current.reset(token)
+        for p in t.plan:
+            if p["status"] == "running":
+                p["status"] = "done" if t.status == "ok" else "error"
         total = (time.perf_counter() - t.t0) * 1000
         if t.status == "ok" and any(s.status == "cancelled" for s in t.spans):
             t.status = "cancelled"
@@ -177,9 +192,79 @@ def trace(service: str, name: str, **attrs):
         _write(t, total)
 
 
+def think(kind: str, text: str, **attrs):
+    """추론 로그 한 줄: `◆ Self-Correction   수정안 검증 실패 → 이유를 돌려주고 다시 생성`. 트레이스 밖이면 그냥 찍는다."""
+    t = _current.get()
+    line = f"◆ {kind:<16} {text}" + (f"  {_attrs(attrs)}" if _attrs(attrs) else "")
+    if t is None:
+        print(f"{datetime.now():%Y-%m-%d %H:%M:%S} [-] {line}", flush=True)
+        return
+    t.reasoning.append({"offset_ms": round((time.perf_counter() - t.t0) * 1000, 1), "kind": kind, "text": text,
+                        "attrs": attrs or None})
+    t.log(line)
+
+
+def plan(goal: str, steps: list[tuple[str, str]]):
+    """실행 계획을 세워 남긴다. steps=[(노드 이름, 설명)]. 계획은 실행 조건(dry-run, 설정)에 따라 호출하는 쪽이 만든다."""
+    t = _current.get()
+    if t is not None:
+        t.plan = [{"name": n, "desc": d, "status": "planned"} for n, d in steps]
+    think("Planning", f"{len(steps)}-step plan generated · 목표: {goal}")
+    for i, (n, d) in enumerate(steps, 1):
+        think("Planning", f"  {i}. {n:<14} {d}")
+
+
+def simulate(checks: list[tuple[str, bool, str]]) -> list[str]:
+    """계획을 실행하기 전에 각 단계의 전제(설정·저장소·채널)를 점검한다. checks=[(항목, 통과, 설명)].
+    통과하지 못한 항목 이름을 돌려준다(대체 경로로 가거나 멈추는 판단은 호출하는 쪽이 한다)."""
+    t = _current.get()
+    n = len(t.plan) if t else 0
+    think("Simulation", f"Simulating plan… {n}단계 실행 전 사전 점검 {len(checks)}항목")
+    for name, ok, note in checks:
+        think("Simulation", f"  {'✓' if ok else '△'} {name:<14} {note}")
+    failed = [name for name, ok, _ in checks if not ok]
+    think("Simulation", "시뮬레이션 결과: " + ("모든 단계 실행 가능" if not failed
+                                                else f"{len(failed)}항목은 대체 경로로 진행 ({', '.join(failed)})"))
+    return failed
+
+
+def step(name: str, note: str = ""):
+    """계획의 단계를 시작한다: `◆ Step 3/5        similar — Wiki 유사 사례 검색`. 앞 단계는 끝난 것으로 본다."""
+    t = _current.get()
+    if t is None or not t.plan:
+        think("Step", name + (f" — {note}" if note else ""))
+        return
+    active = [p for p in t.plan if p["status"] != "skipped"]
+    for p in active:
+        if p["status"] == "running":
+            p["status"] = "done"
+    i = next((k for k, p in enumerate(active, 1) if p["name"] == name), None)
+    if i is None:  # 계획에 없던 단계(재계획으로 끼어든 단계 등)
+        t.plan.append({"name": name, "desc": note, "status": "running"})
+        think("Step", f"+ {name} — {note}")
+        return
+    active[i - 1]["status"] = "running"
+    think(f"Step {i}/{len(active)}", f"{name} — {note or active[i - 1]['desc']}")
+
+
+def replan(reason: str, drop: list[str] = (), add: list[tuple[str, str]] = (), before: str | None = None):
+    """관찰 결과에 따라 계획을 고친다. drop 은 건너뛸 단계, add 는 before 단계 앞(없으면 끝)에 넣을 단계."""
+    t = _current.get()
+    if t is not None:
+        for p in t.plan:
+            if p["name"] in drop and p["status"] == "planned":
+                p["status"] = "skipped"
+        for n, d in add:
+            at = next((k for k, p in enumerate(t.plan) if p["name"] == before), len(t.plan))
+            t.plan.insert(at, {"name": n, "desc": d, "status": "planned"})
+    rest = [p["name"] for p in (t.plan if t else []) if p["status"] == "planned"]
+    think("Replan", f"{reason} → 남은 단계 {len(rest)}개" + (f": {' → '.join(rest)}" if rest else " (종료)"))
+
+
 def _write(t: Trace, total: float):
     record = {"trace_id": t.id, "service": t.service, "name": t.name, "start": t.started.isoformat(timespec="milliseconds"),
               "ms": round(total, 1), "status": t.status, "error": t.error, "attrs": t.attrs,
+              "plan": t.plan or None, "reasoning": t.reasoning or None,
               "spans": [s.record() for s in t.spans]}
     path = TRACE_DIR / f"{t.service}-{t.started:%Y%m%d}.jsonl"
     try:

@@ -718,6 +718,34 @@ flowchart TD
 - 줄 앞은 날짜·시각입니다(서버가 며칠씩 돌아도 어느 날 기록인지 알 수 있게 모든 줄에 날짜를 씀). 그 옆 8자리 16진수(예: `07902dac`)는 **트레이스 ID**로, 요청마다 새로 만듭니다. 요청 두 개가 동시에 돌아 줄이 섞여도 ID가 같은 줄만 보면 한 요청의 흐름을 따라갈 수 있고, `data/traces/*.jsonl`에서 `"trace_id"`로 같은 요청의 상세 기록을 찾습니다(예: `Select-String -Path data	races\wiki-search-*.jsonl -Pattern 07902dac`). 시나리오 2 로그도 같습니다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
+#### 에이전트 추론 로그
+
+노드 줄이 '무엇을 얼마나 걸려 했나'라면, `◆`로 시작하는 줄은 '왜 그렇게 했나'를 보여 줍니다. 시나리오 1(가이드 생성)·2·3 모두 같은 형식이고, JSONL에는 `plan`(단계별 실행 여부)과 `reasoning`으로 남습니다. 실제 출력(2026-10-25):
+
+```text
+[178a9c68] ◆ Planning         6-step plan generated · 목표: '리버스 프록시 설정 가이드' 통합 가이드 작성 (유형: 리버스 프록시)
+[178a9c68] ◆ Simulation       Simulating plan… 6단계 실행 전 사전 점검 4항목
+[178a9c68] ◆ Simulation         ✓ 임베딩            의미 검색 사용
+[178a9c68] ◆ Simulation       시뮬레이션 결과: 모든 단계 실행 가능
+[178a9c68] ◆ Step 5/6         web_decision — 근거 충분성 판단 → 부족하면 웹 검색 추가
+[178a9c68] ◆ Replan           Wiki 근거 부족(위키에 '리버스 프록시' 내용 부족 (유형 유사도 0.41 < 0.45)) → 남은 단계 2개: web_search → llm_generate
+[178a9c68] ◆ Tool Call        tavily.search(query="리버스 프록시 설정")
+[178a9c68] ◆ Observation      웹 근거 5건
+[178a9c68] ◆ Reflection       가이드 11,218자 · 근거 문서 13건 + 웹 5건 출처 표기 …
+[1e2004ec] ◆ Self-Correction  수정안 검증 실패(바꿀 줄이 파일에 0번 있음(정확히 1번이어야 함)) → 실패 이유를 LLM 에 돌려주고 다시 생성 (재시도 1/1)
+[1e2004ec] ◆ Observation      수정안 검증 통과: squid/lists/whitelist.txt 의 한 줄을 바꿈 (시도 2/2)
+```
+
+| 종류 | 언제 찍나 |
+|---|---|
+| Planning | 시작할 때 실행 조건(dry-run, 유형 선택, 수정 요청)에 맞춰 N단계 계획 |
+| Simulation | 실행 전에 각 단계의 전제(LLM·저장소·Teams·임베딩·웹 검색 키)를 점검하고, 대체 경로와 예상 분기를 미리 밝힘 |
+| Step i/N | 계획한 단계 시작 |
+| Tool Call / Observation | SSH·az·git·Wiki 검색·Tavily·LLM 호출과 그 결과 요약 |
+| Self-Correction | 검증 실패를 스스로 고침: 시나리오 3 수정안이 규칙 검증에 실패하면 이유를 LLM에 돌려주고 1회 재생성(`incident_response.py`의 `FIX_ATTEMPTS`), AI 검색어로 근거 0건이면 규칙 검색어로 재검색, 시나리오 2 표 파서 실패 → LLM 파싱·원문 대조, 시나리오 1 질의 오타 교정 |
+| Replan | 관찰 결과로 계획 변경: 장애·차이 없음 → 종료, 근거 부족 → 웹 검색 단계 추가, 자동 수정안 없음 → PR 단계 제외, 승인 거절 → 조치 단계 생략 |
+| Decision / Reflection | 분기 판단과, 결과물의 근거·신뢰도 점검 |
+
 ### 6.2 프록시 정책 변경 → Task·Wiki 반영 (proxy_policy_publish.py)
 
 ```mermaid
