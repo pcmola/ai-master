@@ -2,6 +2,8 @@
 
 **Azure DevOps 기반 AI 운영 자동화 시나리오** (2026. 10)
 
+문서·화면 갱신: **2026-10-25**. 실행 화면은 로컬 서버에서 다시 촬영했으며, 승인·완료 화면의 예시 데이터는 별도로 표시했습니다.
+
 ## 목차
 
 **바로 가기:** [시나리오 1](#11-시나리오-1--프록시-설정-가이드-자동-생성) · [시나리오 2](#12-시나리오-2--프록시-현황-wiki-현행화) · [시나리오 3](#13-시나리오-3--장애-감지-및-자동-조치) · [사전 준비](#3-사전-준비) · [설정 값](#41-주요-설정-값) · [허브 실행](#52-허브-hubpy) · [시나리오 2 실행](#83-시나리오-2--실행-proxy_status_syncpy) · [주의사항](#10-주의사항)
@@ -35,6 +37,7 @@
   - [8.2 시나리오 2 · 테스트 환경](#82-시나리오-2--테스트-환경)
   - [8.3 시나리오 2 · 실행 (proxy_status_sync.py)](#83-시나리오-2--실행-proxy_status_syncpy)
   - [8.4 시나리오 3 · 시험](#84-시나리오-3--시험)
+  - [8.5 README 화면 재촬영](#85-readme-화면-재촬영)
 - [9. 실행 예시](#9-실행-예시)
 - [10. 주의사항](#10-주의사항)
 
@@ -52,7 +55,8 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 | 결과물 | 가이드 Wiki 문서 (링크 제공) | Wiki 현황 갱신 + DevOps Task | 원인·수정안 + Task + 수정 PR + 장애 대응 이력 Wiki |
 | 구현 | `wiki_tools/wiki_search.py` | `proxy_tools/proxy_status_sync.py` | `proxy_tools/incident_response.py` |
 
-시나리오 1~3의 모든 단계를 구현했습니다(2026-10-25). 표의 (확장)은 자료에서 Nice-to-have로 둔 범위입니다.
+시나리오 1~3의 직접 실행 흐름을 구현했습니다(2026-10-25). 시나리오 2·3의 정기 스케줄러는 사용하지 않으며, 시나리오 3의 자동화 범위는 **수정 PR 생성까지**입니다. PR 병합·VM 배포·복구 확인은 사람이 수행합니다. 표의 (확장)은 자료에서 Nice-to-have로 둔 범위입니다.
+
 다이어그램 색: 초록 = 구현 · 노랑 = 일부 · 회색 점선 = 미구현 · 주황 = 사용자 판단
 
 ### 1.1 시나리오 1 · 프록시 설정 가이드 자동 생성
@@ -98,15 +102,21 @@ flowchart TD
 | 6. Wiki 문서 등록 | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목`으로 등록, 같은 제목이면 갱신(번호 유지, 이력은 git), Wiki 문서 규칙(채번·`.order`·인코딩·프록시 표기) 준수, 머리에 "AI 생성 · 모델 · 생성 일시 · 질의 · 근거 수" | `wiki_tools/wiki_register.py`. 로컬 뷰어 링크를 Wiki 안 링크로 바꾸고 push |
 | 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | 등록 후 "Wiki에서 열기"·로컬 뷰어 링크. 가이드 아래 "수정 요청" 입력칸: 지금 가이드와 요청을 함께 보내 고친 판을 받음(요청과 관계없는 부분은 유지, 사용자가 적은 문구는 그대로 반영). 고친 판을 그대로 등록 가능 |
 
-**실행 화면** (공인 IP는 `x.x.x.x`로 가림)
+**실행 화면 · 2026-10-25 재촬영**
 
-질의 → 유형 확인:
+실제 Wiki를 대상으로 `프록시 설정 가이드 알려줘` 질의 → 포워드/리버스 유형 확인:
 
 ![Wiki 검색 - 유형 확인](docs/images/wiki-search-type.png)
 
-유형 선택 → 근거 문서 재검색 → LLM 가이드 생성:
+포워드 프록시 선택 → 근거 문서 재검색 → LLM 가이드 생성. 촬영 중에는 **Wiki에 등록하지 않았습니다**:
 
 ![Wiki 검색 - 가이드 생성](docs/images/wiki-search-guide.png)
+
+가이드의 포트·정책 값은 검색한 Wiki 원문 시점의 값일 수 있습니다. 예를 들어 캡처의 `3128`은 원문 값이고 현재 실습 Squid 포트는 `8080`입니다. 실제 적용·등록 전에는 최신 VM 설정과 대조합니다.
+
+생성된 가이드 아래의 수정 요청 입력 영역(수정 반영 전):
+
+![Wiki 검색 - 수정 요청](docs/images/wiki-search-revise.png)
 
 ### 1.2 시나리오 2 · 프록시 현황 Wiki 현행화
 
@@ -149,17 +159,17 @@ flowchart TD
 | 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | wiki-repo에 커밋, `.env`의 `SCENARIO2_PUSH=1`이면 Azure DevOps Wiki로 push(기본 0: 로컬만) |
 | 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | Task 상태를 Done으로 바꾸고 Teams 결과 카드 전송(처리 단계 ✓/✗ 목록과 문서·Task 링크). 도중에 실패하면 실패 단계까지 담은 "처리 실패" 카드. No·시간 초과도 결과 카드로 알림 |
 
-**실행 화면**
+**실행 화면 · 2026-10-25 재촬영**
 
-허브의 시나리오 실행 탭에서 실행하고 로그를 봅니다:
+허브의 **시나리오 실행** 탭과 실제 `--dry-run` 점검 로그입니다. 신규·삭제·상태·SIZE·사설 IP 변경 **5건**이 테스트 정답과 일치했습니다. 촬영 점검에서는 Teams 승인 요청·Task 생성·Wiki 갱신·VM 태그 변경을 하지 않았습니다:
 
-![허브 - 시나리오 실행 탭](docs/images/hub-scenarios.png)
+![시나리오 2 - 허브와 변경 5건 점검 로그](docs/images/hub-scenarios.png)
 
-Teams 카드의 "자세히 보기"가 여는 로컬 승인 화면과 진행 화면(예시 데이터). Teams 카드의 Yes/No 버튼을 누르면 "받았습니다" 확인만 뜨고 결과는 Teams 결과 카드로 옵니다:
+아래 두 장은 실제 승인 화면 렌더러에 **예시 데이터**를 넣어 촬영한 것으로, 외부 시스템에는 반영하지 않았습니다. Teams 카드의 "자세히 보기"가 이 로컬 승인 화면을 엽니다. Teams 카드에서 바로 Yes/No를 누르면 "받았습니다" 확인만 뜨고 처리 결과는 Teams 결과 카드로 옵니다:
 
-![로컬 승인 화면](docs/images/approval.png)
+![시나리오 2 - 로컬 승인 화면 예시](docs/images/approval.png)
 
-![승인 후 진행 화면](docs/images/approval-progress.png)
+![시나리오 2 - 승인 후 완료 화면 예시](docs/images/approval-progress.png)
 
 ### 1.3 시나리오 3 · 장애 감지 및 자동 조치
 
@@ -174,12 +184,15 @@ flowchart TD
     ap -- "Yes" --> task["6. 장애 조치 Task"]
     task --> pr["7. 수정 브랜치·PR"]
     pr --> hist(["8. 장애 대응 이력 Wiki<br/>+ Teams 결과"])
+    hist -. "이후 별도 수행" .-> review{"사람이 PR 검토<br/>병합·배포·복구 확인"}
     inj["장애 재현·원상 복구<br/>(허브 시험용 버튼)<br/>proxy_fault_inject.py"] -. "잘못된 설정 주입" .-> d
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
     classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
     classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
-    class t,d,sim,src,inj,ap,task,pr,hist done
+    classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
+    class t,d,sim,src,inj,task,pr,hist done
+    class ap,review user
 ```
 
 | 단계 | 내용 | 구현 방식 |
@@ -195,11 +208,27 @@ flowchart TD
 
 시험 방법과 결과는 [8.4 시나리오 3 · 시험](#84-시나리오-3--시험)에 있습니다.
 
-**실행 화면** (공인 IP는 `x.x.x.x`로 가림)
+**실행 화면 · 2026-10-25 재촬영**
 
-프록시 로그 뷰어: 실제 Squid·NGINX 접속 로그, 허용 목록, 탐지 결과:
+Squid의 **실제 접속 로그**·허용 목록·규칙 탐지 결과입니다. 과거 장애 시험의 차단 기록도 포함되므로, 이 화면만으로 현재 장애가 지속 중이라고 판단하지 않습니다:
 
-![프록시 로그 뷰어](docs/images/proxy-log.png)
+![시나리오 3 - Squid 실제 로그와 탐지 결과](docs/images/proxy-log.png)
+
+NGINX VM을 선택하면 리버스 프록시 접속 로그와 가상 도메인별 연결 대상을 봅니다:
+
+![시나리오 3 - NGINX 실제 로그](docs/images/proxy-log-nginx.png)
+
+허브에서 **기존 시나리오 3 실행 로그**를 조회한 화면입니다. 캡처를 위해 장애를 다시 주입하거나 Task·PR을 추가 생성하지 않았습니다:
+
+![시나리오 3 - 허브의 기존 실행 결과 로그](docs/images/scenario3-run.png)
+
+조치 승인 요청과 PR 생성 완료 화면은 **예시 데이터**입니다. PR 생성 완료는 실제 VM의 복구 완료를 뜻하지 않습니다:
+
+![시나리오 3 - 수정 PR 생성 승인 화면 예시](docs/images/scenario3-approval.png)
+
+![시나리오 3 - 수정 PR 생성 완료 화면 예시](docs/images/scenario3-approval-progress.png)
+
+모든 캡처에서 IP·이메일·구독 ID 등 식별값은 가렸습니다. 재촬영 방법과 외부 반영 범위는 [8.5 README 화면 재촬영](#85-readme-화면-재촬영)에 있습니다.
 
 <sub>[↑ 목차로](#목차)</sub>
 
@@ -214,7 +243,7 @@ ai-master/
 ├─ teams_tools/    Microsoft Teams 알림, 로컬 승인 화면(Teams 대체)
 ├─ docs/images/    README 실행 화면 캡처 (공인 IP 등은 가린 상태)
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
-├─ test/           Azure OpenAI 채팅·임베딩·스트리밍 테스트, 시나리오 2 테스트 환경(scenario2/)
+├─ test/           API 테스트, 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py)
 └─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git, ai-master 에서는 추적하지 않음)
 ```
 
@@ -321,11 +350,11 @@ flowchart LR
 |---|---|---|
 | PC 도구 (Python·Git·Azure CLI) | 전부 | 실행 불가 |
 | hosts 등록 | 전부(허브·화면) | `127.0.0.1:포트` 주소로 뜸 |
-| Azure DevOps (Wiki·PAT·백로그) | 1, 2 | 문서 검색·등록, Task 생성 불가 |
-| LLM 게이트웨이 (Azure OpenAI 호환) | 1, 2 | 가이드 생성·검색 임베딩·AI 요약 불가(시나리오 2는 AI 요약만 빠지고 규칙 비교로 실행됨) |
+| Azure DevOps (Wiki·PAT·백로그·설정 저장소) | 1, 2, 3 | 문서 검색·등록, Task·수정 PR 생성 불가 |
+| LLM 게이트웨이 (Azure OpenAI 호환) | 1, 2, 3 | 가이드 생성·검색 임베딩·AI 요약·장애 원인/수정안 분석에 사용(시나리오 2는 AI 요약이 없어도 규칙 비교 가능) |
 | 웹 검색 (Tavily API 키) | 1 | 위키 근거가 약해도 웹 검색 없이 위키만 씀 |
 | Azure 구독과 Proxy VM | 2, 3 | 비교할 실제 VM이 없음 |
-| Microsoft Teams (회사·학교 계정, Workflows 웹후크) | 2 | 승인 요청·결과 알림 카드를 못 보냄 |
+| Microsoft Teams (회사·학교 계정, Workflows 웹후크) | 2, 3 | 승인 요청·결과 알림 카드를 못 보냄 |
 
 ### 3.1 PC 도구
 
@@ -413,7 +442,7 @@ Copy-Item .env.sample .env
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `OPENAI_MODEL` | `gpt-6.1-sol` | 가이드 작성(wiki_search)과 시나리오 2 AI 요약(llm_summary)에 쓰는 LLM. 2026-10-24 gpt-5.4에서 바꿈(2026-10-19 후보 5개 비교 때는 gpt-5.4가 완성도와 속도의 균형이 가장 좋았다) |
+| `OPENAI_MODEL` | `gpt-6.1-sol` | 시나리오 1 가이드 작성, 시나리오 2 AI 요약·비표준 Wiki 파싱, 시나리오 3 장애 원인·수정안 분석에 쓰는 LLM. 사내 게이트웨이 배포 이름이며, 사용 가능한 이름은 해당 게이트웨이에서 확인 |
 | `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. 정답 16문항 비교에서 small·ada-002보다 정확했다 |
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮는다 |
 | `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다. 비우면 웹 검색 안 함 |
@@ -460,6 +489,8 @@ Copy-Item .env.sample .env
 ### 5.1 포트 없는 주소 (hosts)
 
 hosts 파일은 포트를 정할 수 없으므로 서버마다 다른 루프백 IP의 80 포트를 씁니다. 서버는 시작할 때 hosts를 읽어 자기 이름에 적힌 IP로 뜹니다(`common/server.py`).
+
+`127.0.87.65`를 코드에서 새로 생성하는 것은 아닙니다. `127.0.0.0/8`은 자기 PC로 돌아오는 루프백 대역이고, `common/server.py`의 `hosts_entries()` → `site_url()` → `local_server()`가 hosts의 값을 읽어 해당 **IP와 포트에 바인딩**합니다. IP가 다르면 같은 80 포트도 함께 사용할 수 있습니다.
 
 | hosts에 적힌 값 | 서버가 뜨는 곳 | 주소 |
 |---|---|---|
@@ -736,6 +767,7 @@ flowchart LR
 | wjy-proxy03 | NGINX 리버스 프록시 (80) | journald (`journalctl CONTAINER_NAME=nginx`) | 남음 |
 
 - 컨테이너는 `--rm`이라 재시작할 때마다 새로 만들어집니다. 그래서 Squid 로그는 VM 디스크 폴더에 연결하고(2026-10-21 적용, `azure_proxy_vm.py`도 같이 만듦), NGINX 로그는 `podman logs`(지금 컨테이너만) 대신 journald에서 읽습니다.
+- 여기서 VM 디스크 폴더는 **각 VM의 로컬 파일시스템**입니다. VM 3대가 공유하는 스토리지나 Azure Storage Account를 연결한 것이 아닙니다. 컨테이너 재생성과 VM·디스크 삭제는 다르므로, 장기 보관·중앙 수집·백업은 별도 구성이 필요합니다.
 - 매일 01:00(KST)에 자동 종료(`shutdown-computevm-*`)됩니다. 꺼져 있는 동안 보낸 요청은 기록되지 않습니다.
 - Squid 로그는 정리(logrotate) 없이 쌓입니다. 디스크 여유는 약 25GB입니다.
 
@@ -877,6 +909,28 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 
 - 2026-10-24 (분석만): 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
 - 2026-10-25 (전 과정): 허용 도메인 오타(`.data.go.kr` → `.date.go.kr`)를 wjy-proxy01에 배포 → 감지(허용 도메인이 차단됨·차단 반복) → AI가 원인 커밋 `f7e50de`와 한 줄 수정안을 찾음 → Teams 승인 → Task #2508(PBI #2507) → proxy-config PR !1 → 장애 대응 이력 Wiki·Teams 결과 카드. PR을 병합(Task Done)하고 배포해 `traffic.sh` ok=20 fail=0으로 정상화했습니다. 이때 나온 문제(Wiki push 경고 섞임, CRLF 비교, Teams 링크에 조사 포함)는 고쳤습니다.
+
+### 8.5 README 화면 재촬영
+
+촬영 스크립트는 [`test/capture_readme.py`](test/capture_readme.py)입니다. 실제 로컬 서버 화면을 headless Chrome으로 열어 `docs/images/`의 PNG를 갱신합니다. 캡처 전 허브에서 Wiki 검색·Wiki 뷰어·프록시 로그 뷰어를 시작하고, 이 문서의 hosts 설정과 VM SSH 연결을 확인합니다.
+
+```powershell
+python -m venv data/readme-capture-venv
+& .\data\readme-capture-venv\Scripts\python.exe -m pip install playwright
+& .\data\readme-capture-venv\Scripts\python.exe test\capture_readme.py --inspect
+& .\data\readme-capture-venv\Scripts\python.exe test\capture_readme.py
+```
+
+Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy|approval`로 특정 화면 묶음만 다시 찍을 수 있습니다(`--only wiki`처럼 하나를 지정).
+
+| 화면 | 캡처 시 수행하는 동작 | 외부 반영 |
+|---|---|---|
+| 시나리오 1 | 실제 Wiki 검색·포워드 가이드 생성·수정 입력 영역 확인 | LLM·임베딩, 조건에 따라 웹 검색 API 호출. Wiki 등록·수정 반영 버튼은 누르지 않음 |
+| 시나리오 2 | 허브에서 저장된 점검 로그 조회 | 새 점검·Teams 요청·Task 생성·Wiki 갱신 없음 |
+| 시나리오 3 | Squid·NGINX 실제 로그·정책 조회, 허브의 기존 실행 로그 조회 | SSH 읽기만 수행. 장애 주입·복구·PR 생성·배포 없음 |
+| 승인·완료 화면 | 실제 승인 UI 렌더러 + 별도 읽기 전용 예시 서버 | 없음. 화면에 **화면 예시 · 외부 반영 없음** 표시 |
+
+스크립트는 표시되는 IP·이메일·ID를 가리고 촬영하며, 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다. 공유 전에는 이미지도 직접 확인합니다. 시나리오 2 로그를 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다(비교·AI 요약만 수행, 로컬 로그·트레이스 기록).
 
 <sub>[↑ 목차로](#목차)</sub>
 
