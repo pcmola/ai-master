@@ -470,8 +470,6 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
 .sc .opts{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}.sc .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sc button.main{background:var(--blue);border-color:var(--blue);color:#fff}.jobstate{font-size:13px}
-.acts3{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}.acts3 button{justify-self:start}
-.s3test{border-top:1px dashed var(--line);padding-top:8px}.s3test summary{cursor:pointer;font-weight:600;font-size:13px;margin-bottom:8px}
 .jobstate.running{color:var(--warn)}.jobstate.ok{color:var(--ok)}.jobstate.fail{color:var(--bad)}
 @media(max-width:820px){.hide-sm{display:none}main{padding:12px}}
 </style></head><body>
@@ -501,25 +499,16 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div></div>
 <div class="card sc"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
-<p>프록시 로그에서 장애를 찾아 Wiki 사례와 proxy-config 변경 이력으로 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 남깁니다.</p>
-<div class="acts3">
-<button class="main" id="s3run" onclick="runJob('scenario3')">실행</button><span class="muted">최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki</span>
-<button id="s3dry" onclick="runJob('scenario3',{dry_run:true})">분석만</button><span class="muted">원인·수정안까지만 보여 주고 아무것도 바꾸지 않음</span>
-<button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')">로그</button><span class="muted">실행 결과·단계별 기록 (아래 로그 창)</span>
-</div>
-<div class="jobstate" id="s3fault-state"></div>
-<div class="jobstate" id="s3state"></div>
-<details class="s3test" id="s3test"><summary>시험 도구 <span class="muted">(wjy-proxy01 · 실제 저장소와 VM을 바꿈)</span></summary>
-<div class="acts3">
-<b>①</b><div class="row" style="flex-wrap:nowrap"><select id="s3fault" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:1;min-width:0">
+<p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 남깁니다. 시험: wjy-proxy01 (실제 저장소·VM을 바꿈)</p>
+<div class="row" style="flex-wrap:nowrap"><b>①</b><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:1;min-width:0">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
 <option value="bad-dns">잘못된 DNS 서버</option></select>
-<button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="proxy_fault_inject.py apply … --push --deploy wjy-proxy01">장애 재현</button></div>
-<span></span><span class="muted">고른 종류의 잘못된 설정을 일부러 배포하고 시험 접속을 보내 차단 로그를 남김</span>
-<b>②</b><span class="muted">60분 안에 위의 <b>실행</b> → Teams 승인 → 수정 PR 확인</span>
-<b>③</b><div class="row"><button id="s3restore" onclick="if(confirm('심어진 장애를 되돌리는 커밋을 push 하고 wjy-proxy01 에 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="proxy_fault_inject.py restore --push --deploy wjy-proxy01">원상 복구</button>
-<span class="muted">심은 장애를 되돌려 배포·확인 (또는 수정 PR 병합 후 배포)</span></div>
-</div></details></div>
+<button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포하고 시험 접속을 보내 차단 로그를 남김 (proxy_fault_inject.py apply)">장애 재현</button></div>
+<div class="row"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
+<b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애를 되돌리는 커밋을 push 하고 wjy-proxy01 에 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌려 배포·확인 (또는 수정 PR 병합 후 배포) (proxy_fault_inject.py restore)">원상 복구</button>
+<button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')" style="margin-left:auto">로그</button></div>
+<div class="jobstate" id="s3fault-state"></div>
+<div class="jobstate" id="s3state"></div></div>
 </div>
 <div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(slogKey,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
@@ -591,9 +580,9 @@ function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11)
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
   const run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
   const s3=['scenario3','scenario3-fault','scenario3-restore'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
-  ['s3run','s3dry','s3inject','s3restore'].forEach(id=>document.getElementById(id).disabled=run3);
+  ['s3run','s3inject','s3restore'].forEach(id=>document.getElementById(id).disabled=run3);
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
-  const f=jobs._fault||{};if(f.active&&f.active.length)document.getElementById('s3test').open=true;document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
+  const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
     :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 현재 심어진 장애: ${esc(f.active.join(', '))} → 시험이 끝나면 원상 복구</span>`:'<span class="jobstate ok">현재 심어진 장애: 없음 (정상)</span>');
   const last=s3.map(k=>jobs[k]).filter(j=>j&&j.state!=='idle').sort((a,b)=>b.started.localeCompare(a.started))[0];
   document.getElementById('s3state').innerHTML=last?`<span class="muted">마지막 실행 (${since(last.started)} 전):</span> `+jobLine(last):'<span class="muted">이 허브에서 아직 실행하지 않았습니다.</span>';
