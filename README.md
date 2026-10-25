@@ -4,7 +4,7 @@
 
 ## 목차
 
-**바로 가기:** [시나리오 1](#11-시나리오-1--프록시-설정-가이드-자동-생성) · [시나리오 2](#12-시나리오-2--프록시-현황-wiki-현행화) · [시나리오 3](#13-시나리오-3--장애-감지-및-자동-조치) · [사전 준비](#3-사전-준비) · [설정 값](#41-주요-설정-값) · [허브 실행](#52-허브-hubpy) · [시나리오 2 실행](#81-시나리오-2-실행-proxy_status_syncpy) · [주의사항](#10-주의사항)
+**바로 가기:** [시나리오 1](#11-시나리오-1--프록시-설정-가이드-자동-생성) · [시나리오 2](#12-시나리오-2--프록시-현황-wiki-현행화) · [시나리오 3](#13-시나리오-3--장애-감지-및-자동-조치) · [사전 준비](#3-사전-준비) · [설정 값](#41-주요-설정-값) · [허브 실행](#52-허브-hubpy) · [시나리오 2 실행](#83-시나리오-2--실행-proxy_status_syncpy) · [주의사항](#10-주의사항)
 
 - [1. 목적](#1-목적)
   - [1.1 시나리오 1 · 프록시 설정 가이드 자동 생성](#11-시나리오-1--프록시-설정-가이드-자동-생성)
@@ -30,8 +30,11 @@
   - [6.2 프록시 정책 변경 → Task·Wiki 반영 (proxy_policy_publish.py)](#62-프록시-정책-변경--taskwiki-반영-proxy_policy_publishpy)
   - [6.3 프록시 로그 이상 탐지 (proxy_log_detect.py)](#63-프록시-로그-이상-탐지-proxy_log_detectpy)
 - [7. 프록시 VM 운영](#7-프록시-vm-운영)
-- [8. 시나리오 2 테스트 환경](#8-시나리오-2-테스트-환경)
-  - [8.1 시나리오 2 실행 (proxy_status_sync.py)](#81-시나리오-2-실행-proxy_status_syncpy)
+- [8. 시나리오 시험·실행](#8-시나리오-시험실행)
+  - [8.1 시나리오 1 · 시험](#81-시나리오-1--시험)
+  - [8.2 시나리오 2 · 테스트 환경](#82-시나리오-2--테스트-환경)
+  - [8.3 시나리오 2 · 실행 (proxy_status_sync.py)](#83-시나리오-2--실행-proxy_status_syncpy)
+  - [8.4 시나리오 3 · 시험](#84-시나리오-3--시험)
 - [9. 실행 예시](#9-실행-예시)
 - [10. 주의사항](#10-주의사항)
 
@@ -107,7 +110,7 @@ flowchart TD
 
 ### 1.2 시나리오 2 · 프록시 현황 Wiki 현행화
 
-Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다. 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다. 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**하므로, 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#81-시나리오-2-실행-proxy_status_syncpy))
+Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다. 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다. 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**하므로, 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#83-시나리오-2--실행-proxy_status_syncpy))
 
 ```mermaid
 flowchart TD
@@ -190,14 +193,7 @@ flowchart TD
 | 7. 소스 수정 및 PR | 브랜치 생성·AI 수정, Pull Request, Task와 PR 연결 | ✅ | `fix/incident-…` 브랜치에 수정안 커밋(`tests/validate.py` 통과 필수) → push → main으로 가는 PR(Task 연결). 병합·배포는 사람이 검토 후 |
 | 8. 장애 대응 이력 Wiki | 대응 이력 문서, 원인·조치·PR 링크, Teams 결과 알림 | ✅ | `02. 운영 > 01. 공통 > 04. 장애 대응 > 01. 프록시 장애 대응 이력` 맨 위에 한 건씩 추가(다른 로컬 커밋은 올리지 않음), Teams 결과 카드 |
 
-- 2026-10-24 시험: 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
-- 2026-10-25 전 과정 시험: 허용 도메인 오타(`.data.go.kr` → `.date.go.kr`)를 wjy-proxy01에 배포 → 감지(허용 도메인이 차단됨·차단 반복) → AI가 원인 커밋 `f7e50de`와 한 줄 수정안을 찾음 → Teams 승인 → Task #2508(PBI #2507) → proxy-config PR !1 → 장애 대응 이력 Wiki·Teams 결과 카드. PR을 병합(Task Done)하고 배포해 `traffic.sh` ok=20 fail=0으로 정상화했습니다. 이때 나온 문제(Wiki push 경고 섞임, CRLF 비교, Teams 링크에 조사 포함)는 고쳤습니다.
-- 전 과정 시험(허브 시나리오 3 칸의 **시험용** 줄):
-  1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
-  2. 60분 안에 **실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
-  3. 끝나면 PR을 병합·배포하거나 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`: 심어진 장애를 되돌리는 커밋 push·배포·트래픽 확인).
-  - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
-  - 시험 트래픽은 이 PC에서 프록시 **8080** 포트로 보냅니다(`traffic.sh` 기본값, `PROXY_PORT`로 변경). 이 PC의 네트워크(집, SK브로드밴드)에서 3128로 나가는 연결이 막혀 Squid를 8080으로 옮겼습니다(2026-10-25).
+시험 방법과 결과는 [8.4 시나리오 3 · 시험](#84-시나리오-3--시험)에 있습니다.
 
 **실행 화면** (공인 IP는 `x.x.x.x`로 가림)
 
@@ -770,7 +766,31 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 
 <sub>[↑ 목차로](#목차)</sub>
 
-## 8. 시나리오 2 테스트 환경
+## 8. 시나리오 시험·실행
+
+| 시나리오 | 시험 준비 | 실제로 바뀌는 것 | 정상으로 되돌리기 |
+|---|---|---|---|
+| 1 | 없음(wiki-repo 문서 그대로) | Wiki 등록 시 `00. AI 문서 생성` 아래 문서 | 등록한 문서 삭제 |
+| 2 | 허브 "테스트 환경 준비"(`setup_env.py`) | wiki-repo 테스트 문서(로컬 커밋), 승인 시 Task | 다시 "테스트 환경 준비" |
+| 3 | 허브 "장애 재현"(`proxy_fault_inject.py`) | proxy-config 커밋·VM 설정, 승인 시 Task·PR·이력 Wiki | PR 병합·배포 또는 "원상 복구" |
+
+### 8.1 시나리오 1 · 시험
+
+허브 **로컬 서버** 탭에서 Wiki 검색 서버를 켜고, **시나리오 실행** 탭의 시나리오 1 "실행"으로 Wiki 검색 화면을 엽니다. 따로 준비할 테스트 데이터는 없고 wiki-repo 문서를 그대로 씁니다.
+
+| 시험 | 질의 예 | 확인할 것 |
+|---|---|---|
+| 기본 흐름 | `프록시 설정 가이드 알려줘` | 유형 선택(포워드/리버스) → 근거 문서 재검색 → 가이드 생성, 원문 링크 |
+| 오타 교정 | `프록실 설정 가이드` | 화면의 "해석" 칩에 `프록시`로 교정되어 표시 |
+| 웹 검색 보완 | `리버스 프록시 설정 가이드` (위키 근거가 약함) | "웹 참고 링크"가 붙음(`TAVILY_API_KEY` 필요) |
+| 수정 요청 | 가이드 생성 후 "3단계를 표로 정리해 주세요" | 요청한 부분만 바뀐 새 판 |
+| Wiki 등록 | "Wiki에 등록" | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목` 문서. 시험만 할 때는 `.env`의 `WIKI_REGISTER_PUSH=0`(로컬 커밋만) |
+
+- 단계별 소요 시간과 결과는 허브의 Wiki 검색 로그(`data/logs/wiki-search.log`)와 `data/traces/wiki-search-*.jsonl`에 남습니다([트레이스](#트레이스)).
+- LLM 게이트웨이·임베딩 연결만 따로 확인하려면 `python test\openai_test.py`, `python test\embedding_test.py`, `python test\streaming_test.py`를 실행합니다.
+- 시험으로 등록한 문서는 Wiki의 `00. AI 문서 생성` 아래에서 지우고 `.order`에서도 뺍니다(`WIKI_DOCUMENT_RULES.md`).
+
+### 8.2 시나리오 2 · 테스트 환경
 
 시나리오 2는 Wiki의 Proxy 현황 문서와 Azure의 실제 VM을 비교해, 차이가 있으면 승인을 받아 Task를 만들고 문서를 현행화합니다. 테스트 환경은 Azure를 바꾸지 않고 Wiki 쪽에 일부러 차이를 넣어 만듭니다.
 
@@ -813,7 +833,7 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 - Wiki 문서는 wiki-repo에 로컬 커밋만 하고 Azure DevOps Wiki로 push하지 않습니다.
 - Teams 연동(Workflows 웹후크·승인 카드·Graph API)에는 회사·학교용 Microsoft 365 계정이 필요합니다(무료 개인 Teams 불가, 가장 싼 선택지는 Microsoft 365 Business Basic). Teams 카드의 응답을 이 PC 스크립트로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다.
 
-### 8.1 시나리오 2 실행 (proxy_status_sync.py)
+### 8.3 시나리오 2 · 실행 (proxy_status_sync.py)
 
 | 단계 | 하는 일 |
 |---|---|
@@ -838,6 +858,24 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
 - 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **시나리오 실행** 탭에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
+
+### 8.4 시나리오 3 · 시험
+
+허브 **시나리오 실행** 탭의 시나리오 3 칸에서 합니다. "분석만"은 아무것도 바꾸지 않고, 아래 "시험용" 줄의 버튼은 실제 저장소와 VM을 바꿉니다.
+
+**전 과정 시험 절차** (허브 시나리오 3 칸의 **시험용** 줄):
+  1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
+  2. 60분 안에 **실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
+  3. 끝나면 PR을 병합·배포하거나 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`: 심어진 장애를 되돌리는 커밋 push·배포·트래픽 확인).
+  - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
+  - 시험 트래픽은 이 PC에서 프록시 **8080** 포트로 보냅니다(`traffic.sh` 기본값, `PROXY_PORT`로 변경). 이 PC의 네트워크(집, SK브로드밴드)에서 3128로 나가는 연결이 막혀 Squid를 8080으로 옮겼습니다(2026-10-25).
+
+실행 출력은 `data/logs/scenario3.log`(허브에서 봄), 단계별 기록은 `data/traces/scenario3-*.jsonl`에 남습니다.
+
+**시험 기록**
+
+- 2026-10-24 (분석만): 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
+- 2026-10-25 (전 과정): 허용 도메인 오타(`.data.go.kr` → `.date.go.kr`)를 wjy-proxy01에 배포 → 감지(허용 도메인이 차단됨·차단 반복) → AI가 원인 커밋 `f7e50de`와 한 줄 수정안을 찾음 → Teams 승인 → Task #2508(PBI #2507) → proxy-config PR !1 → 장애 대응 이력 Wiki·Teams 결과 카드. PR을 병합(Task Done)하고 배포해 `traffic.sh` ok=20 fail=0으로 정상화했습니다. 이때 나온 문제(Wiki push 경고 섞임, CRLF 비교, Teams 링크에 조사 포함)는 고쳤습니다.
 
 <sub>[↑ 목차로](#목차)</sub>
 
