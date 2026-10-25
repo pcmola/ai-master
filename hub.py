@@ -195,7 +195,7 @@ def wait_running(key: str, timeout: float = 60) -> dict:
             return now
         if not now["instances"]:
             log(f"[{key}] 시작 직후 프로세스가 끝났습니다. 서버 출력 마지막 줄:")
-            for line in log_tail(key, 8).splitlines():
+            for line in log_tail(key, 8)[0].splitlines():
                 log(f"[{key}]   | {line}")
             return now
         time.sleep(1)
@@ -322,23 +322,31 @@ def job_status() -> dict:
     return out
 
 
-def log_tail(key: str, lines: int = 300) -> str:
+def log_tail(key: str, lines: int = 300, start: int = 0) -> tuple[str, int]:
+    """(마지막 lines 줄, 파일 크기). start 를 주면 그 바이트 위치 뒤만 본다(화면의 '지우기' 이후).
+    파일이 2MB 를 넘겨 새로 시작했으면(크기 < start) 처음부터 본다."""
     log = LOG_DIR / f"{key}.log"
     if not log.is_file():
         return ("(로그 없음: 작업을 실행하면 남습니다)" if key in JOB_LOGS
-                else "(로그 없음: 허브에서 시작한 서버만 로그가 남습니다)")
+                else "(로그 없음: 허브에서 시작한 서버만 로그가 남습니다)"), 0
+    size = log.stat().st_size
+    start = start if 0 < start <= size else 0
     with open(log, "rb") as f:
-        f.seek(max(0, log.stat().st_size - 128 * 1024))
+        f.seek(max(start, size - 128 * 1024))
         text = f.read().decode("utf-8", errors="replace")
-    return "\n".join(text.splitlines()[-lines:])
+    if start and not text.strip():
+        return "(지운 뒤 새 로그가 없습니다. '전체 보기'로 이전 로그를 볼 수 있습니다)", size
+    return "\n".join(text.splitlines()[-lines:]), size
 
 
 # ---------------------------------------------------------------- web
 
 class Handler(BaseHTTPRequestHandler):
-    def send_body(self, body: bytes, ctype: str, status: int = 200):
+    def send_body(self, body: bytes, ctype: str, status: int = 200, headers: dict | None = None):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -363,11 +371,14 @@ class Handler(BaseHTTPRequestHandler):
                 log(f"상태 조회 실패: {type(exc).__name__}: {exc}")
                 self.send_json({"error": str(exc)}, 500)
         elif url.path == "/api/log":
-            key = parse_qs(url.query).get("key", [""])[0]
+            qs = parse_qs(url.query)
+            key = qs.get("key", [""])[0]
             if key not in BY_KEY and key not in JOB_LOGS:
                 self.send_error(404)
                 return
-            self.send_body(log_tail(key).encode("utf-8"), "text/plain; charset=utf-8")
+            start = qs.get("from", ["0"])[0]
+            text, size = log_tail(key, start=int(start) if start.isdigit() else 0)
+            self.send_body(text.encode("utf-8"), "text/plain; charset=utf-8", headers={"X-Log-Size": str(size)})
         elif url.path == "/api/jobs":
             self.send_json(job_status())
         else:
@@ -459,7 +470,9 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="card"><table><thead><tr><th>상태</th><th>서버</th><th>주소</th><th class="hide-sm">PID · 실행 시간</th><th>관리</th></tr></thead>
 <tbody id="rows"><tr><td colspan="5" class="muted">불러오는 중…</td></tr></tbody></table><div id="err" class="err" hidden></div></div>
 <div class="card" id="panel" hidden><div class="tabs"><button id="tab-log" class="on">로그</button><span class="name" id="pname"></span>
-<span class="muted" style="margin-left:auto" id="phint"></span></div>
+<span class="muted" style="margin-left:auto" id="phint"></span>
+<button onclick="clearLog(selected,loadLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
+<button id="pall" onclick="unclearLog(selected,loadLog)" hidden>전체 보기</button></div>
 <pre id="log"></pre></div>
 </main>
 <main id="pane-scenarios" hidden>
@@ -487,7 +500,9 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button id="s3restore" onclick="if(confirm('심어진 장애를 되돌리는 커밋을 push 하고 wjy-proxy01 에 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="proxy_fault_inject.py restore --push --deploy wjy-proxy01">원상 복구</button></div>
 <div class="jobstate" id="s3state"></div></div>
 </div>
-<div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span></div>
+<div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
+<button onclick="clearLog(slogKey,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
+<button id="sall" onclick="unclearLog(slogKey,loadSLog)" hidden>전체 보기</button></div>
 <pre id="slog"></pre></div>
 </main>
 <script>
@@ -521,8 +536,16 @@ async function refresh(){
     servers=d.servers;document.getElementById('time').textContent='갱신 '+d.time.slice(11);
     document.getElementById('err').hidden=true;render();if(selected)loadLog()}
   catch(e){const el=document.getElementById('err');el.hidden=false;el.textContent='상태를 읽지 못했습니다: '+e.message}}
+// 로그 '지우기': 파일은 그대로 두고, 누른 시점의 파일 크기를 기억해 그 뒤만 보여 준다(브라우저에 저장, 새로고침해도 유지).
+const CLEARED_KEY='hub.logCleared';let cleared={};try{cleared=JSON.parse(localStorage.getItem(CLEARED_KEY)||'{}')}catch(e){}
+const logSize={};
+function saveCleared(){try{localStorage.setItem(CLEARED_KEY,JSON.stringify(cleared))}catch(e){}}
+async function fetchLog(key){const r=await fetch('/api/log?key='+encodeURIComponent(key)+'&from='+(cleared[key]||0));
+  logSize[key]=+(r.headers.get('X-Log-Size')||0);return r.text()}
+function clearLog(key,reload){if(!key)return;cleared[key]=logSize[key]||0;saveCleared();reload()}
+function unclearLog(key,reload){delete cleared[key];saveCleared();reload()}
 async function loadLog(){const pre=document.getElementById('log');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
-  pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(selected))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
+  pre.textContent=await fetchLog(selected);document.getElementById('pall').hidden=!cleared[selected];if(atEnd)pre.scrollTop=pre.scrollHeight}
 // 하단 패널은 로그만 보여 준다. 서버 화면은 주소를 눌러 새 창에서 연다. 보고 있는 로그의 버튼은 파랗게 표시한다.
 function pick(key){const s=servers.find(x=>x.key===key);const title=s&&s.title;if(!title)return;selected=key;
   document.getElementById('panel').hidden=false;document.getElementById('pname').textContent=title;
@@ -555,7 +578,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   if(slogKey)loadSLog()}
 function showLog(key,title){slogKey=key;document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
 async function loadSLog(){const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
-  pre.textContent=await (await fetch('/api/log?key='+encodeURIComponent(slogKey))).text();if(atEnd)pre.scrollTop=pre.scrollHeight}
+  pre.textContent=await fetchLog(slogKey);document.getElementById('sall').hidden=!cleared[slogKey];if(atEnd)pre.scrollTop=pre.scrollHeight}
 // 로그 창은 화면 아래 끝까지만 늘려 페이지 전체 스크롤이 생기지 않게 한다.
 function fit(){for(const id of ['log','slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
   if(top>0)pre.style.height=Math.max(160,innerHeight-top-22)+'px'}}
