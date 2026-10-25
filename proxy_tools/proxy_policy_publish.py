@@ -102,10 +102,20 @@ class DevOps:
         return f"{self.base}/_workitems/edit/{task_id}"
 
     def wiki_url(self, page: Path) -> str:
+        """Wiki 문서 주소. Azure DevOps Wiki 에 이미 있으면 읽기 쉬운 '문서 번호/제목' 주소
+        (…/AI-Master.wiki/3115/프록시-정책-현황), 아직 없으면(push 전) pagePath 주소."""
         # 파일 경로의 '-' 는 위키 제목의 공백, '%2D' 는 실제 하이픈이다.
         rel = page.relative_to(WIKI_REPO).with_suffix("").as_posix()
         title_path = "/" + "/".join(unquote(p.replace("-", " ")) for p in rel.split("/"))
         wiki = os.environ.get("AZURE_DEVOPS_WIKI", "").strip()
+        try:
+            page_id = self.request("GET", f"/_apis/wiki/wikis/{quote(wiki)}/pages?path={quote(title_path)}&api-version=7.1",
+                                   None).get("id")
+        except RuntimeError:
+            page_id = None
+        if page_id:
+            slug = title_path.rsplit("/", 1)[-1].replace(" ", "-")
+            return f"{self.base}/_wiki/wikis/{quote(wiki)}/{page_id}/{slug}"
         return f"{self.base}/_wiki/wikis/{quote(wiki)}?pagePath={quote(title_path)}"
 
 

@@ -58,7 +58,12 @@ def page_url(page: Path) -> str:
     wiki = os.environ.get("AZURE_DEVOPS_WIKI", "")
     rel = page.relative_to(WIKI_REPO).with_suffix("").as_posix()
     title_path = "/" + "/".join(unquote(p.replace("-", " ")) for p in rel.split("/"))
-    return f"https://dev.azure.com/{quote(org)}/{quote(project)}/_wiki/wikis/{quote(wiki)}?pagePath={quote(title_path)}"
+    try:  # 이미 올라간 문서면 읽기 쉬운 '문서 번호/제목' 주소(proxy_policy_publish.DevOps.wiki_url 과 같은 방식)
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "proxy_tools"))
+        from proxy_policy_publish import DevOps
+        return DevOps().wiki_url(page)
+    except (ImportError, RuntimeError):
+        return f"https://dev.azure.com/{quote(org)}/{quote(project)}/_wiki/wikis/{quote(wiki)}?pagePath={quote(title_path)}"
 
 
 def wiki_links(markdown: str) -> str:
