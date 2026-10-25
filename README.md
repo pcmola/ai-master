@@ -242,7 +242,8 @@ ai-master/
 ├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, 프록시 정책(Squid·NGINX) 변경 감지·Task/Wiki 반영
 ├─ teams_tools/    Microsoft Teams 알림, 로컬 승인 화면(Teams 대체)
 ├─ docs/images/    README 실행 화면 캡처 (공인 IP 등은 가린 상태)
-├─ pipelines/     Azure Pipelines: Wiki 가 바뀌면 첫 페이지 최근 수정 문서 갱신(wiki-recent.yml)
+├─ rules/          AI 작업 규칙: Wiki 문서 작성 규칙(WIKI_DOCUMENT_RULES.md). 에이전트가 자동으로 읽는 AGENTS.md 는 루트에 둔다
+├─ pipelines/      Azure Pipelines: Wiki 가 바뀌면 첫 페이지 최근 수정 문서 갱신(wiki-recent.yml)
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
 ├─ test/           API 테스트, 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py)
 └─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git, ai-master 에서는 추적하지 않음)
@@ -822,7 +823,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 
 - 단계별 소요 시간과 결과는 허브의 Wiki 검색 로그(`data/logs/wiki-search.log`)와 `data/traces/wiki-search-*.jsonl`에 남습니다([트레이스](#트레이스)).
 - LLM 게이트웨이·임베딩 연결만 따로 확인하려면 `python test\openai_test.py`, `python test\embedding_test.py`, `python test\streaming_test.py`를 실행합니다.
-- 시험으로 등록한 문서는 Wiki의 `00. AI 문서 생성` 아래에서 지우고 `.order`에서도 뺍니다(`WIKI_DOCUMENT_RULES.md`).
+- 시험으로 등록한 문서는 Wiki의 `00. AI 문서 생성` 아래에서 지우고 `.order`에서도 뺍니다([`rules/WIKI_DOCUMENT_RULES.md`](rules/WIKI_DOCUMENT_RULES.md)).
 
 ### 8.2 시나리오 2 · 테스트 환경
 
@@ -970,7 +971,7 @@ python proxy_tools\azure_proxy_vm.py --proxy squid --install podman --dry-run
 - `AZURE_OPENAI_API_KEY`, `AZURE_DEVOPS_PAT`, `OPENAI_API_KEY`, `TAVILY_API_KEY`를 소스에 직접 작성하지 마세요. `.env.sample`에도 실제 값을 넣지 않습니다(공개 저장소에 올라감).
 - 이미 노출된 인증정보는 폐기하고 재발급하세요.
 - 이 저장소는 공개입니다. 실제 VM IP, 허용 클라이언트 IP, 구독 ID, 사내 게이트웨이 주소는 소스·README에 쓰지 말고 `.env` 또는 `data/`(Git 제외)에만 둡니다. 예시에는 `<VM_IP>`나 문서용 IP(`203.0.113.x`)를 씁니다.
-- `wiki-repo`는 별도 Git 저장소(Azure DevOps Wiki)이며 ai-master의 `.gitignore`에 들어 있습니다. Wiki 변경은 `wiki-repo` 안에서 따로 커밋·push합니다. Wiki 문서를 만들거나 고칠 때는 `WIKI_DOCUMENT_RULES.md`를 먼저 따릅니다.
+- `wiki-repo`는 별도 Git 저장소(Azure DevOps Wiki)이며 ai-master의 `.gitignore`에 들어 있습니다. Wiki 변경은 `wiki-repo` 안에서 따로 커밋·push합니다. Wiki 문서를 만들거나 고칠 때는 [`rules/WIKI_DOCUMENT_RULES.md`](rules/WIKI_DOCUMENT_RULES.md)를 먼저 따릅니다.
 - 같은 주소로 서버를 두 번 띄우면 두 번째 실행은 "이미 사용 중" 메시지로 끝납니다. 코드를 바꾼 뒤에는 기존 서버를 끄고 다시 실행하세요(허브의 재시작 버튼).
 
 <sub>[↑ 목차로](#목차)</sub>
