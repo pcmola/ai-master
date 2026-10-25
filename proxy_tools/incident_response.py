@@ -62,6 +62,8 @@ HISTORY_DIR = WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통"
 HISTORY_PAGE = HISTORY_DIR / "01.-프록시-장애-대응-이력.md"
 LOG_FILE = DATA_DIR / "logs" / "scenario3.log"
 SEVERE = {"high", "medium"}
+PROMPT_NOTE = ("- 모든 설명은 한국어로 쓴다(2026-10-25 실행에서 cause 가 일본어로 나온 적이 있다).\n"
+               "- 시각은 모두 한국 시간(KST, +09:00)이다. 로그 표본·탐지 시각과 커밋 시각(+0900)을 같은 기준으로 비교하라.")
 FIX_ATTEMPTS = 2  # 수정안이 규칙 검증에 실패하면 이유를 돌려주고 한 번 더 만든다(Self-Correction)
 
 
@@ -112,7 +114,10 @@ def collect() -> list[dict]:
     from proxy_policy_monitor import proxy_targets
     since = time.time() - WINDOW_MIN * 60
     out = []
-    for vm in proxy_targets():
+    think("Tool Call", "az vm list → 프록시 VM 판별 (시나리오 2 와 같은 기준, 종류 태그 squid|nginx)")
+    targets = proxy_targets()
+    think("Observation", f"점검 대상 {len(targets)}대: " + ", ".join(f"{v['name']}({v['state']})" for v in targets))
+    for vm in targets:
         if vm["state"] != "운영":
             print(f"{vm['name']}: 중지되어 건너뜀 (프록시 VM 은 항상 켜져 있어야 합니다 → 시나리오 2 이상 징후)")
             continue
@@ -134,10 +139,11 @@ def collect() -> list[dict]:
 
 
 def sample_lines(rows: list[dict], n: int = 25) -> list[str]:
-    """LLM 에 보낼 로그 표본: 차단·오류 위주로 최근 n 줄."""
+    """LLM 에 보낼 로그 표본: 차단·오류 위주로 최근 n 줄. 시각은 KST 로 바꾼다. 원본(UTC)에서 시간대를 떼어 보내면
+    커밋 시각(+0900)과 9시간 어긋나 LLM 이 '커밋이 장애보다 늦다'고 잘못 판단한다(2026-10-25 실행에서 확인)."""
     bad = [r for r in rows if r.get("denied") or str(r.get("status", "")).startswith(("5", "0"))]
     pick = sorted(bad or rows, key=lambda r: r["ts"])[-n:]
-    return [f"{r['time'][:19]} {r['client']} {r['code']}/{r['status']} {r['method']} {r['host']} {r['ms']}ms" for r in pick]
+    return [f"{datetime.fromtimestamp(r['ts'], KST):%Y-%m-%d %H:%M:%S} {r['client']} {r['code']}/{r['status']} {r['method']} {r['host']} {r['ms']}ms" for r in pick]
 
 
 def triage(incidents: list[dict]) -> dict | None:
@@ -146,6 +152,7 @@ def triage(incidents: list[dict]) -> dict | None:
                              for f in i["findings"] if f["severity"] in SEVERE],
                 "log_sample": sample_lines(i["rows"])} for i in incidents]
     prompt = ("아래는 프록시 VM 접속 로그를 규칙으로 탐지한 결과와 로그 표본이다. 운영자가 장애를 이해하도록 정리하라.\n"
+              f"{PROMPT_NOTE}\n"
               "- summary: 무슨 일이 일어났는지 2문장 이내 존댓말(~습니다).\n"
               "- hypotheses: 원인 후보 1~3개. 각 {cause, evidence}. 로그에 근거가 있는 것만, 근거를 evidence 에 쓴다.\n"
               "- search_query: 사내 Wiki 에서 비슷한 장애 사례·조치 가이드를 찾을 한국어 검색어 한 줄(프록시 용어 포함).\n"
@@ -212,6 +219,7 @@ def propose_fix(incidents: list[dict], tri: dict | None, cases: list[dict], src:
                "triage": tri, "wiki_cases": [{"title": c["title"], "excerpt": c["excerpt"][:800]} for c in cases],
                "recent_commits": src["commits"], "recent_diffs": src["diffs"], "current_files": src["files"]}
     prompt = ("프록시 장애의 원인을 설정 저장소(proxy-config, Squid 설정)의 최근 변경에서 찾아 수정안을 만들어라.\n"
+              f"{PROMPT_NOTE}\n"
               "- cause: 원인 한두 문장(존댓말). suspect_commit: 원인으로 보이는 커밋 해시(없으면 \"\").\n"
               "- 수정이 필요하면 file(current_files 의 키), before(그 파일에 있는 줄을 그대로, 줄 단위), after(고친 줄)를 쓴다. "
               "before 는 파일에 정확히 한 번 나와야 한다. 고칠 설정이 저장소에 없거나 확신이 없으면 file 을 \"\" 로 둔다.\n"
@@ -471,6 +479,8 @@ def run(args) -> int:
     think("Reflection", (f"원인 커밋 {fix.get('suspect_commit') or '-'} · 신뢰도 {fix.get('confidence')} · " if fix else "원인 분석 실패 · ")
           + ("규칙 검증 통과 → 자동 수정 PR 경로" if applicable else "자동 수정 불가 → Task 수동 조치 경로")
           + f" · 근거 Wiki {len(cases)}건")
+    if fix and fix.get("confidence") != "high":
+        think("Reflection", f"신뢰도 {fix.get('confidence')} → 자동 병합하지 않고 승인·PR 검토에서 사람이 원인을 확인해야 함")
     if not applicable and not args.dry_run:
         replan("자동 수정안 없음 → PR 단계 제외", drop=["pull_request"])
     if args.dry_run:
@@ -553,6 +563,9 @@ def run(args) -> int:
                                         + ([("PR", f"[!{pr['id']}]({pr['url']})")] if pr else []) + [("감지 시각", when)],
                                   buttons=[("Task 열기", dv.task_url(task))] + ([("PR 열기", pr["url"])] if pr else [])
                                           + [("이력 Wiki", wiki_url)])
+        think("Reflection", f"계획한 조치 완료: Task #{task}" + (f" · PR !{pr['id']}" if pr else " · PR 없음(수동 조치)")
+                            + " · 이력 Wiki → 남은 일(사람): " + ("PR 검토·병합 → deploy.sh 배포 → traffic.sh 확인" if pr
+                                                               else "Task 의 수동 조치"))
         ap.finish("조치를 시작했습니다. " + ("수정 PR 을 검토·병합한 뒤 배포하세요." if pr else "Task 에서 수동 조치하세요."),
                   [("Task 열기", dv.task_url(task))] + ([("PR 열기", pr["url"])] if pr else []) + [("이력 Wiki", wiki_url)])
         return 0

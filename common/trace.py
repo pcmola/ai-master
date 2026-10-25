@@ -33,6 +33,7 @@ import json
 import os
 import threading
 import time
+import unicodedata
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -53,6 +54,12 @@ def _fmt(value) -> str:
         value = ",".join(map(str, value))
     text = str(value).replace("\n", " ")
     return text if len(text) <= 60 else text[:57] + "…"
+
+
+def _pad(text: str, width: int) -> str:
+    """화면 폭 기준으로 오른쪽을 채운다(한글 등 전각 문자는 2칸). ljust 는 글자 수로 세어 한글 줄이 밀린다."""
+    used = sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+    return text + " " * max(width - used, 0)
 
 
 def _attrs(attrs: dict) -> str:
@@ -211,7 +218,7 @@ def plan(goal: str, steps: list[tuple[str, str]]):
         t.plan = [{"name": n, "desc": d, "status": "planned"} for n, d in steps]
     think("Planning", f"{len(steps)}-step plan generated · 목표: {goal}")
     for i, (n, d) in enumerate(steps, 1):
-        think("Planning", f"  {i}. {n:<14} {d}")
+        think("Planning", f"  {i}. {_pad(n, 14)} {d}")
 
 
 def simulate(checks: list[tuple[str, bool, str]]) -> list[str]:
@@ -221,7 +228,7 @@ def simulate(checks: list[tuple[str, bool, str]]) -> list[str]:
     n = len(t.plan) if t else 0
     think("Simulation", f"Simulating plan… {n}단계 실행 전 사전 점검 {len(checks)}항목")
     for name, ok, note in checks:
-        think("Simulation", f"  {'✓' if ok else '△'} {name:<14} {note}")
+        think("Simulation", f"  {'✓' if ok else '△'} {_pad(name, 14)} {note}")
     failed = [name for name, ok, _ in checks if not ok]
     think("Simulation", "시뮬레이션 결과: " + ("모든 단계 실행 가능" if not failed
                                                 else f"{len(failed)}항목은 대체 경로로 진행 ({', '.join(failed)})"))

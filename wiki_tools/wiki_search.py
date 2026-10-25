@@ -476,6 +476,9 @@ def traced_analyze(query: str) -> tuple[list[str], list[str], list[list[str]], l
         groups = build_groups(concepts, terms)
         s.set(concepts=concepts, terms=terms, groups=len(groups),
               typo_fixes=[f"{f['from']}→{f['to']}" for f in fixes])
+    if fixes:
+        think("Self-Correction", "질의 오타 교정: " + ", ".join(f"{f['from']}→{f['to']}" for f in fixes)
+                                 + " → 고친 질의로 검색")
     return concepts, terms, groups, fixes
 
 
@@ -553,9 +556,6 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
                if os.environ.get("TAVILY_API_KEY") else "TAVILY_API_KEY 없음 → Wiki 만 사용")])
     step("analyze")
     concepts, terms, groups, fixes = traced_analyze(query)
-    if fixes:
-        think("Self-Correction", "질의 오타 교정: " + ", ".join(f"{f['from']}→{f['to']}" for f in fixes)
-                                 + " → 고친 질의로 검색")
     think("Observation", f"개념 {', '.join(concepts) or '없음'} · 고유어 {', '.join(terms[:5]) or '없음'}")
     boost = option["terms"] if option else []
     fixed = corrected(query, fixes)

@@ -135,6 +135,8 @@ def confirm_proxies(ap, azure: list[dict]) -> list[dict]:
         return azure
     excluded = [n for n in (ap.excluded if ap else []) if n in guessed]
     step = ap.step if ap else (lambda *a, **k: None)
+    think("Tool Call", f"az tag update × {len(guessed)} (프록시 {PROXY_TAG} {len(guessed) - len(excluded)}대"
+                       + (f", 프록시 아님 {EXCLUDE_TAG} {len(excluded)}대" if excluded else "") + ")")
     with span("proxy_confirm", guessed=guessed, excluded=excluded or "없음") as s:
         failed = []
         for name in guessed:
@@ -144,6 +146,7 @@ def confirm_proxies(ap, azure: list[dict]) -> list[dict]:
             except RuntimeError as exc:
                 failed.append(f"{name}: {str(exc)[:120]}")
         s.set(tagged=len(guessed) - len(failed), failed=failed or "없음")
+    think("Observation", f"태그 확정 {len(guessed) - len(failed)}대" + (f", 실패 {len(failed)}대(다음 실행 때 다시 확인)" if failed else ""))
     kept = [n for n in guessed if n not in excluded]
     msg = (f"프록시로 확정: {', '.join(kept) or '없음'} ({PROXY_TAG} 태그)"
            + (f" · 프록시 아님: {', '.join(excluded)} ({EXCLUDE_TAG} 태그, 비교에서 뺌)" if excluded else ""))
@@ -668,6 +671,7 @@ def run(args) -> int:
     decision, ap = ask_approval(diffs, when, APPROVAL_TIMEOUT, links, ai, alert, guessed)
     try:
         if decision:
+            think("Decision", "승인(Yes) → " + ("추정 VM 태그 확정 후 " if guessed else "") + "Task·Wiki 반영 단계 실행")
             kept = confirm_proxies(ap, azure)
             if len(kept) != len(azure):  # '프록시 아님'으로 뺀 VM 이 있으면 다시 비교한다
                 think("Self-Correction", f"승인자가 '프록시 아님'으로 뺀 VM {len(azure) - len(kept)}대 반영 → 다시 비교")
@@ -710,7 +714,6 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
             ap.finish(f"{reason}: 아무것도 바꾸지 않았습니다. Wiki 문서와 Task 는 그대로입니다.", [("Wiki 문서 보기", viewer)])
         return 1
 
-    think("Decision", "승인(Yes) → Task·Wiki 반영 단계 실행")
     plan_step("task_create")
     step("Azure DevOps 백로그(Feature·PBI) 확인 중…")
     with span("backlog") as s:
