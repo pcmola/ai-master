@@ -49,7 +49,7 @@ def recent(n: int = COUNT) -> tuple[str, list[dict]]:
     branch = git("rev-parse", "--abbrev-ref", "HEAD").strip()
     git("fetch", "-q", "origin", branch)
     ref = f"origin/{branch}"
-    out = git("log", ref, "-M", "--diff-filter=AMR", "--name-status", "--date=format:%Y-%m-%d %H:%M",
+    out = git("log", ref, "-M", "--diff-filter=AMR", "--name-status", "--date=format-local:%Y-%m-%d %H:%M",  # 이 PC 시간대(KST)로. Azure 화면에서 고친 문서는 UTC 로 기록됨
               "--format=@@%h|%an|%ad", "-300", "--", "*.md")
     alive = set(git("ls-tree", "-r", "--name-only", ref).splitlines())
     home = HOME.relative_to(WIKI_REPO).as_posix()

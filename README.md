@@ -293,7 +293,7 @@ flowchart LR
 | | `wiki_register.py` | 시나리오 1: 가이드를 `02. 운영 > 00. AI 문서 생성` 아래에 등록(같은 제목 갱신, 문서 규칙 준수, push) | - |
 | | `wiki_viewer.py` | Wiki 로컬 읽기 전용 뷰어 (Azure DevOps 문법 렌더링, 코드 구문 강조, 첫 화면은 AI Master 프로젝트 문서) | http://wiki.local (8765) |
 | | `wiki_documents.py` | Azure DevOps Wiki 문서 목록·생성·삭제 (REST API) | - |
-| | `wiki_recent.py` | Wiki 첫 페이지(프로젝트 메인 Overview › Summary 의 About)에 최근 수정 문서 5개. 우리 도구가 Wiki 에 push 할 때마다 자동 갱신, 바뀐 것 없으면 커밋 안 함 | - |
+| | `wiki_recent.py` | Wiki 첫 페이지(프로젝트 메인 Overview › Summary 의 About)에 최근 수정 문서 5개(한국 시각). 우리 도구가 Wiki 에 push 할 때마다 자동 갱신, Azure DevOps 화면에서 직접 고친 문서는 허브 시나리오 1 칸의 "Wiki 최근 수정 갱신"으로 반영. 바뀐 것 없으면 커밋 안 함 | - |
 | proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/NGINX, podman·docker). Squid 로그는 VM 디스크 `/var/log/proxy`에 남김 | - |
 | | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, NGINX는 journald) | http://proxy-log.local (8768) |
 | | `incident_response.py` | 시나리오 3: 로그 감지 → AI 분석 → Wiki 사례 → proxy-config 원인·수정안 → Teams 승인 → Task → 수정 PR → 장애 대응 이력 Wiki | - |
