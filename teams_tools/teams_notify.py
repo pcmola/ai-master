@@ -54,6 +54,8 @@ def linkify(text: str) -> str:
     for i in range(0, len(parts), 2):  # 짝수 조각만 코드 밖
         parts[i] = DOT_DOMAIN.sub(r"`\1`", parts[i])  # .data.go.kr 같은 허용 목록 표기는 링크 대신 코드로
         parts[i] = DOMAIN.sub(lambda m: f"[{m.group(1)}](https://{m.group(1)})", parts[i])
+        # '11:06:22~11:06:24 … 11:30:53~11:31:11' 처럼 ~ 가 두 번 나오면 Teams 가 그 사이를 취소선으로 그린다.
+        parts[i] = parts[i].replace("~", "\u223c")  # ∼ (모양은 같고 마크다운 문법이 아님)
     return "`".join(parts)
 
 
@@ -68,7 +70,7 @@ def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]]
         body.append({"type": "TextBlock", "text": title, "weight": "Bolder", "size": "Medium", "wrap": True})
     body.append({"type": "TextBlock", "text": linkify(text), "wrap": True})
     if facts:
-        body.append({"type": "FactSet", "facts": [{"title": k, "value": v} for k, v in facts]})
+        body.append({"type": "FactSet", "facts": [{"title": k, "value": str(v).replace("~", "\u223c")} for k, v in facts]})
     content = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
