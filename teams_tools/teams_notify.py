@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -41,6 +42,21 @@ def mention_entity() -> dict | None:
     return {"type": "mention", "text": f"<at>{name}</at>", "mentioned": {"id": upn, "name": name}}
 
 
+DOMAIN = re.compile(r"(?<![A-Za-z0-9_.\-/\[(@`])((?:[A-Za-z0-9-]+\.)+(?:kr|com|net|org|io|test))(?![A-Za-z0-9_\-/.])")
+
+DOT_DOMAIN = re.compile(r"(?<![A-Za-z0-9_`])(\.(?:[A-Za-z0-9-]+\.)+(?:kr|com|net|org|io|test))(?![A-Za-z0-9_\-/.])")
+
+
+def linkify(text: str) -> str:
+    """본문의 도메인을 [도메인](https://도메인) 링크로 만든다. Teams 가 스스로 링크를 걸면 뒤에 붙은 한글 조사까지
+    링크에 들어가서(예: 'www.data.go.kr와') 미리 정확한 링크로 바꿔 둔다. `코드` 안과 기존 링크는 건드리지 않는다."""
+    parts = text.split("`")
+    for i in range(0, len(parts), 2):  # 짝수 조각만 코드 밖
+        parts[i] = DOT_DOMAIN.sub(r"`\1`", parts[i])  # .data.go.kr 같은 허용 목록 표기는 링크 대신 코드로
+        parts[i] = DOMAIN.sub(lambda m: f"[{m.group(1)}](https://{m.group(1)})", parts[i])
+    return "`".join(parts)
+
+
 def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]] | None = None,
                buttons: list[tuple[str, str]] | None = None) -> dict:
     """facts: (이름, 값) 표. buttons: (글자, URL) — 누르면 그 URL 을 브라우저로 연다(Action.OpenUrl)."""
@@ -50,7 +66,7 @@ def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]]
         body.append({"type": "TextBlock", "text": mention["text"], "wrap": True})
     if title:
         body.append({"type": "TextBlock", "text": title, "weight": "Bolder", "size": "Medium", "wrap": True})
-    body.append({"type": "TextBlock", "text": text, "wrap": True})
+    body.append({"type": "TextBlock", "text": linkify(text), "wrap": True})
     if facts:
         body.append({"type": "FactSet", "facts": [{"title": k, "value": v} for k, v in facts]})
     content = {

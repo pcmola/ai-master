@@ -222,7 +222,7 @@ def publish_files(files: dict[Path, str], message: str) -> str | None:
         for path, text in files.items():
             blob_file = STATE_DIR / "wiki_blob.tmp"
             blob_file.write_bytes(text.encode("utf-8"))
-            blob = git("hash-object", "-w", str(blob_file))
+            blob = run_git("hash-object", "-w", "--no-filters", str(blob_file))  # 경고(stderr)가 섞이지 않게 stdout 만, 내용 그대로
             blob_file.unlink(missing_ok=True)
             run_git("update-index", "--add", "--cacheinfo", f"100644,{blob},{path.relative_to(WIKI_REPO).as_posix()}")
         tree = run_git("write-tree")
@@ -236,7 +236,7 @@ def publish_files(files: dict[Path, str], message: str) -> str | None:
     git("fetch", "-q", "origin", branch)
     git("rebase", "--autostash", f"origin/{branch}")  # 로컬 전용 커밋은 방금 올린 커밋 위로 옮겨 그대로 둔다
     for path, text in files.items():
-        if path.read_bytes().decode("utf-8") != text:
+        if path.read_bytes().decode("utf-8").replace("\r\n", "\n") != text.replace("\r\n", "\n"):  # 체크아웃 때 CRLF 로 바뀔 수 있음
             raise RuntimeError(f"push 뒤 로컬 문서가 올린 내용과 다릅니다: {path}")
     return commit[:7]
 
