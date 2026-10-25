@@ -161,21 +161,59 @@ def vm_section(n: int, vm: dict, items: list[str], note: str = "") -> list[str]:
     return lines + [""]
 
 
+def policy_diagram(entries: list[tuple[dict, list[str], str]]) -> list[str]:
+    """VM 별 정책 항목으로 Azure DevOps Wiki 용 Mermaid 구성도(::: mermaid)를 만든다. IP 는 개수만 쓴다."""
+    pick = lambda items, head: [i.split(" ", 1)[1] for i in items if i.startswith(head + " ")]
+    safe = lambda s: s.replace('"', "'").replace("(", "").replace(")", "")
+    clients = sorted({c for _, items, _ in entries for c in pick(items, "client")})
+    out = ["::: mermaid", "flowchart LR",
+           f'    client(["허용 클라이언트<br/>{len(clients)}개 (NSG + 프록시 허용 목록)"])',
+           '    deny(["그 밖의 클라이언트·목적지<br/>403 차단"])']
+    for k, (vm, items, note) in enumerate(entries):
+        v = f"vm{k}"
+        if vm["kind"] == "squid":
+            port = next((r.split()[1] for r in pick(items, "rule") if r.startswith("http_port ")), "?")
+            out.append(f'    {v}["{vm["name"]}<br/>Squid 포워드 프록시 :{port}"]')
+            out.append(f'    client -- "CONNECT :{port}" --> {v}')
+            domains = [d.lstrip(".") + (" 이하" if d.startswith(".") else "") for d in pick(items, "domain")]
+            out.append(f'    {v}d(["{"<br/>".join(domains) or "목적지 제한 없음"}"])')
+            out.append(f'    {v} -- "443 허용 도메인" --> {v}d')
+        else:
+            port = next((r.split()[1] for r in pick(items, "rule") if r.startswith("listen ")), "80")
+            out.append(f'    {v}["{vm["name"]}<br/>NGINX 리버스 프록시 :{port}"]')
+            out.append(f'    client -- "HTTP :{port} (Host 머리글)" --> {v}')
+            for j, route in enumerate(pick(items, "route")):
+                host, _, target = route.partition(" → ")
+                out.append(f'    {v}r{j}(["{safe(target)}"])')
+                out.append(f'    {v} -- "{safe(host)}" --> {v}r{j}')
+        out.append(f"    {v} -.-> deny")
+        if note:
+            out.append(f"    style {v} stroke-dasharray:4 3")
+    out += ["    classDef ok fill:#DCFCE7,stroke:#16A34A,color:#14532D",
+            "    classDef bad fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D",
+            "    class client ok", "    class deny bad", ":::"]
+    return out
+
+
 def render_page(results: list[dict], history: list[dict], when: str, devops: DevOps | None) -> str:
     lines = ["# 프록시 정책 현황", "",
              f"> 최종 갱신: {when} (KST) · 자동 생성 문서입니다. `proxy_policy_publish.py` 가 정책 변경을 감지할 때 다시 작성하므로 "
              "직접 수정한 내용은 다음 갱신 때 사라집니다.", ""]
-    n = 0
+    entries = []  # (vm, items, note)
     for r in results:
         if "policy" in r:
-            n += 1
-            lines += vm_section(n, r["vm"], r["policy"]["items"])
+            entries.append((r["vm"], r["policy"]["items"], ""))
         else:  # 중지·읽기 실패: 마지막 기준이 있으면 그것으로 보여 준다
             path = snapshot_path(r["vm"]["name"])
             if path.is_file():
-                n += 1
                 saved = json.loads(path.read_text(encoding="utf-8"))
-                lines += vm_section(n, r["vm"], saved["items"], f"이번 갱신 때 읽지 못했습니다({r['skipped']}). 마지막으로 확인한 정책입니다.")
+                entries.append((r["vm"], saved["items"], f"이번 갱신 때 읽지 못했습니다({r['skipped']}). 마지막으로 확인한 정책입니다."))
+    lines += ["## 1. 구성도", "", "허용 클라이언트만 프록시에 접속할 수 있고, 프록시는 허용된 목적지로만 전달합니다(나머지는 403 차단).", ""]
+    lines += policy_diagram(entries) + [""]
+    n = 1
+    for vm, items, note in entries:
+        n += 1
+        lines += vm_section(n, vm, items, note)
     lines += [f"## {n + 1}. 변경 이력", "", "| 일시 | VM | 추가 | 삭제 | Task |", "|---|---|---|---|---|"]
     for h in reversed(history[-50:]):
         task = f"[#{h['task_id']}]({devops.task_url(h['task_id'])})" if h.get("task_id") and devops else "-"
@@ -254,14 +292,40 @@ def confirm(question: str) -> bool:
         return False
 
 
+def body_of(page: str) -> str:
+    """'최종 갱신' 줄과 줄바꿈 차이를 뺀 문서 본문(형식이 바뀌었는지 비교용)."""
+    return "\n".join(ln for ln in page.replace("\r\n", "\n").split("\n") if not ln.startswith("> 최종 갱신:"))
+
+
+def layout_only(args, results) -> int:
+    """정책은 그대로인데 문서 형식(예: 구성도)이 바뀐 경우 Task·스냅샷 없이 문서만 다시 쓴다."""
+    history = json.loads(HISTORY.read_text(encoding="utf-8")) if HISTORY.is_file() else []
+    devops = DevOps()
+    page = render_page(results, history, datetime.now(KST).strftime("%Y-%m-%d %H:%M"), devops)
+    current = WIKI_PAGE.read_text(encoding="utf-8") if WIKI_PAGE.is_file() else ""
+    if body_of(page) == body_of(current):
+        print("반영할 것이 없습니다.")
+        return 0
+    print("정책은 그대로이고 문서 형식만 바뀌었습니다(Task·기준 스냅샷은 그대로).")
+    if args.dry_run:
+        print(f"[dry-run] Wiki 문서만 다시 쓰기: {WIKI_PAGE.relative_to(WIKI_REPO).as_posix()}")
+        return 0
+    if not confirm("Wiki 문서만 다시 쓸까요?"):
+        print("취소했습니다.")
+        return 1
+    with span("wiki_update", page=WIKI_PAGE.name, layout_only=True):
+        publish_wiki(page, "프록시 정책 현황 문서 형식 갱신(정책 변경 없음)")
+    print(f"  Wiki 갱신: {devops.wiki_url(WIKI_PAGE)}")
+    return 0
+
+
 def run(args) -> int:
     results = check_all()
     print_result(results)
     changed = [r for r in results if r.get("change", {}).get("changed")]
     baseline = [r for r in results if r.get("change", {}).get("baseline")]
     if not changed and not baseline:
-        print("반영할 것이 없습니다.")
-        return 0
+        return layout_only(args, results)
     when = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
     devops = DevOps()
     wiki_url = devops.wiki_url(WIKI_PAGE)
