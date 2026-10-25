@@ -144,10 +144,10 @@ flowchart TD
 | 2. Wiki 현황 조회 | 표준 표는 규칙으로 파싱, 형식이 다른 문서는 LLM이 표준 형식으로 바꾸고 원문 대조로 검증 | ✅ | `wiki_parse_llm`: VM 이름이 원문에 없으면 버리고, IP·SIZE가 원문에 없으면 비움. 실제 문서 `Proxy VM 정리 ('26.09.17 기준)` 11행 확인. LLM으로 읽은 문서는 7단계에서 자동 수정하지 않고 Task에 수동 반영 요청 |
 | 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | ✅ | 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있으면 이름과 상관없이 대상, 없으면 이름 규칙으로 **프록시로 추정**. `SCENARIO2_EXCLUDE_TAG`(기본 `role=not-proxy`)는 뺌. 트레이스에 `by_tag`·`by_name` |
 | 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | ✅ | 테스트 문서면 정답(`data/scenario2/expected_diff.json`)과 자동 대조 |
-| 5. Teams 알림·승인 요청 | 이상 징후 + AI 요약(참고용) + 변경 목록 + Wiki 문서 링크, "현행화할까요?" Yes/No, No·시간 초과는 기록 후 종료 | ✅ | Teams 웹후크 카드, 로컬 승인 서버, 진행 화면. 프록시로 추정한 VM은 같은 카드에서 한 번만 확인(Yes면 `role=proxy` 태그로 확정, 승인 화면에서 '프록시 아님'으로 고르면 `role=not-proxy` 태그를 붙이고 비교에서 뺌) |
+| 5. Teams 알림·승인 요청 | 이상 징후 + AI 요약(참고용) + 변경 목록 + Wiki 문서 링크, "현행화할까요?" Yes/No, No·시간 초과는 기록 후 종료 | ✅ | Teams 웹후크 카드(판단에 필요한 내용 전부), 버튼은 이 PC의 로컬 승인 서버가 받고 "받았습니다" 확인 화면만 띄움. 프록시로 추정한 VM은 같은 카드에서 한 번만 확인(Yes면 `role=proxy` 태그로 확정, 승인 화면에서 '프록시 아님'으로 고르면 `role=not-proxy` 태그를 붙이고 비교에서 뺌) |
 | 6. DevOps Task 생성 | Epic → Feature → 월별 PBI 아래 Task, 변경 내역, 담당자 | ✅ | Feature·그 달 PBI가 없으면 만들고 `NN. …` Task에 변경 표를 적음. 담당자는 `SCENARIO2_ASSIGNEE`(비우면 PAT 소유자). 예: Task #2505 |
 | 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | ✅ | wiki-repo에 커밋, `.env`의 `SCENARIO2_PUSH=1`이면 Azure DevOps Wiki로 push(기본 0: 로컬만) |
-| 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | ✅ | Task 상태를 Done으로 바꾸고 Teams 결과 카드 전송, 로컬 승인 진행 화면에도 완료와 링크 표시. No·시간 초과도 결과 카드로 알림 |
+| 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | ✅ | Task 상태를 Done으로 바꾸고 Teams 결과 카드 전송(처리 단계 ✓/✗ 목록과 문서·Task 링크). 도중에 실패하면 실패 단계까지 담은 "처리 실패" 카드. No·시간 초과도 결과 카드로 알림 |
 
 **실행 화면**
 
@@ -155,7 +155,7 @@ flowchart TD
 
 ![허브 - 시나리오 실행 탭](docs/images/hub-scenarios.png)
 
-Teams 카드의 Yes/No 버튼이 여는 로컬 승인 화면과, 승인 뒤 진행 화면(예시 데이터):
+Teams 카드의 "자세히 보기"가 여는 로컬 승인 화면과 진행 화면(예시 데이터). Teams 카드의 Yes/No 버튼을 누르면 "받았습니다" 확인만 뜨고 결과는 Teams 결과 카드로 옵니다:
 
 ![로컬 승인 화면](docs/images/approval.png)
 
@@ -393,7 +393,7 @@ flowchart LR
 4. 카드가 Teams **활동**(종 모양)에도 뜨게 하려면 받을 사람의 계정을 `TEAMS_MENTION`(UPN), `TEAMS_MENTION_NAME`(표시 이름)에 넣습니다. 카드마다 그 사람을 @멘션합니다.
 5. 시험: `python teams_tools\teams_notify.py --title 테스트 "연동 확인"` → 채널에 카드가 오면 성공(HTTP 202).
 
-- Teams 카드의 Yes/No 응답을 이 PC로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다. 그래서 승인 버튼은 이 PC의 로컬 승인 화면(`approval_local.py`, http://127.0.0.1:8771)을 엽니다.
+- Teams 카드의 Yes/No 응답을 이 PC로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다. 그래서 승인 버튼은 이 PC의 로컬 승인 서버(`approval_local.py`, http://127.0.0.1:8771)로 가고, 화면에는 "받았습니다" 확인만 뜹니다. 판단할 내용은 승인 카드에, 처리 단계와 결과는 Teams 결과 카드에 모두 담아 Teams만 보면 되게 했습니다.
 - 카드가 채널에 안 올라오면 Teams 로그인이나 흐름의 연결이 만료된 경우가 많습니다. https://make.powerautomate.com 의 **연결**에서 오류 난 Microsoft Teams 연결을 다시 맺고, **내 흐름** › 해당 흐름 › **28일 실행 기록**에서 성공했는지 봅니다. 흐름의 게시 주체는 **흐름 봇**(Flow bot)이어야 합니다(기본값).
 
 <sub>[↑ 목차로](#목차)</sub>
@@ -854,7 +854,7 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 ```
 
 - 옵션은 `--dry-run` 하나입니다. push·승인 대기 시간·비교할 문서는 `.env`의 `SCENARIO2_PUSH`, `SCENARIO2_TIMEOUT`, `SCENARIO2_WIKI_PAGE`로 정합니다. 다른 형식의 문서(예: `Proxy-VM-정리-('26.09.17-기준).md`)를 LLM 파싱으로 시험하려면 `SCENARIO2_WIKI_PAGE`에 그 경로를 넣습니다.
-- 버튼을 누르면 열린 브라우저 창이 진행 화면으로 바뀌어 단계(Task 생성 → Wiki 현행화 → 완료 처리)를 실시간으로 보여 주고, 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다. 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있고, 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
+- Teams의 Yes/No 버튼을 누르면 "받았습니다. 결과는 Teams 결과 카드로 알려 드립니다" 확인만 뜨고, 처리 단계(✓ Task 생성 → ✓ Wiki 현행화 → ✓ 완료 처리)와 링크는 Teams 결과 카드로 옵니다. 확인 화면의 "진행 상황 보기"나 카드의 "자세히 보기"로 연 브라우저 화면은 단계를 실시간으로 보여 주고, 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다. 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있고, 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
 - 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **시나리오 실행** 탭에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.

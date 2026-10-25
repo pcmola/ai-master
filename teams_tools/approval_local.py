@@ -150,6 +150,7 @@ class Approval:
         self.state = {"decision": None, "steps": [], "done": False, "ok": True, "message": "", "links": []}
         self.lock = threading.Lock()
         self.server = None
+        self.teams = False  # Teams 카드로 물었으면 True: 버튼을 누르면 짧은 확인 화면만 보이고 결과는 Teams 로 알린다
 
     # -- 결정
     def decide(self, value: str, exclude: list[str] | None = None) -> bool:
@@ -172,6 +173,12 @@ class Approval:
                 steps[-1] = {"text": text, "state": state, "link": link}
             else:
                 steps.append({"text": text, "state": state, "link": link})
+
+    def steps_text(self) -> str:
+        """진행 단계를 Teams 카드에 넣을 목록으로(✓ 완료, ✗ 실패, ↻ 진행 중, · 안내)."""
+        icon = {"ok": "✓", "fail": "✗", "run": "↻", "info": "·"}
+        with self.lock:
+            return "\n".join(f"- {icon.get(s['state'], '·')} {s['text']}" for s in self.state["steps"])
 
     def finish(self, message: str, links: list[tuple[str, str]] | None = None, ok: bool = True):
         with self.lock:
@@ -206,7 +213,14 @@ class Approval:
                     qs = parse_qs(url.query)
                     if (qs.get("token") or [""])[0] != ap.token:
                         return self.reply(shell("처리 결과", "<div class='msg fail'>만료되었거나 다른 승인 요청의 버튼입니다.</div>"), 403)
-                    ap.decide((qs.get("answer") or [""])[0])  # 이미 결정됐어도 진행 화면을 보여 준다
+                    answer = (qs.get("answer") or [""])[0]
+                    first = ap.decide(answer)
+                    if ap.teams:  # 결과는 Teams 결과 카드로 가므로 여기서는 받았다는 것만 알린다
+                        said = "Yes(승인)" if answer == "yes" else "No(반영 안 함)"
+                        msg = (f"<div class='msg ok'>{said} 를 받았습니다.</div><p>처리 단계와 결과는 <b>Teams 결과 카드</b>로 알려 드립니다. "
+                               "이 창은 닫아도 됩니다.</p>" if first else
+                               "<div class='msg wait'>이미 처리된 승인 요청입니다.</div><p>결과는 Teams 결과 카드를 확인하세요.</p>")
+                        return self.reply(shell("승인 접수", msg + "<p style='font-size:13px'><a href='/progress'>진행 상황 보기</a></p>"))
                     return self.reply(progress)
                 if ap.decided.is_set():
                     return self.reply(progress)
@@ -233,6 +247,7 @@ class Approval:
             self.server = local_server(PORT, Handler, "approval.local")
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         url = self.server.url
+        self.teams = not open_browser  # 브라우저를 열지 않는 경우 = Teams 카드로 묻는 경우
         print(f"[approval] {datetime.now():%H:%M:%S} 승인 대기: {url}", flush=True)
         if open_browser:
             open_chrome(url)

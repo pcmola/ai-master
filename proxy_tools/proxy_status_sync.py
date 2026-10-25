@@ -630,6 +630,10 @@ def run(args) -> int:
         if ap:
             ap.step(f"실패: {exc}", "fail")
             ap.finish(f"처리 중 오류가 났습니다: {exc}", ok=False)
+            if os.environ.get("TEAMS_WEBHOOK_URL"):
+                from teams_tools import teams_notify
+                teams_notify.send(f"처리 중 오류가 나서 멈췄습니다: {exc}\n\n**처리 단계**\n{ap.steps_text()}",
+                                  "[Proxy 현황] 처리 실패", facts=[("감지 시각", when)])
         raise
     finally:
         if ap:
@@ -704,7 +708,8 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
         s.set(task_state=state)
         if os.environ.get("TEAMS_WEBHOOK_URL"):
             from teams_tools import teams_notify
-            teams_notify.send(f"Proxy 현황 변경 {len(diffs)}건을 반영했습니다.\n\n" + "\n".join(f"- {describe(d)}" for d in diffs),
+            teams_notify.send(f"Proxy 현황 변경 {len(diffs)}건을 반영했습니다.\n\n" + "\n".join(f"- {describe(d)}" for d in diffs)
+                              + (f"\n\n**처리 단계**\n{ap.steps_text()}" if ap else ""),
                               "[Proxy 현황] 현행화 완료",
                               facts=[("Wiki 문서", wiki_fact(links)), ("Task", f"[#{task_id}]({dv.task_url(task_id)}) ({state})"), ("Wiki 커밋", commit + (" · push" if PUSH else " · 로컬")),
                                      ("담당", owner or "-")],

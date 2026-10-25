@@ -437,7 +437,8 @@ def run(args) -> int:
             from teams_tools import teams_notify
             with span("teams_notify", kind="result"):
                 teams_notify.send(f"{headline} 장애 조치를 시작했습니다. "
-                                  + ("수정 PR 을 검토·병합한 뒤 배포해 주세요." if pr else "자동 수정안이 없어 Task 에서 수동 조치가 필요합니다."),
+                                  + ("수정 PR 을 검토·병합한 뒤 배포해 주세요." if pr else "자동 수정안이 없어 Task 에서 수동 조치가 필요합니다.")
+                                  + f"\n\n**처리 단계**\n{ap.steps_text()}",
                                   "[프록시 장애] 조치 진행",
                                   facts=[("Task", f"[#{task}]({dv.task_url(task)})")]
                                         + ([("PR", f"[!{pr['id']}]({pr['url']})")] if pr else []) + [("감지 시각", when)],
@@ -449,6 +450,10 @@ def run(args) -> int:
     except Exception as exc:
         ap.step(f"실패: {exc}", "fail")
         ap.finish(f"처리 중 오류가 났습니다: {exc}", ok=False)
+        if os.environ.get("TEAMS_WEBHOOK_URL"):
+            from teams_tools import teams_notify
+            teams_notify.send(f"{headline} 장애 조치 중 오류가 나서 멈췄습니다: {exc}\n\n**처리 단계**\n{ap.steps_text()}",
+                              "[프록시 장애] 처리 실패", facts=[("감지 시각", when)])
         raise
     finally:
         ap.close()
