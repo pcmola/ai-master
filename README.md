@@ -863,7 +863,7 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 
 허브 **시나리오 실행** 탭의 시나리오 3 칸에서 합니다. "분석만"은 아무것도 바꾸지 않고, 아래 "시험용" 줄의 버튼은 실제 저장소와 VM을 바꿉니다.
 
-**전 과정 시험 절차** (허브 시나리오 3 칸의 **시험용** 줄):
+**전 과정 시험 절차** (허브 시나리오 3 칸의 **시험 도구**를 펼쳐서):
   1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
   2. 60분 안에 **실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
   3. 끝나면 PR을 병합·배포하거나 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`: 심어진 장애를 되돌리는 커밋 push·배포·트래픽 확인).
