@@ -429,7 +429,6 @@ def run(args) -> int:
         step("장애 대응 이력 Wiki 갱신 중…")
         write_history(history_entry(when, incidents, tri, fix, cases, task, pr, dv.task_url(task)), when, task)
         wiki_url = dv.wiki_url(HISTORY_PAGE)
-        local = wiki_search.view_link(HISTORY_PAGE.relative_to(WIKI_REPO).as_posix().removesuffix(".md"))
         step("장애 대응 이력 Wiki 에 이번 건을 더했습니다", "ok", ("이력 Wiki", wiki_url))
         print(f"장애 대응 이력: {wiki_url}")
 
@@ -445,7 +444,7 @@ def run(args) -> int:
                                   buttons=[("Task 열기", dv.task_url(task))] + ([("PR 열기", pr["url"])] if pr else [])
                                           + [("이력 Wiki", wiki_url)])
         ap.finish("조치를 시작했습니다. " + ("수정 PR 을 검토·병합한 뒤 배포하세요." if pr else "Task 에서 수동 조치하세요."),
-                  [("Task 열기", dv.task_url(task))] + ([("PR 열기", pr["url"])] if pr else []) + [("이력 Wiki (로컬)", local)])
+                  [("Task 열기", dv.task_url(task))] + ([("PR 열기", pr["url"])] if pr else []) + [("이력 Wiki", wiki_url)])
         return 0
     except Exception as exc:
         ap.step(f"실패: {exc}", "fail")
