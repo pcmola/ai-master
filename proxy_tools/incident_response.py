@@ -33,6 +33,7 @@ import argparse
 import html
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -156,7 +157,8 @@ def similar(query: str, n: int = 4) -> list[dict]:
         d = wiki_search.do_search(query)
         out = []
         for r in d["results"]:
-            if r["path"].startswith(wiki_search.AI_DOC_PREFIX):  # AI 가 만든 문서는 근거에서 뺀다
+            hist = HISTORY_PAGE.relative_to(WIKI_REPO).as_posix()
+            if r["path"].startswith(wiki_search.AI_DOC_PREFIX) or r["path"] == hist:  # AI 가 만든 문서·이 이력 문서는 근거에서 뺀다
                 continue
             text = (WIKI_REPO / r["path"]).read_text(encoding="utf-8-sig", errors="replace") \
                 if (WIKI_REPO / r["path"]).is_file() else ""
@@ -303,20 +305,39 @@ def create_pr(dv, fix: dict, task_id: int, when: str) -> dict:
 
 # ---------------------------------------------------------------- 8. 장애 대응 이력 Wiki
 
-def history_entry(when: str, incidents, tri, fix, cases, task, pr, task_url) -> str:
-    finding_lines = [f"- {i['vm']['name']}: [{f['severity']}] {f['title']} — {f['detail']} ({f['first']} ~ {f['last']}, {f['count']}건)"
-                     for i in incidents for f in i["findings"] if f["severity"] in SEVERE]
-    lines = [f"## {when} · {', '.join(i['vm']['name'] for i in incidents)}", "",
-             "| 항목 | 내용 |", "|---|---|",
-             f"| 요약 | {(tri or {}).get('summary', '-')} |",
-             f"| 원인 | {(fix or {}).get('cause', '-')} |",
-             f"| 조치 | {(fix or {}).get('fix_summary', '수동 조치 필요(자동 수정안 없음)')} |",
-             f"| Task | [#{task}]({task_url}) |" if task else "| Task | - |",
-             f"| PR | [!{pr['id']}]({pr['url']}) (브랜치 `{pr['branch']}`, 병합·배포 전) |" if pr else "| PR | - (자동 수정안 없음) |",
-             "", "### 감지 내용", ""] + finding_lines
-    if cases:
-        lines += ["", "### 참고한 Wiki 문서", ""] + [f"- [{c['title']}](/{c['path'].removesuffix('.md')})" for c in cases]
+def sentences(text: str) -> list[str]:
+    """문단을 문장 단위로 나눈다('~다.', '~요.' 뒤에서). 커밋 해시는 코드로 표시."""
+    text = re.sub(r"(?<![`\w])([0-9a-f]{7})(?![`\w])", r"`\1`", (text or "").replace("~", "\u223c"))
+    parts = [x.strip() for x in re.split(r"(?<=[다요음])\.\s+", text) if x.strip()]
+    return [x if x.endswith((".", "?", "!")) else x + "." for x in parts] or ["-"]
+
+
+def entry_md(head: str, refs: str, summary: str, cause: str, fix_lines: list[str],
+             finding_lines: list[str], case_lines: list[str]) -> str:
+    """이력 한 건. 긴 문단을 표 칸에 넣지 않고 소제목과 한 줄짜리 항목으로 나눈다."""
+    lines = [f"## {head}", "", refs, "",
+             "### 요약", ""] + [f"- {x}" for x in sentences(summary)] + ["",
+             "### 원인", ""] + [f"- {x}" for x in sentences(cause)] + ["",
+             "### 조치", ""] + fix_lines + ["",
+             "### 감지 내용", ""] + finding_lines
+    if case_lines:
+        lines += ["", "### 참고한 Wiki 문서", ""] + case_lines
     return "\n".join(lines) + "\n"
+
+
+def history_entry(when: str, incidents, tri, fix, cases, task, pr, task_url) -> str:
+    finding_lines = [f"- {i['vm']['name']}: [{f['severity']}] {f['title']} — {f['detail']} ({f['first']} ∼ {f['last']}, {f['count']}건)"
+                     for i in incidents for f in i["findings"] if f["severity"] in SEVERE]
+    refs = (f"**Task** [#{task}]({task_url})" if task else "**Task** -") + " · " + (
+        f"**PR** [!{pr['id']}]({pr['url']}) (브랜치 `{pr['branch']}`, 병합·배포 전)" if pr else "**PR** 없음(자동 수정안 없음)")
+    if fix and fix.get("applicable"):
+        fix_lines = [f"- `{fix['file']}`: `{fix['before'].strip()}` → `{fix['after'].strip()}`" if fix["after"].strip()
+                     else f"- `{fix['file']}`: `{fix['before'].strip()}` 삭제"] + [f"- {x}" for x in sentences(fix.get("fix_summary", ""))]
+    else:
+        fix_lines = ["- 자동 수정안 없음: Task 에서 수동 조치"]
+    return entry_md(f"{when} · {', '.join(i['vm']['name'] for i in incidents)}", refs,
+                    (tri or {}).get("summary", "-"), (fix or {}).get("cause", "-"), fix_lines, finding_lines,
+                    [f"- [{c['title']}](/{c['path'].removesuffix('.md')})" for c in cases])
 
 
 def write_history(entry: str, when: str, task: int | None):
