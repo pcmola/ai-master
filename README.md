@@ -494,19 +494,30 @@ hosts 파일은 포트를 정할 수 없으므로 서버마다 다른 루프백 
 
 `127.0.87.65`를 코드에서 새로 생성하는 것은 아닙니다. `127.0.0.0/8`은 자기 PC로 돌아오는 루프백 대역이고, `common/server.py`의 `hosts_entries()` → `site_url()` → `local_server()`가 hosts의 값을 읽어 해당 **IP와 포트에 바인딩**합니다. IP가 다르면 같은 80 포트도 함께 사용할 수 있습니다.
 
-| hosts에 적힌 값 | 서버가 뜨는 곳 | 주소 |
+hosts에 IP가 없거나 `127.0.0.1`이면 서버마다 정해진 자기 포트를 씁니다. 같은 IP에서는 80 포트를 한 서버만 쓸 수 있기 때문입니다.
+
+| 서버 | hosts 이름 | 전용 IP (80 포트) | 자기 포트 |
+|---|---|---|---|
+| 허브 (`hub.py`) | ai-master.local | 127.0.87.64 | 8764 |
+| Wiki 뷰어 (`wiki_viewer.py`) | wiki.local | 127.0.87.65 | 8765 |
+| Wiki 검색 (`wiki_search.py`) | wiki-search.local | 127.0.87.66 | 8766 |
+| 프록시 로그 뷰어 (`proxy_log_viewer.py`) | proxy-log.local | 127.0.87.68 | 8768 |
+
+Wiki 뷰어를 예로 들면 hosts 값에 따라 다음처럼 뜹니다.
+
+| hosts에 적힌 값 | 서버가 뜨는 곳 | 브라우저 주소 |
 |---|---|---|
-| 없음 | 127.0.0.1:포트 | `http://127.0.0.1:8765` |
-| `127.0.0.1 wiki.local` | 127.0.0.1:포트 | `http://wiki.local:8765` |
+| 없음 | 127.0.0.1:8765 | `http://127.0.0.1:8765` |
+| `127.0.0.1 wiki.local` | 127.0.0.1:8765 | `http://wiki.local:8765` |
 | `127.0.87.65 wiki.local` | 127.0.87.65:80 | `http://wiki.local` |
 
 ```mermaid
 flowchart TD
     start(["서버 시작"]) --> read["hosts 파일에서<br/>자기 이름 찾기<br/>(예: wiki.local)"]
     read --> found{"적힌 IP는?"}
-    found -- "없음" --> a["127.0.0.1:포트<br/>http://127.0.0.1:8765"]
-    found -- "127.0.0.1" --> b["127.0.0.1:포트<br/>http://wiki.local:8765"]
-    found -- "127.0.87.xx" --> c["127.0.87.xx:80<br/>http://wiki.local"]
+    found -- "없음" --> a["수신 127.0.0.1:8765<br/>접속 http://127.0.0.1:8765"]
+    found -- "127.0.0.1" --> b["수신 127.0.0.1:8765<br/>접속 http://wiki.local:8765"]
+    found -- "127.0.87.65" --> c["수신 127.0.87.65:80<br/>접속 http://wiki.local"]
 
     classDef start fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
     classDef step fill:#DBEAFE,stroke:#3B82F6,color:#1E3A8A
