@@ -4,7 +4,7 @@ r"""Create low-cost Linux proxy VMs (Squid or HAProxy) on Azure with the Azure C
 - 기본값: 구독 wonjy, Korea Central, Availability zone 1, Trusted launch, Ubuntu Server 24.04 LTS x64 Gen2.
 - 비용 최소화: 가장 싼 B 시리즈 크기부터 해당 지역·영역에서 쓸 수 있는 것을 고르고,
   OS 디스크는 Standard HDD(Standard_LRS) 30GB, 공용 IP 는 Standard 1개(--no-public-ip 로 생략 가능).
-- 프록시는 cloud-init 으로 설치한다. Squid: 포워드 프록시(3128), HAProxy: TCP 전달(기본 80 -> --backend).
+- 프록시는 cloud-init 으로 설치한다. Squid: 포워드 프록시(8080), HAProxy: TCP 전달(기본 80 -> --backend).
   설치 방식은 podman 이미지(Quadlet 으로 systemd 서비스화, 권장), docker 이미지, apt 패키지 중 고른다.
   이미지 기본값은 ubuntu/squid:latest, haproxy:lts 이고 --docker-image 로 바꾼다(podman 은 docker.io/ 를 붙인다).
 - NSG 는 SSH·프록시 포트를 이 PC 의 공인 IP(또는 --allow)에서만 연다.
@@ -48,7 +48,7 @@ DEFAULTS = {
 }
 # 월 요금이 싼 순서. 앞에서부터 이 지역·영역에서 제한 없이 쓸 수 있는 첫 크기를 고른다.
 SIZE_CANDIDATES = ["Standard_B1ls", "Standard_B2ats_v2", "Standard_B2ts_v2", "Standard_B1s"]
-PROXY_PORT = {"squid": 3128, "haproxy": 80, "nginx": 80}
+PROXY_PORT = {"squid": 8080, "haproxy": 80, "nginx": 80}  # squid 3128 은 일부 네트워크(SK브로드밴드 회선 등)에서 막혀 8080
 # --install podman|docker 일 때 기본 이미지. 사내 ACR 등 다른 이미지는 --docker-image 와 --registry 옵션으로 지정한다.
 DOCKER_IMAGE = {"squid": "ubuntu/squid:latest", "haproxy": "haproxy:lts", "nginx": "nginx:stable"}
 
@@ -250,7 +250,7 @@ write_files:
 
     # 컨테이너(docker/podman): 설정 파일을 /etc/proxy 에 두고 컨테이너에 읽기 전용으로 마운트한다.
     if args.proxy == "squid":
-        conf, inner = squid_conf(allow, 3128, bool(wl)), 3128
+        conf, inner = squid_conf(allow, PROXY_PORT["squid"], bool(wl)), PROXY_PORT["squid"]
         # 목록 파일은 디렉터리째 마운트해야 VM 에서 고친 내용이 'squid -k reconfigure' 로 바로 반영된다.
         volumes = [("/etc/proxy/proxy.conf", "/etc/squid/squid.conf"), ("/etc/proxy/lists", "/etc/squid/lists")]
         # 로그는 VM 디스크에 둔다. 컨테이너는 --rm 이라 재시작·VM 중지 때 컨테이너 안 로그가 함께 지워진다.
@@ -383,7 +383,7 @@ def main():
     p.add_argument("--proxy", choices=["squid", "haproxy", "nginx"], help="설치할 프록시. 생략하면 물어본다.")
     p.add_argument("--count", type=int, default=1, help="만들 VM 수 (기본 1)")
     p.add_argument("--backend", help="전달 대상. haproxy: host:port, nginx: http(s)://host[:port]")
-    p.add_argument("--port", type=int, help="프록시 수신 포트 (기본 squid 3128, haproxy·nginx 80)")
+    p.add_argument("--port", type=int, help="프록시 수신 포트 (기본 squid 8080, haproxy·nginx 80)")
     p.add_argument("--vhost", action="append", default=[], metavar="DOMAIN=URL",
                    type=lambda s: tuple(x.strip() for x in s.split("=", 1)),
                    help="NGINX 가상 도메인 (여러 번 지정 가능). 예: --vhost data.wjy.test=https://www.data.go.kr")

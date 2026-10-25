@@ -123,10 +123,10 @@ def deploy_and_check(target: str, expect_fail: bool):
     bash("scripts/deploy.sh", ip, "--restart")
     try:
         bash("scripts/traffic.sh", ip)
-        print("테스트 트래픽 정상" + (" (장애가 나타나지 않았습니다. 네트워크에서 3128 이 막혔는지 확인하세요)" if expect_fail else ""))
+        print("테스트 트래픽 정상" + (" (장애가 나타나지 않았습니다. 네트워크에서 프록시 포트(8080)가 막혔는지 확인하세요)" if expect_fail else ""))
     except RuntimeError:
         print("테스트 트래픽에서 실패가 나왔습니다" + ("(예상한 결과). 이제 시나리오 3 을 실행하세요." if expect_fail
-              else ". 결과의 connect=000 은 이 PC 네트워크에서 3128 이 막힌 경우입니다."))
+              else ". 결과의 connect=000 은 이 PC 네트워크에서 프록시 포트(8080)가 막힌 경우입니다."))
 
 
 def restore(push: bool, deploy: str | None):

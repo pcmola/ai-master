@@ -197,7 +197,7 @@ flowchart TD
   2. 60분 안에 **실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
   3. 끝나면 PR을 병합·배포하거나 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`: 심어진 장애를 되돌리는 커밋 push·배포·트래픽 확인).
   - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
-  - 시험 트래픽은 이 PC에서 프록시 **8080** 포트로 보냅니다(`traffic.sh` 기본값, `PROXY_PORT`로 변경). 이 PC의 네트워크(집)에서 3128로 나가는 연결이 막혀 Squid에 8080을 함께 열었습니다(2026-10-25).
+  - 시험 트래픽은 이 PC에서 프록시 **8080** 포트로 보냅니다(`traffic.sh` 기본값, `PROXY_PORT`로 변경). 이 PC의 네트워크(집, SK브로드밴드)에서 3128로 나가는 연결이 막혀 Squid를 8080으로 옮겼습니다(2026-10-25).
 
 **실행 화면** (공인 IP는 `x.x.x.x`로 가림)
 
@@ -731,11 +731,11 @@ flowchart LR
 
 ## 7. 프록시 VM 운영
 
-리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트(Squid 3128·8080, NGINX 80)를 허용 클라이언트 IP에만 엽니다(NSG `Allow-SSH`, `Allow-squid`, `Allow-squid-8080`).
+리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트(Squid 8080, NGINX 80)를 허용 클라이언트 IP에만 엽니다(NSG `Allow-SSH`, `Allow-squid-8080`, `Allow-nginx`). Squid는 원래 3128이었는데, 2026-10-23 집 인터넷을 SK브로드밴드로 바꾼 뒤 3128로 나가는 연결이 막혀 2026-10-25에 8080으로 옮겼습니다.
 
 | VM | 종류 | 접속 로그 위치 | 재시작·VM 중지 후 |
 |---|---|---|---|
-| wjy-proxy01, wjy-proxy02 | Squid 포워드 프록시 (3128, 8080) | VM 디스크 `/var/log/proxy/access.log` (컨테이너 `/var/log/squid`에 연결) | 남음 |
+| wjy-proxy01, wjy-proxy02 | Squid 포워드 프록시 (8080) | VM 디스크 `/var/log/proxy/access.log` (컨테이너 `/var/log/squid`에 연결) | 남음 |
 | wjy-proxy03 | NGINX 리버스 프록시 (80) | journald (`journalctl CONTAINER_NAME=nginx`) | 남음 |
 
 - 컨테이너는 `--rm`이라 재시작할 때마다 새로 만들어집니다. 그래서 Squid 로그는 VM 디스크 폴더에 연결하고(2026-10-21 적용, `azure_proxy_vm.py`도 같이 만듦), NGINX 로그는 `podman logs`(지금 컨테이너만) 대신 journald에서 읽습니다.
@@ -745,7 +745,7 @@ flowchart LR
 시험 요청 보내기 (허용 클라이언트 IP에서):
 
 ```powershell
-curl.exe -x http://<VM_IP>:8080 https://www.data.go.kr/        # 포워드 프록시: 허용 도메인 → 200 (3128 이 막힌 네트워크면 8080)
+curl.exe -x http://<VM_IP>:8080 https://www.data.go.kr/        # 포워드 프록시: 허용 도메인 → 200 (Squid 는 8080 만 엶)
 curl.exe -x http://<VM_IP>:8080 https://www.google.com/         # 허용 목록 밖 → 터널 거부(403)
 curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프록시: Host 머리글로 가상 도메인 선택
 ```

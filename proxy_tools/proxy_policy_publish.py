@@ -141,7 +141,7 @@ def vm_section(n: int, vm: dict, items: list[str], note: str = "") -> list[str]:
     if note:
         lines += [f"> {note}", ""]
     lines += ["| 항목 | 값 |", "|---|---|", f"| 공용 IP | {vm['ip']} |",
-              f"| 포트 | {'3128 (Squid, podman 컨테이너)' if vm['kind'] == 'squid' else '80 (NGINX, podman 컨테이너)'} |",
+              f"| 포트 | {'8080 (Squid, podman 컨테이너)' if vm['kind'] == 'squid' else '80 (NGINX, podman 컨테이너)'} |",
               f"| 정책 항목 | {len(items)}개 |", ""]
     if vm["kind"] == "squid":
         domains = pick("domain")
