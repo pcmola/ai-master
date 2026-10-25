@@ -306,6 +306,17 @@ def run_job(job: str, options: dict) -> dict:
     return {"pid": proc.pid, "args": args}
 
 
+def fault_state() -> dict:
+    """시나리오 3 시험용 장애가 proxy-config(로컬 main)에 심어져 있는지. 터미널에서 바꾼 것도 보이도록 파일을 직접 본다."""
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT / "proxy_tools"))
+        import proxy_fault_inject as fi
+        names = {"whitelist-typo": "허용 도메인 오타", "client-acl-typo": "허용 클라이언트 IP 오타", "bad-dns": "잘못된 DNS 서버"}
+        return {"active": [names.get(n, n) for n in fi.active()]}
+    except Exception as exc:  # 저장소가 없거나 읽기 실패
+        return {"error": str(exc)[:120]}
+
+
 def job_status() -> dict:
     out = {}
     for job, spec in JOBS.items():
@@ -380,7 +391,7 @@ class Handler(BaseHTTPRequestHandler):
             text, size = log_tail(key, start=int(start) if start.isdigit() else 0)
             self.send_body(text.encode("utf-8"), "text/plain; charset=utf-8", headers={"X-Log-Size": str(size)})
         elif url.path == "/api/jobs":
-            self.send_json(job_status())
+            self.send_json({**job_status(), "_fault": fault_state()})
         else:
             self.send_error(404)
 
@@ -498,6 +509,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <option value="bad-dns">잘못된 DNS 서버</option></select>
 <button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="proxy_fault_inject.py apply … --push --deploy wjy-proxy01">장애 재현</button>
 <button id="s3restore" onclick="if(confirm('심어진 장애를 되돌리는 커밋을 push 하고 wjy-proxy01 에 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="proxy_fault_inject.py restore --push --deploy wjy-proxy01">원상 복구</button></div>
+<div class="jobstate" id="s3fault-state"></div>
 <div class="jobstate" id="s3state"></div></div>
 </div>
 <div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
@@ -571,7 +583,11 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   const run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
   const s3=['scenario3','scenario3-fault','scenario3-restore'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
   ['s3run','s3dry','s3inject','s3restore'].forEach(id=>document.getElementById(id).disabled=run3);
-  document.getElementById('s3state').innerHTML=s3.map(k=>jobLine(jobs[k])).filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
+  // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
+  const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
+    :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 현재 심어진 장애: ${esc(f.active.join(', '))} → 시험이 끝나면 원상 복구</span>`:'<span class="jobstate ok">현재 심어진 장애: 없음 (정상)</span>');
+  const last=s3.map(k=>jobs[k]).filter(j=>j&&j.state!=='idle').sort((a,b)=>b.started.localeCompare(a.started))[0];
+  document.getElementById('s3state').innerHTML=last?`<span class="muted">마지막 실행 (${since(last.started)} 전):</span> `+jobLine(last):'<span class="muted">이 허브에서 아직 실행하지 않았습니다.</span>';
   document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
