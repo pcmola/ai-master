@@ -511,6 +511,21 @@ Wiki 뷰어를 예로 들면 hosts 값에 따라 다음처럼 뜹니다.
 | `127.0.0.1 wiki.local` | 127.0.0.1:8765 | `http://wiki.local:8765` |
 | `127.0.87.65 wiki.local` | 127.0.87.65:80 | `http://wiki.local` |
 
+전용 IP가 적혀 있으면 자기 포트(8765 등)는 쓰지 않습니다. `127.0.0.1:포트`를 거쳐 가는 것이 아니라, 서버가 처음부터 전용 IP의 80 포트에 뜹니다. 허브(`127.0.87.64 ai-master.local`)를 예로 들면:
+
+1. 서버 시작: `hub.py`가 hosts에서 `ai-master.local`을 찾아 `127.0.87.64:80`에서 기다립니다.
+2. 브라우저 접속: `http://ai-master.local` → Windows가 hosts를 보고 `127.0.87.64`로 바꿈 → 포트를 안 적었으므로 80번으로 접속 → 허브가 응답합니다.
+
+규칙은 [`common/server.py`](common/server.py)에 있습니다.
+
+| 함수 | 하는 일 |
+|---|---|
+| `hosts_entries()` | hosts 파일을 읽어 이름 → IP 목록을 만듦 |
+| `site_url()` | 위 표의 판단: `127.0.0.1`이 아닌 루프백 IP면 그 IP의 80, `127.0.0.1`이거나 없으면 `127.0.0.1:자기 포트` |
+| `local_server()` | 정해진 IP·포트로 서버를 띄움 |
+
+서버마다 자기 포트는 각 파일에 있습니다(예: `hub.py`의 `HUB_PORT = 8764`).
+
 ```mermaid
 flowchart TD
     start(["서버 시작"]) --> read["hosts 파일에서<br/>자기 이름 찾기<br/>(예: wiki.local)"]
