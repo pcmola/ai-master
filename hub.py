@@ -492,8 +492,8 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="row"><button id="s3dry" onclick="runJob('scenario3',{dry_run:true})" title="감지·분석·수정안까지만 하고 아무것도 바꾸지 않음">분석만</button>
 <button class="main" id="s3run" onclick="runJob('scenario3')">실행</button>
 <button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')">로그</button></div>
-<div class="row" style="border-top:1px dashed var(--line);padding-top:10px"><span class="muted">시험용 (wjy-proxy01)</span>
-<select id="s3fault" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink)">
+<div class="muted" style="border-top:1px dashed var(--line);padding-top:10px">시험용 (wjy-proxy01) · 실제 저장소와 VM을 바꿉니다</div>
+<div class="row" style="flex-wrap:nowrap"><select id="s3fault" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:1;min-width:0">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
 <option value="bad-dns">잘못된 DNS 서버</option></select>
 <button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="proxy_fault_inject.py apply … --push --deploy wjy-proxy01">장애 재현</button>
