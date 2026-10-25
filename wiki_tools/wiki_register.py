@@ -134,6 +134,12 @@ def register(title: str, markdown: str, query: str = "", model: str | None = Non
     commit = git("rev-parse", "--short", "HEAD")
     if push:
         git("push")
+        try:  # Wiki 첫 페이지의 '최근 수정 문서' 갱신
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "wiki_tools"))
+            from wiki_recent import refresh_quietly
+            refresh_quietly()
+        except ImportError:
+            pass
     return {"number": number, "title": f"{number}. {name.replace('-', ' ')}", "path": page.relative_to(WIKI_REPO).as_posix(),
             "updated": updated, "commit": commit, "pushed": push, "url": page_url(page), "warnings": warnings}
 
