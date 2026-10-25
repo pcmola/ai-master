@@ -30,7 +30,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR  # noqa: E402
-from common.server import local_server, open_chrome  # noqa: E402
+from common.server import favicon, local_server, open_chrome  # noqa: E402
 from common.trace import span, trace  # noqa: E402
 
 RESOURCE_GROUP = "wjy-proxy-rg"
@@ -210,10 +210,10 @@ def read_policy(ip: str, kind: str) -> dict:
 
 HTML_PAGE = r'''<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Proxy Log Viewer</title><style>
+__FAVICON__<title>Proxy Log Viewer</title><style>
 :root{--ink:#172033;--muted:#718096;--line:#e5eaf0;--panel:#fff;--bg:#eef2f7;--ok:#2f9e6b;--bad:#d64545;--blue:#2563eb}
 *{box-sizing:border-box}body{margin:0;color:var(--ink);font:14px/1.6 "Segoe UI","Malgun Gothic",sans-serif;background:var(--bg)}
-.top{height:58px;background:#13213a;color:#fff;display:flex;align-items:center;padding:0 24px;gap:14px}.mark{width:28px;height:28px;border-radius:8px;background:#42b883;display:grid;place-items:center;font-weight:800}.brand{font-size:16px;font-weight:700}.crumb{color:#aebbd0;font-size:12px}
+.top{height:58px;background:#13213a;color:#fff;display:flex;align-items:center;padding:0 24px;gap:14px}.mark{width:28px;height:28px;border-radius:8px;background:#f97316;display:grid;place-items:center;font-weight:800}.brand{font-size:16px;font-weight:700}.crumb{color:#aebbd0;font-size:12px}
 .wrap{max-width:1280px;margin:0 auto;padding:20px 16px 60px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 select,input,button{font:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#fff;color:var(--ink)}
@@ -312,7 +312,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         if url.path == "/":
-            self.send_body(HTML_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            self.send_body(HTML_PAGE.replace("__FAVICON__", favicon("P", "#f97316")).encode("utf-8"), "text/html; charset=utf-8")
         elif url.path == "/api/hosts":
             self.send_json(HOSTS)
         elif url.path == "/api/policy":

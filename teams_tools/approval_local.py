@@ -36,7 +36,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
-from common.server import local_server, open_chrome  # noqa: E402
+from common.server import favicon, local_server, open_chrome  # noqa: E402
 
 PORT = 8771
 
@@ -71,7 +71,7 @@ def link_html(links: list[tuple[str, str]] | None) -> str:
 
 def shell(title: str, inner: str, script: str = "") -> bytes:
     return (f'<!doctype html><html lang="ko"><head><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1">{favicon("✓", "#5b5fc7")}<title>{html.escape(title)}</title>'
             f'<style>{STYLE}</style></head><body><div class="card"><div class="head">{html.escape(title)}'
             f'<small>로컬 승인 화면 (Teams 대체)</small></div><div class="body">{inner}</div></div>'
             f'<script>{script}</script></body></html>').encode("utf-8")

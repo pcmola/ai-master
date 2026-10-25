@@ -31,7 +31,7 @@ from urllib.parse import quote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR, ENV_FILE, WIKI_REPO  # noqa: E402
-from common.server import local_server, open_chrome, site_url  # noqa: E402,F401  (다른 도구가 여기서 가져다 쓰던 이름 유지)
+from common.server import favicon, local_server, open_chrome, site_url  # noqa: E402,F401  (다른 도구가 여기서 가져다 쓰던 이름 유지)
 from common.trace import heartbeat, span, trace  # noqa: E402
 
 ROOT = WIKI_REPO.resolve()
@@ -977,10 +977,10 @@ def restore(diagrams: list[str], m: re.Match) -> str:
 
 HTML_PAGE = r'''<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Wiki Guide Search</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"><script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script><style>
+__FAVICON__<title>Wiki Guide Search</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"><script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script><style>
 :root{--ink:#172033;--muted:#718096;--line:#e5eaf0;--blue:#2563eb;--soft:#f5f8fc;--panel:#fff;--hl:#fff3b0}
 *{box-sizing:border-box}body{margin:0;color:var(--ink);font:14px/1.65 "Segoe UI","Malgun Gothic",sans-serif;background:#eef2f7}
-.top{height:58px;background:#13213a;color:#fff;display:flex;align-items:center;padding:0 24px;gap:14px}.mark{width:28px;height:28px;border-radius:8px;background:#42b883;display:grid;place-items:center;font-weight:800}.brand{font-size:16px;font-weight:700}.crumb{color:#aebbd0;font-size:12px}
+.top{height:58px;background:#13213a;color:#fff;display:flex;align-items:center;padding:0 24px;gap:14px}.mark{width:28px;height:28px;border-radius:8px;background:#16a34a;display:grid;place-items:center;font-weight:800}.brand{font-size:16px;font-weight:700}.crumb{color:#aebbd0;font-size:12px}
 .wrap{max-width:1180px;margin:0 auto;padding:24px 16px 80px}
 .search{display:flex;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px}.search input{flex:1;border:0;outline:0;font:inherit;font-size:16px;padding:8px 10px}
 button{font:inherit;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;background:var(--blue);color:#fff;font-weight:600}button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}button:disabled{opacity:.5;cursor:default}
@@ -1089,7 +1089,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if urlparse(self.path).path != "/":
             self.send_error(404); return
-        data = HTML_PAGE.encode("utf-8")
+        data = HTML_PAGE.replace("__FAVICON__", favicon("G", "#16a34a")).encode("utf-8")
         self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 

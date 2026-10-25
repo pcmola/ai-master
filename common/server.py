@@ -77,3 +77,13 @@ def open_chrome(url: str):
         subprocess.Popen([str(chrome), url])
     else:
         webbrowser.open(url)
+
+
+def favicon(letter: str, color: str) -> str:
+    """탭에 보일 파비콘 <link> 태그. 둥근 사각형에 흰 글자 하나(SVG 를 data URI 로 넣어 파일이 필요 없다)."""
+    from urllib.parse import quote
+    svg = ("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+           f"<rect width='32' height='32' rx='7' fill='{color}'/>"
+           "<text x='16' y='23' font-family='Segoe UI,Arial,sans-serif' font-size='20' font-weight='800' "
+           f"fill='#fff' text-anchor='middle'>{letter}</text></svg>")
+    return f'<link rel="icon" href="data:image/svg+xml,{quote(svg)}">'
