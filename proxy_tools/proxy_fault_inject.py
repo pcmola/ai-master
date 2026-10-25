@@ -153,6 +153,9 @@ def restore(push: bool, deploy: str | None):
 def apply(name: str, push: bool, deploy: str | None):
     s = SCENARIOS[name]
     sync_main()
+    found = active()
+    if found:  # 장애가 겹치면 원인이 섞여 시험 결과를 판단할 수 없다
+        raise RuntimeError(f"이미 심어진 장애가 있습니다: {', '.join(found)}. 먼저 원상 복구(restore)하세요.")
     path = REPO / s["file"]
     text = path.read_text(encoding="utf-8")
     if text.count(s["before"]) != 1:
