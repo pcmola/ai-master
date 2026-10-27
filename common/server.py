@@ -10,8 +10,11 @@ hosts 는 포트를 정할 수 없으므로 포트 없는 주소를 쓰려면 �
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import subprocess
+import urllib.parse
+import urllib.request
 import webbrowser
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -65,8 +68,36 @@ def local_server(port: int, handler, name: str | None = None) -> LocalServer:
     return server
 
 
-def open_chrome(url: str):
-    """크롬으로 페이지를 연다. 크롬이 없으면 기본 브라우저를 쓴다."""
+def _close_chrome_tabs(url: str, debug_port: int) -> bool:
+    """크롬 개발자 도구 포트에서 url 과 같은 사이트(스킴·호스트·포트)의 탭을 닫는다.
+    경로·#해시는 보지 않는다(허브에서 '시나리오 실행' 탭으로 옮겨 #scenarios 가 된 탭도 닫는다)."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{debug_port}/json/list", timeout=0.4) as response:
+            targets = json.load(response)
+    except (OSError, ValueError):
+        return False
+
+    wanted = urllib.parse.urlsplit(url)[:2]
+    closed = False
+    for target in targets:
+        if target.get("type") != "page" or urllib.parse.urlsplit(target.get("url", ""))[:2] != wanted:
+            continue
+        target_id = urllib.parse.quote(target.get("id", ""), safe="")
+        try:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{debug_port}/json/close/{target_id}", timeout=0.4
+            ).close()
+            closed = True
+        except OSError:
+            pass
+    return closed
+
+
+def open_chrome(url: str, *, close_url: str | None = None, profile_dir: Path | None = None,
+                debug_port: int = 9222):
+    """크롬으로 페이지를 연다. 크롬이 없으면 기본 브라우저를 쓴다.
+    close_url·profile_dir 를 주면 전용 프로필을 개발자 도구 포트(127.0.0.1:debug_port)와 함께 띄우고,
+    그 포트로 close_url 과 같은 사이트의 기존 탭을 먼저 닫는다(다시 실행해도 탭이 쌓이지 않게)."""
     candidates = [
         Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Google/Chrome/Application/chrome.exe",
         Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Google/Chrome/Application/chrome.exe",
@@ -74,7 +105,12 @@ def open_chrome(url: str):
     ]
     chrome = next((p for p in candidates if p.is_file()), None)
     if chrome:
-        subprocess.Popen([str(chrome), url])
+        args = [str(chrome)]
+        if close_url and profile_dir:
+            _close_chrome_tabs(close_url, debug_port)
+            args.extend([f"--remote-debugging-port={debug_port}", f"--user-data-dir={profile_dir}"])
+        args.append(url)
+        subprocess.Popen(args)
     else:
         webbrowser.open(url)
 

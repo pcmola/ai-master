@@ -649,7 +649,11 @@ def main():
         log("꺼져 있는 서버를 시작합니다 (--start-all)")
         dispatch("all", "start")
     if "--no-browser" not in flags:
-        open_chrome(server.url)
+        open_chrome(
+            server.url + "/#servers",
+            close_url=server.url + "/#servers",
+            profile_dir=PROJECT_ROOT / "data" / "hub-chrome-profile",
+        )
     log("요청을 기다립니다. 끄려면 Ctrl+C (서버들은 계속 실행됨)")
     try: server.serve_forever()
     except KeyboardInterrupt: log("Ctrl+C: 허브를 끕니다")

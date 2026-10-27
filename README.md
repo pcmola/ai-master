@@ -608,6 +608,8 @@ http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 
 
 가상환경(`.\.venv\Scripts\Activate.ps1`)을 켠 뒤 실행합니다. `start.bat`은 가상환경 활성화와 `python hub.py`를 한 번에 하며 아래 옵션도 그대로 받습니다(예: `start.bat --start-all`).
 
+허브는 전용 크롬 프로필(`data/hub-chrome-profile`, 개발자 도구 포트 127.0.0.1:9222)로 열립니다. 다시 실행하면 그 포트로 예전 허브 탭(`ai-master.local`)을 닫고 새로 열어 탭이 쌓이지 않습니다. 평소 쓰는 크롬과 다른 창이라 로그인·확장 프로그램이 없으므로, Azure DevOps 링크를 처음 열 때는 다시 로그인합니다.
+
 ```powershell
 python hub.py                # 허브를 켜고 크롬으로 연다 (이미 떠 있는 허브는 끄고 새로 띄움)
 python hub.py --keep         # 이미 떠 있는 허브가 있으면 끄지 않고 종료
