@@ -1,0 +1,18 @@
+[
+  {"id": "proxy-forward-guide", "query": "포워드 프록시 설정 가이드", "expected": "AI-Master-프로젝트/02.-운영/00.-AI-문서-생성/01.-포워드-프록시-가이드.md"},
+  {"id": "proxy-access-guide", "query": "프록시 서버 접속과 허용 목록 확인", "expected": "AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-및-Proxy/02.-네트워크-및-Proxy-기준-정리/Proxy-서버-접속-및-허용-목록-확인-가이드.md"},
+  {"id": "proxy-vm-install", "query": "프록시 VM 신규 설치 및 설정", "expected": "AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-및-Proxy/02.-네트워크-및-Proxy-기준-정리/Proxy-VM-신규-설치-및-설정-가이드.md"},
+  {"id": "aks-proxy-deploy", "query": "AKS 프록시 배포 방법", "expected": "AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-및-Proxy/02.-네트워크-및-Proxy-기준-정리/AKS-Proxy-배포-가이드.md"},
+  {"id": "proxy-incident-history", "query": "프록시 장애 대응 이력", "expected": "AI-Master-프로젝트/02.-운영/01.-공통/04.-장애-대응/01.-프록시-장애-대응-이력.md"},
+  {"id": "proxy-firewall", "query": "프록시 방화벽 오픈 목록", "expected": "AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-및-Proxy/01.-네트워크-및-Proxy-현황-파악/프록시-방화벽-오픈-목록.md"},
+  {"id": "proxy-policy", "query": "프록시 정책 현황", "expected": "AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-및-Proxy/01.-네트워크-및-Proxy-현황-파악/프록시-정책-현황.md"},
+  {"id": "proxy-request", "query": "Proxy 신청 절차", "expected": "AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-및-Proxy/02.-네트워크-및-Proxy-기준-정리/Proxy-신청-절차.md"},
+  {"id": "azure-throttling", "query": "Azure API Throttling 장애", "expected": "AI-Master-프로젝트/02.-운영/03.-Data-Portal/03.-문의-대응/01.-문의-대응-현황-파악/2025-09-Azure-API-Throttling-장애.md"},
+  {"id": "requirements", "query": "요구사항 정의", "expected": "AI-Master-프로젝트/01.-개발/01.-분석-및-설계/01.-요구사항-정의.md"},
+  {"id": "architecture", "query": "아키텍처 설계", "expected": "AI-Master-프로젝트/01.-개발/01.-분석-및-설계/02.-아키텍처-설계.md"},
+  {"id": "data-interface", "query": "데이터 및 인터페이스 설계", "expected": "AI-Master-프로젝트/01.-개발/01.-분석-및-설계/03.-데이터-및-인터페이스-설계.md"},
+  {"id": "development-environment", "query": "개발 환경 구성", "expected": "AI-Master-프로젝트/01.-개발/02.-개발/01.-개발-환경-구성.md"},
+  {"id": "test-plan", "query": "테스트 계획", "expected": "AI-Master-프로젝트/01.-개발/03.-테스트/01.-테스트-계획.md"},
+  {"id": "deployment", "query": "배포 절차", "expected": "AI-Master-프로젝트/01.-개발/04.-배포.md"},
+  {"id": "azure-cli-proxy", "query": "VDI Azure CLI 프록시 설정", "expected": "AI-Master-프로젝트/01.-개발/02.-개발/01.-개발-환경-구성/VDI-Azure-CLI-프록시-설정(wsl).md"}
+]

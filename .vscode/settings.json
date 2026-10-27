@@ -7,6 +7,7 @@
   // 터미널의 http://127.0.0.1:87xx 링크를 VS Code 내장 브라우저가 아니라 크롬으로 연다.
   "workbench.browser.openLocalhostLinks": false,
   "workbench.externalBrowser": "chrome",
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
   // 실행 중에 sys.path 로 추가하는 폴더와 README 캡처용 가상환경(playwright)을 편집기도 찾도록
   "python.analysis.extraPaths": [
     "proxy_tools",

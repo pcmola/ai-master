@@ -237,6 +237,8 @@ NGINX VM을 선택하면 리버스 프록시 접속 로그와 가상 도메인�
 ```
 ai-master/
 ├─ hub.py          로컬 웹서버 허브: 로컬 서버 탭(시작·중지·재시작, 로그) + 시나리오 실행 탭
+├─ start.bat       가상환경(.venv)을 켜고 hub.py 실행 (옵션 그대로 전달)
+├─ requirements.txt  Python 패키지 목록 (anthropic·msal 은 선택)
 ├─ common/         공통 모듈: 프로젝트 경로(paths.py), 로컬 웹서버·크롬 열기(server.py), 노드별 트레이싱(trace.py)
 ├─ wiki_tools/     Wiki 검색·가이드 생성, 로컬 뷰어, Azure DevOps Wiki 문서 관리
 ├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, 프록시 정책(Squid·NGINX) 변경 감지·Task/Wiki 반영
@@ -245,7 +247,7 @@ ai-master/
 ├─ rules/          AI 작업 규칙: Wiki 문서 작성 규칙(WIKI_DOCUMENT_RULES.md). 에이전트가 자동으로 읽는 AGENTS.md 는 루트에 둔다
 ├─ pipelines/      Azure Pipelines: Wiki 가 바뀌면 첫 페이지 최근 수정 문서 갱신(wiki-recent.yml)
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
-├─ test/           API 테스트, 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py)
+├─ test/           API 테스트, 검색 정확도 벤치마크(wiki_search_benchmark.py), 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py)
 └─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git, ai-master 에서는 추적하지 않음)
 ```
 
@@ -361,12 +363,16 @@ flowchart LR
 ### 3.1 PC 도구
 
 - Windows, Python 3.11 이상, Git, [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli-windows), Chrome(없으면 기본 브라우저).
-- Python 패키지:
+- 프로젝트별 가상환경을 만들고 활성화합니다:
 
   ```powershell
-  pip install python-dotenv openai
-  pip install anthropic msal   # 선택: Anthropic 모델을 쓸 때, Teams Graph API를 시험할 때
+  python -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  python -m pip install --upgrade pip
+  python -m pip install -r requirements.txt
   ```
+
+  이후 실행할 때도 먼저 `.\.venv\Scripts\Activate.ps1`를 실행합니다. PowerShell 실행 정책으로 활성화가 막히면 한 번만 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`를 적용합니다. `anthropic`와 `msal`은 각각 Claude fallback과 Teams Graph 연동용 선택 패키지입니다. 설치 후에는 프로젝트 폴더의 `start.bat`를 더블클릭해 가상환경에서 허브를 실행할 수 있습니다. 명령줄 옵션도 전달할 수 있습니다(예: `start.bat --no-browser`).
 
 - `.env.sample`을 `.env`로 복사합니다([설정](#4-설정) 참고).
 
@@ -445,7 +451,7 @@ Copy-Item .env.sample .env
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `OPENAI_MODEL` | `gpt-6.1-sol` | 시나리오 1 가이드 작성, 시나리오 2 AI 요약·비표준 Wiki 파싱, 시나리오 3 장애 원인·수정안 분석에 쓰는 LLM. 사내 게이트웨이 배포 이름이며, 사용 가능한 이름은 해당 게이트웨이에서 확인 |
-| `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. 정답 16문항 비교에서 small·ada-002보다 정확했다 |
+| `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. `test/wiki_search_benchmark.py`로 16개 고정 질의를 재현한다 |
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮는다 |
 | `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다. 비우면 웹 검색 안 함 |
 | `WEB_SEARCH_MIN_SIM` | `0.5` | 위키 최고 임베딩 유사도가 이보다 낮으면 웹 검색. 2026-10-20 측정에서 위키에 있는 질의는 0.59 이상, 없는 질의는 0.46 이하였다 |
@@ -460,6 +466,15 @@ Copy-Item .env.sample .env
 | `PROXY_CONFIG_DIR` | `../proxy-config` | 시나리오 3이 원인을 찾고 PR을 만드는 Squid 설정 저장소(Azure Repos) 로컬 경로 |
 | `SCENARIO2_TIMEOUT` / `SCENARIO2_WIKI_PAGE` | `900` / (비움) | 승인 대기 초, 비교할 Wiki 문서(wiki-repo 기준 경로, 비우면 테스트 문서) |
 | `GUIDE_CHUNKS` / `GUIDE_CHUNK_CHARS` / `GUIDE_CONTEXT_CHARS` | `24` / `1500` / `16000` | 시나리오 1 RAG: LLM에 넘길 조각 수, 조각 하나의 대략 길이, 전체 글자 수 상한. 조각 임베딩은 `data/wiki_search_chunks.json`에 캐시 |
+| `test/wiki_search_benchmark_cases.json` | 16개 | 검색 질의와 기대 정답 문서가 고정된 hit@3 벤치마크 케이스 |
+
+검색 랭킹의 `hit@3` 수치는 다음 명령으로 재현합니다. 임베딩 API 키가 필요하며, 결과에는 사용한 모델·Wiki 문서 수·각 질의의 정답 순위가 함께 기록됩니다.
+
+```powershell
+.\.venv\Scripts\python.exe test\wiki_search_benchmark.py --output data\wiki-search-benchmark.json
+```
+
+2026-10-26 현재 Wiki 1,032개 문서와 고정 16개 케이스로 실행한 결과는 `EMBED_WEIGHT=0.8`에서 14/16(87.5%), `EMBED_WEIGHT=8`에서 15/16(93.8%)입니다. 과거 코드 주석의 68.8%·87.5%는 당시 테스트셋이 저장되어 있지 않아 이 벤치마크로 재현되는 수치로 표기하지 않습니다.
 | `WIKI_REGISTER_PUSH` | `1` | 시나리오 1 "Wiki에 등록" 때 Azure DevOps Wiki로 push(`0`이면 로컬 커밋만) |
 | `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
 | `PROXY_SSH_USER` / `PROXY_SSH_KEY` | `azureuser` / (비움: 기본 키) | 프록시 VM SSH 접속(정책 변경 감지) |
@@ -577,6 +592,8 @@ http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 
 | 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "로그". 설명은 버튼 툴팁. "현재 심어진 장애"와 최근 실행 1건 표시, `scenario3.log` 실시간 표시 |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
+
+가상환경(`.\.venv\Scripts\Activate.ps1`)을 켠 뒤 실행합니다. `start.bat`은 가상환경 활성화와 `python hub.py`를 한 번에 하며 아래 옵션도 그대로 받습니다(예: `start.bat --start-all`).
 
 ```powershell
 python hub.py                # 허브를 켜고 크롬으로 연다 (이미 떠 있는 허브는 끄고 새로 띄움)

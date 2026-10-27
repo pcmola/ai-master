@@ -1,0 +1,7 @@
+# Core runtime dependencies
+openai>=1.0,<3
+python-dotenv>=1.0,<2
+
+# Optional integrations used by Teams Graph and Claude fallback
+anthropic>=0.40,<1
+msal>=1.30,<2

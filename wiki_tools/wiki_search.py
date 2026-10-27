@@ -297,8 +297,8 @@ class Index:
                 scores[i] += 0.15 * sum(math.log1p(d.low.count(b)) for b in boost)
         sims = self.embeddings.similarity(query)
         if sims:
-            # 2026-10-19 정답 16문항 비교: text-embedding-3-large + 가중치 8 이 hit@3 87.5%, 최저 7위로 가장 좋았다
-            # (기존 0.8 은 68.8%, 최저 23위). 키워드 점수가 의미 점수를 덮지 않도록 크게 둔다.
+            # 검색 랭킹 비교는 test/wiki_search_benchmark.py와 고정된 16개 케이스로 재현한다.
+            # 키워드 점수가 의미 점수를 덮지 않도록 임베딩 가중치를 크게 둔다.
             scores = [s + EMBED_WEIGHT * max(sim, 0.0) for s, sim in zip(scores, sims)]
         ranked = sorted(range(n), key=lambda i: scores[i], reverse=True)
         return [(self.docs[i], scores[i]) for i in ranked[:limit] if scores[i] > 0.05]
