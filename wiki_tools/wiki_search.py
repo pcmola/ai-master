@@ -588,13 +588,17 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
     web_reason = web_search_reason(sources, search_query, option)
     # 유형을 골랐으면 그 유형이 속한 개념(예: proxy)을 기준으로 검색어를 만들고 결과를 거른다.
     base = key if option and key in CONCEPTS else None
-    web = []
+    web, wq, must = [], None, []
+    if not web_reason and request:
+        # 원 질의는 위키에 있어도 수정 요청이 위키 밖 사실(예: 출근지 주소)을 물을 수 있다 → 요청 기준으로 한 번 더 본다.
+        web_reason, wq, must = request_web_reason(request, title)
     if web_reason:
         replan(f"Wiki 근거 부족({web_reason})", add=[("web_search", "웹 검색으로 근거 보완 (Tavily)")], before="llm_generate")
         step("web_search")
-        wq = web_query(concepts, terms, option, base)
+        if not wq:
+            wq, must = web_query(concepts, terms, option, base), web_must(option, base, core)
         think("Tool Call", f"tavily.search(query=\"{wq[:60]}\")")
-        web = web_search(wq, web_must(option, base, core))
+        web = web_search(wq, must)
         think("Observation", f"웹 근거 {len(web)}건")
     else:
         think("Decision", "Wiki 근거로 충분 → 웹 검색 생략")
@@ -772,6 +776,55 @@ def web_search_reason(sources, query: str, option: dict | None = None) -> str | 
         return None
 
 
+def request_web_reason(request: str, title: str) -> tuple[str | None, str | None, list[str]]:
+    """수정 요청이 위키 밖 사실을 물으면 (이유, 웹 검색어, 필수어)를, 아니면 (None, None, []) 를 돌려준다.
+    2026-10-26 측정: 요청의 위키 최고 유사도가 'sk 이노베이션에 출근하려면' 0.39, '3단계를 더 자세히' 0.40,
+    'nginx 예시 추가' 0.36 이고 요청 단어의 위키 문서 수도 '출근'·'자세히' 모두 0건이라, 유사도·단어로는 서식 요청과
+    가를 수 없다. 그래서 유사도가 기준 미만일 때만 LLM 에 웹에서 찾을 사실이 있는지 묻고 검색어를 받는다."""
+    limit = float(os.environ.get("WEB_SEARCH_MIN_SIM", "0.5"))
+    with span("web_decision_request", request=request[:80], threshold=limit) as s:
+        if not os.environ.get("TAVILY_API_KEY"):
+            s.set(result="꺼짐 (TAVILY_API_KEY 없음)")
+            return None, None, []
+        sims = INDEX.embeddings.similarity(request)
+        best = max(sims) if sims else None
+        s.set(best_sim=round(best, 3) if best is not None else None)
+        if best is not None and best >= limit:
+            s.set(result="위키만 사용")
+            return None, None, []
+        client = claude_client() or openai_client()
+        if not client:
+            s.set(result="위키만 사용 (LLM 설정 없음)")
+            return None, None, []
+        prompt = (f"가이드 제목: {title}\n수정 요청: {request}\n\n"
+                  "이 요청을 반영하려면 사내 위키에 없을 외부의 사실 정보(회사·기관의 주소나 위치, 공개된 신청 절차, "
+                  "제품 정보 등)를 웹에서 찾아야 하는가?\n"
+                  "- 필요하면 '검색어 | 필수어' 한 줄만 출력하라. 검색어는 웹에 공개돼 있을 사실 하나만 찾는 짧은 말"
+                  "(예: 'SK이노베이션 본사 주소')로, 출입 절차·신규 입사자 안내처럼 회사 내부에만 있을 내용은 넣지 마라. "
+                  "필수어는 결과에 꼭 있어야 할 고유명사(예: 'SK이노베이션')다.\n"
+                  "- 요청 대부분이 사내 절차여도 일부에 웹에서 확인할 공개 사실(예: 회사 위치)이 있으면 검색어를 출력하라.\n"
+                  "- 문장 다듬기·서식·상세화·순서 변경처럼 지금 근거만으로 고칠 수 있으면 NONE 만 출력하라.")
+        try:
+            if hasattr(client, "chat"):
+                res = client.chat.completions.create(model=llm_model(client),
+                                                     messages=[{"role": "user", "content": prompt}])
+                text = res.choices[0].message.content or ""
+            else:
+                res = client.messages.create(model=llm_model(client), max_tokens=200,
+                                             messages=[{"role": "user", "content": prompt}])
+                text = "".join(b.text for b in res.content if b.type == "text")
+        except Exception as exc:
+            s.fail(f"LLM 판단 실패 → 위키만 사용: {exc}")
+            return None, None, []
+        line = (text.strip().splitlines() or [""])[0].strip().strip("\"'`")
+        query, _, must = (p.strip().strip("\"'`") for p in line.partition("|"))
+        if not query or query.upper() == "NONE":
+            s.set(result="위키만 사용 (LLM: 웹 불필요)")
+            return None, None, []
+        s.set(result="웹 검색", query=query[:100], must=must)
+        return f"수정 요청이 위키 밖 내용 (유사도 {best:.2f} < {limit})", query[:100], [must] if must else []
+
+
 def web_query(concepts: list[str], terms: list[str], option: dict | None, base: str | None = None) -> str:
     """웹 검색어: 유형 이름 + 질의의 고유어 + 개념의 한글 대표어(예: 리버스 프록시 장애). '알려줘' 같은 말투와
     '가이드' 같은 일반어, 영문 동의어는 넣지 않는다. 2026-10-23 Tavily 비교: 섞으면 게임·주식·코인 기사가 걸렸다."""
@@ -811,7 +864,9 @@ def web_search(query: str, must: list[str] = ()) -> list[dict]:
             return []
         found = [{"title": r.get("title") or r["url"], "url": r["url"], "content": (r.get("content") or "")[:2000]}
                  for r in results if r.get("url")]
-        kept = [w for w in found if not must or any(m.lower() in (w["title"] + " " + w["content"]).lower() for m in must)]
+        # 공백은 빼고 비교한다('SK 이노베이션' = 'SK이노베이션').
+        flat = lambda t: re.sub(r"\s+", "", t.lower())
+        kept = [w for w in found if not must or any(flat(m) in flat(w["title"] + " " + w["content"]) for m in must)]
         s.set(results=len(kept), dropped=len(found) - len(kept), domains=sorted({urlparse(w["url"]).netloc for w in kept})[:5])
         return kept
 
@@ -921,7 +976,8 @@ def llm_guide(client, query, title, option, statements, sources, web=(), chunks=
                    "문장·순서·코드를 바꾸지 말고 그대로 두라.\n"
                    "- 요청에 사용자가 직접 적어 준 문구·규칙·절차(따옴표 안 문장 등)는 근거 문서와 상관없이 그대로 넣어라. "
                    "사용자가 정한 운영 방침이므로 '근거 없음'으로 바꾸지 마라.\n"
-                   "- 네가 스스로 보태는 사실(명령어·설정값·경로·절차)은 위 문서 근거 범위 안에서만 쓰고, "
+                   "- 네가 스스로 보태는 사실(명령어·설정값·경로·절차)은 위 문서" + ("·웹 결과" if web else "")
+                   + " 근거 범위 안에서만 쓰고, "
                    "근거가 없으면 그 자리에 '근거 없음'이라고 적어라.\n"
                    "- '원문 링크'·'웹 참고 링크' 절은 쓰지 마라(자동으로 붙는다).")
     system = "너는 사내 위키 문서를 근거로 운영 가이드를 작성하는 기술 문서 작성자다."
@@ -995,8 +1051,11 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
         cited = [(d, sc) for d, sc in sources if d.path in used] or sources
         if cited:
             text += "\n\n## 원문 링크\n\n" + "\n".join(f"- [{d.title}]({view_link(d.path)}) — {d.path}" for d, _ in cited)
-        if web:
-            text += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
+        # 웹 결과는 본문에 (웹: URL)로 인용한 것만 붙인다. 쓰지 않은 결과(관련 없는 뉴스 등)까지 출처처럼 보이지 않게.
+        used_web = [w for w in web if w["url"] in text]
+        if used_web:
+            text += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in used_web)
+        s.set(web_cited=len(used_web))
         return text
     except Exception as exc:
         s.fail(f"LLM 호출 실패 → 템플릿 사용: {type(exc).__name__}: {exc}")
