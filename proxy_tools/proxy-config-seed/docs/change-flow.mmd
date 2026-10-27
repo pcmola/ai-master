@@ -1,0 +1,25 @@
+flowchart TD
+    subgraph normal["평소 변경"]
+        b["main 에서 브랜치"] --> e["squid/ 파일 수정"]
+        e --> v["python tests/validate.py"]
+        v --> pr["Pull Request · 검토"]
+        pr --> m["main 에 병합"]
+    end
+
+    subgraph incident["장애 대응 (ai-master 시나리오 3)"]
+        det["로그 감지<br/>incident_response.py"] --> cause["최근 커밋에서 원인 특정 (AI)<br/>+ 수정안 규칙 검증"]
+        cause --> ap{"Teams 승인"}
+        ap -- "Yes" --> fix["fix/incident-… 브랜치<br/>수정 커밋 · PR (Task 연결)"]
+        fix --> m
+    end
+
+    m --> dep["scripts/deploy.sh VM_IP<br/>VM 설정 백업 후 반영"]
+    dep --> tr["scripts/traffic.sh VM_IP<br/>ok=20 fail=0 이면 정상"]
+    tr -- "실패" --> back["되돌리기<br/>/etc/proxy/backup/시각/ 복사 또는 Revert PR"]
+
+    classDef ai fill:#EEF2FF,stroke:#6366F1,color:#312E81
+    classDef ok fill:#DCFCE7,stroke:#16A34A,color:#14532D
+    classDef warn fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D
+    class det,cause,fix ai
+    class tr ok
+    class back warn

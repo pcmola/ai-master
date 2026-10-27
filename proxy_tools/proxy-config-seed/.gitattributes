@@ -1,0 +1,2 @@
+# Files copied to the Linux VM must keep LF line endings.
+* text=auto eol=lf

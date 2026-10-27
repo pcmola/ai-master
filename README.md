@@ -249,6 +249,8 @@ ai-master/
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
 ├─ test/           API 테스트, 검색 정확도 벤치마크(wiki_search_benchmark.py), 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py)
 └─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git, ai-master 에서는 추적하지 않음)
+
+../proxy-config/   형제 폴더: Squid 설정 저장소(Azure Repos, 별도 Git). 시나리오 3·장애 재현용, proxy_tools/setup_proxy_config.py 로 만들거나 받음
 ```
 
 ```mermaid
@@ -331,6 +333,7 @@ flowchart LR
 | | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, NGINX는 journald) | http://proxy-log.local (8768) |
 | | `incident_response.py` | 시나리오 3: 로그 감지 → AI 분석 → Wiki 사례 → proxy-config 원인·수정안 → Teams 승인 → Task → 수정 PR → 장애 대응 이력 Wiki | - |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
+| | `setup_proxy_config.py` | 시나리오 3용 proxy-config 저장소 준비: Azure Repos에 있으면 받고, 없으면 `proxy-config-seed/`로 만들어 첫 커밋 push(허용 클라이언트는 `PROXY_ALLOWED_CLIENTS`) | - |
 | | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣고(`apply`) 되돌림(`restore`), 배포·시험 트래픽까지 | - |
 | | `proxy_policy_monitor.py` | 프록시 VM 전체(Squid·NGINX) 정책 변경 확인 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
 | | `proxy_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki '프록시 정책 현황' 갱신 | - |
@@ -391,6 +394,14 @@ flowchart LR
    ```
 
 4. 시나리오 2의 Task가 달릴 Epic을 하나 만들고 번호를 `SCENARIO2_EPIC_ID`에 넣습니다. Feature(`SCENARIO2_FEATURE`)와 그 달 PBI(`SCENARIO2_PBI`)는 없으면 자동으로 만듭니다.
+5. 시나리오 3을 쓰려면 Squid 설정 저장소 proxy-config를 준비합니다. ai-master와 별개인 Azure Repos 저장소이고, 기본 위치는 형제 폴더 `../proxy-config`입니다(`PROXY_CONFIG_DIR`로 변경). 먼저 `.env`의 `PROXY_ALLOWED_CLIENTS`에 프록시를 쓸 PC의 공인 IP를 넣습니다.
+
+   ```powershell
+   python proxy_tools\setup_proxy_config.py --check   # 상태만 확인
+   python proxy_tools\setup_proxy_config.py           # 프로젝트에 있으면 받고, 없으면 만들어 첫 커밋 push
+   ```
+
+   새로 만들 때는 `proxy_tools/proxy-config-seed/`(실제 IP를 뺀 설정)를 쓰고 허용 클라이언트를 `PROXY_ALLOWED_CLIENTS`로 채웁니다. 저장소를 만들려면 PAT에 **Code (Read, write, & manage)** 범위가 필요합니다. 시드에는 커밋 이력이 없어서, 원인 분석에 쓰는 변경 이력은 장애 재현(`proxy_fault_inject.py`)을 하면서 쌓입니다.
 
 ### 3.4 LLM 게이트웨이
 
@@ -1033,6 +1044,7 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 | `proxy_policy_publish.py` | `--dry-run` | `PROXY_SSH_*` |
 | `proxy_policy_monitor.py` | 없음 | `PROXY_SSH_*` |
 | `proxy_log_detect.py` | `simulate` / `detect` 하위 명령 | `PROXY_ALLOWED_CLIENTS` |
+| `setup_proxy_config.py` | `--check` | `AZURE_DEVOPS_*`, `PROXY_ALLOWED_CLIENTS`, `PROXY_CONFIG_DIR` |
 | `proxy_fault_inject.py` (장애 재현) | `list` / `status` / `apply` / `restore`, `--push`·`--deploy <VM 이름 또는 IP>` | 외부(저장소·VM)를 바꾸는 동작이라 옵션으로 명시할 때만 함 |
 
 ```powershell

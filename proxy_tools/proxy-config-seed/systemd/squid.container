@@ -1,0 +1,19 @@
+[Unit]
+Description=squid proxy (podman)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=squid
+Image=docker.io/ubuntu/squid:latest
+PublishPort=8080:8080
+Volume=/etc/proxy/proxy.conf:/etc/squid/squid.conf:ro
+Volume=/etc/proxy/lists:/etc/squid/lists:ro
+# Keep access.log/cache.log on the VM disk (survives container restarts)
+Volume=/var/log/proxy:/var/log/squid
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

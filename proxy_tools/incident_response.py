@@ -56,7 +56,7 @@ except ImportError:
 KST = timezone(timedelta(hours=9))
 WINDOW_MIN = int(os.environ.get("SCENARIO3_WINDOW_MIN") or 60)
 APPROVAL_TIMEOUT = float(os.environ.get("SCENARIO3_TIMEOUT") or 900)
-CONFIG_REPO = Path(os.environ.get("PROXY_CONFIG_DIR", PROJECT_ROOT.parent / "proxy-config"))
+CONFIG_REPO = Path(os.environ.get("PROXY_CONFIG_DIR") or PROJECT_ROOT.parent / "proxy-config")
 CONFIG_REPO_NAME = "proxy-config"
 HISTORY_DIR = WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "04.-장애-대응"
 HISTORY_PAGE = HISTORY_DIR / "01.-프록시-장애-대응-이력.md"
@@ -322,8 +322,9 @@ def create_pr(dv, fix: dict, task_id: int, when: str) -> dict:
         check = subprocess.run([sys.executable, str(CONFIG_REPO / "tests" / "validate.py")], capture_output=True,
                                stdin=subprocess.DEVNULL, cwd=CONFIG_REPO)
         if check.returncode != 0:
+            # 스크립트가 없거나 예외로 죽으면 이유가 stderr 로만 나오므로 둘 다 붙인다
             raise RuntimeError("수정안이 tests/validate.py 를 통과하지 못했습니다: "
-                               + check.stdout.decode("utf-8", "replace").strip()[:300])
+                               + (check.stdout + check.stderr).decode("utf-8", "replace").strip()[:300])
         git(CONFIG_REPO, "add", "--", fix["file"])
         git(CONFIG_REPO, "commit", "-q", "-m", f"장애 조치: {fix['fix_summary']} (Task #{task_id})")
         commit = git(CONFIG_REPO, "rev-parse", "--short", "HEAD")

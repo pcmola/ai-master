@@ -36,7 +36,7 @@ except ImportError:
 # proxy-config 의 allowed_clients 에 적힌 실제 IP. 저장소가 공개라 .env 의 PROXY_ALLOWED_CLIENTS 첫 값을 쓴다.
 CLIENT = os.environ.get("PROXY_ALLOWED_CLIENTS", "203.0.113.10/32").split(",")[0].strip().split("/")[0]
 
-REPO = Path(os.environ.get("PROXY_CONFIG_DIR", PROJECT_ROOT.parent / "proxy-config"))
+REPO = Path(os.environ.get("PROXY_CONFIG_DIR") or PROJECT_ROOT.parent / "proxy-config")
 GIT_BASH = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
 
 # file 안에서 before 가 정확히 한 번 나와야 한다. symptom 은 시험하는 사람만 보는 기대 증상이다.

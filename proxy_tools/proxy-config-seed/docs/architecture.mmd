@@ -1,0 +1,32 @@
+flowchart TB
+    subgraph repo["proxy-config 저장소 (Azure Repos)"]
+        conf["squid/proxy.conf<br/>포트·허용 클라이언트·접근 규칙"]
+        wl["squid/lists/whitelist.txt<br/>허용 도메인"]
+        unit["systemd/squid.container<br/>컨테이너 실행 설정"]
+    end
+    pc(["운영자 PC<br/>scripts/deploy.sh"])
+    repo -- "main 을 받아" --> pc
+    pc -- "검사(validate.py·squid -k parse)<br/>백업 → 설치 → reconfigure" --> etc
+
+    subgraph vm["Squid VM: wjy-proxy01 · wjy-proxy02 (Azure)"]
+        etc["/etc/proxy/<br/>proxy.conf · lists/"]
+        bak["/etc/proxy/backup/시각/<br/>배포 직전 설정 (최근 10개)"]
+        ctr["podman 컨테이너 squid<br/>:8080"]
+        log["/var/log/proxy/access.log"]
+        etc -- "읽기 전용 연결" --> ctr
+        etc -. "배포 직전 복사" .-> bak
+        ctr -- "접속 기록" --> log
+    end
+
+    client(["허용 클라이언트<br/>NSG + acl allowed_clients"]) -- "CONNECT :8080" --> ctr
+    ctr -- "443, 허용 도메인만" --> net(["data.go.kr · law.go.kr"])
+    ctr -. "그 밖의 도메인·클라이언트" .-> deny(["403 차단"])
+
+    classDef repoC fill:#DBEAFE,stroke:#3B82F6,color:#1E3A8A
+    classDef vmC fill:#FFEDD5,stroke:#F97316,color:#7C2D12
+    classDef okC fill:#DCFCE7,stroke:#16A34A,color:#14532D
+    classDef badC fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D
+    class conf,wl,unit repoC
+    class etc,bak,ctr,log vmC
+    class net,client okC
+    class deny badC
