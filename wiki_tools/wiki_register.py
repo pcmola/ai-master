@@ -18,8 +18,10 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -38,8 +40,8 @@ PARENT = WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "00.-AI-문서-�
 NUMBERED = re.compile(r"^(\d{2})\.-(.+)$")
 
 
-def git(*args: str) -> str:
-    res = subprocess.run(["git", "-C", str(WIKI_REPO), *args], capture_output=True)
+def git(*args: str, repo: Path | None = None) -> str:
+    res = subprocess.run(["git", "-C", str(repo or WIKI_REPO), *args], capture_output=True)
     out = (res.stdout + res.stderr).decode("utf-8", errors="replace").strip()
     if res.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} 실패: {out}")
@@ -80,30 +82,26 @@ def tidy(markdown: str) -> str:
     return re.sub(r"\b([Pp]roxy)\s*\(\s*프록시\s*\)", r"\1", markdown)
 
 
-def existing() -> dict[str, tuple[str, Path]]:
+def existing(parent: Path = PARENT) -> dict[str, tuple[str, Path]]:
     """번호를 뺀 업무명 → (번호, 파일)."""
     found = {}
-    if PARENT.is_dir():
-        for f in PARENT.glob("*.md"):
+    if parent.is_dir():
+        for f in parent.glob("*.md"):
             m = NUMBERED.match(f.stem)
             if m:
                 found[m.group(2)] = (m.group(1), f)
     return found
 
 
-def register(title: str, markdown: str, query: str = "", model: str | None = None, sources: int = 0, web: int = 0,
-             push: bool = True) -> dict:
-    """가이드를 등록하고 {number, path, updated, commit, pushed, url, warnings} 를 돌려준다."""
-    if not (WIKI_REPO / ".git").exists():
-        raise RuntimeError(f"wiki-repo 가 git 저장소가 아닙니다: {WIKI_REPO}")
-    if push:
-        git("pull", "--ff-only")  # 다른 사람이 먼저 올린 변경을 받아 번호가 겹치지 않게 한다
-    PARENT.mkdir(parents=True, exist_ok=True)
+def write_commit(root: Path, title: str, markdown: str, query: str, model: str | None, sources: int, web: int) -> dict:
+    """root(wiki-repo 또는 원격 기준 임시 작업 트리)에 문서·.order 를 쓰고 그 두 파일만 커밋한다."""
+    parent = root / PARENT.relative_to(WIKI_REPO)
+    parent.mkdir(parents=True, exist_ok=True)
     name = file_title(title)
-    docs = existing()
+    docs = existing(parent)
     updated = name in docs
     number = docs[name][0] if updated else f"{max((int(n) for n, _ in docs.values()), default=0) + 1:02d}"
-    page = PARENT / f"{number}.-{name}.md"
+    page = parent / f"{number}.-{name}.md"
 
     when = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
     body = tidy(wiki_links(markdown)).strip()
@@ -115,10 +113,10 @@ def register(title: str, markdown: str, query: str = "", model: str | None = Non
     text = head + body + "\n"
     page.write_text(text, encoding="utf-8", newline="\n")
     back = page.read_text(encoding="utf-8")
-    if back != text or "�" in back or re.search(r"\?{3,}", back):
+    if back != text or "\ufffd" in back or re.search(r"\?{3,}", back):
         raise RuntimeError(f"인코딩 검사 실패: {page}")
 
-    order = PARENT / ".order"
+    order = parent / ".order"
     entries = order.read_text(encoding="utf-8-sig").split() if order.is_file() else []
     if page.stem not in entries:  # 새 문서만 끝에 더한다(기존 순서 유지)
         order.write_text("\n".join(entries + [page.stem]) + "\n", encoding="utf-8", newline="\n")
@@ -127,15 +125,51 @@ def register(title: str, markdown: str, query: str = "", model: str | None = Non
     if "프록시(proxy)" in back.lower():
         warnings.append("프록시(proxy) 묶음 표기가 남아 있음")
 
-    rel = [p.relative_to(WIKI_REPO).as_posix() for p in (page, order) if p.exists()]
-    git("add", "--", *rel)
+    rel = [f.relative_to(root).as_posix() for f in (page, order) if f.exists()]
+    git("add", "--", *rel, repo=root)
     action = "갱신" if updated else "등록"
-    git("commit", "-q", "-m", f"AI 문서 {action}: {number}. {name.replace('-', ' ')}", "--", *rel)
-    commit = git("rev-parse", "--short", "HEAD")
-    if push:
-        git("push")
-    return {"number": number, "title": f"{number}. {name.replace('-', ' ')}", "path": page.relative_to(WIKI_REPO).as_posix(),
-            "updated": updated, "commit": commit, "pushed": push, "url": page_url(page), "warnings": warnings}
+    git("commit", "-q", "-m", f"AI 문서 {action}: {number}. {name.replace('-', ' ')}", "--", *rel, repo=root)
+    return {"number": number, "title": f"{number}. {name.replace('-', ' ')}", "path": page.relative_to(root).as_posix(),
+            "updated": updated, "commit": git("rev-parse", "--short", "HEAD", repo=root), "warnings": warnings}
+
+
+def register(title: str, markdown: str, query: str = "", model: str | None = None, sources: int = 0, web: int = 0,
+             push: bool = True) -> dict:
+    """가이드를 등록하고 {number, path, updated, commit, pushed, url, warnings} 를 돌려준다.
+
+    push 하면 로컬 브랜치가 아니라 원격 최신(upstream) 위의 임시 작업 트리에서 이 문서 커밋 하나만 만들어 올린다.
+    로컬 wiki-repo 에는 올리지 않는 커밋(시나리오 2 테스트 등)이 있을 수 있어, 로컬 브랜치를 pull·push 하면
+    갈라져서 실패하거나(--ff-only) 그 커밋까지 함께 올라간다. 올린 뒤 로컬은 원격 위로 다시 얹는다(rebase)."""
+    if not (WIKI_REPO / ".git").exists():
+        raise RuntimeError(f"wiki-repo 가 git 저장소가 아닙니다: {WIKI_REPO}")
+    if not push:
+        r = write_commit(WIKI_REPO, title, markdown, query, model, sources, web)
+        return {**r, "pushed": False, "url": page_url(WIKI_REPO / r["path"])}
+
+    upstream = git("rev-parse", "--abbrev-ref", "@{u}")  # 예: origin/wikiMaster
+    remote, branch = upstream.split("/", 1)
+    git("fetch", "-q", remote)  # 다른 사람이 먼저 올린 변경까지 보고 번호를 매긴다
+    tmp = Path(tempfile.mkdtemp(prefix="wiki-register-"))
+    try:
+        git("worktree", "add", "-q", "--detach", str(tmp), upstream)
+        r = write_commit(tmp, title, markdown, query, model, sources, web)
+        git("push", "-q", remote, f"HEAD:{branch}", repo=tmp)
+    finally:
+        try:
+            git("worktree", "remove", "--force", str(tmp))
+        except RuntimeError:
+            shutil.rmtree(tmp, ignore_errors=True)
+            git("worktree", "prune")
+    git("fetch", "-q", remote)
+    try:  # 로컬 전용 커밋을 원격 위로 옮겨 로컬에서도 새 문서가 보이게 한다
+        git("rebase", "-q", "--autostash", upstream)
+    except RuntimeError as exc:
+        try:
+            git("rebase", "--abort")
+        except RuntimeError:
+            pass
+        r["warnings"].append(f"Wiki 에는 올렸지만 로컬 wiki-repo 반영 실패(git rebase {upstream} 필요): {str(exc)[:200]}")
+    return {**r, "pushed": True, "url": page_url(WIKI_REPO / r["path"])}
 
 
 def main() -> int:
