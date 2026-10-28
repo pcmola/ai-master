@@ -1,18 +1,19 @@
-"""Proxy VM NSG 의 허용 IP 를 이 PC 의 현재 공인 IP 로 맞춘다.
+"""Proxy VM NSG 의 허용 IP 를 '고정 허용 IP + 이 PC 의 현재 공인 IP' 로 맞춘다.
 
 집 회선·테더링처럼 공인 IP 가 바뀌면 NSG 가 SSH(22)·프록시 포트를 막아, 시나리오 3·장애 재현·로그 뷰어의
 SSH 접속이 'Connection timed out' 으로 실패한다. 이 스크립트는 리소스 그룹의 NSG 에서
 '출발지가 단일 IP(/32)인 인바운드 Allow 규칙'(Allow-SSH, Allow-squid-8080, Allow-nginx 등)만 골라
-출발지를 현재 공인 IP/32 로 바꾼다(추가가 아니라 교체). '*'·서비스 태그·대역(/24 등) 규칙은 건드리지 않는다.
+출발지를 '.env 의 PROXY_ALLOWED_CLIENTS 에 적힌 단일 IP(집 회선 등, 항상 유지) + 현재 공인 IP/32' 로 맞춘다.
+그 밖의 예전 IP(지난 테더링 IP 등)는 지운다. '*'·서비스 태그·대역(/24 등) 규칙은 건드리지 않는다.
 
-Squid 자체의 허용 클라이언트(proxy-config 의 acl allowed_clients, .env 의 PROXY_ALLOWED_CLIENTS)는 바꾸지 않는다.
+Squid 자체의 허용 클라이언트(proxy-config 의 acl allowed_clients)는 바꾸지 않는다.
 SSH 로 로그를 읽는 데는 NSG 만 맞으면 된다.
 
-설정(.env): SCENARIO2_RESOURCE_GROUP(기본 WJY-PROXY-RG)
+설정(.env): PROXY_ALLOWED_CLIENTS(쉼표 구분, 유지할 IP), SCENARIO2_RESOURCE_GROUP(기본 WJY-PROXY-RG)
 
 사용 예:
-    python proxy_tools/sync_nsg_ip.py --check   # 현재 IP 와 규칙만 비교(아무것도 바꾸지 않음)
-    python proxy_tools/sync_nsg_ip.py           # 다른 규칙의 출발지를 현재 IP 로 교체
+    python proxy_tools/sync_nsg_ip.py --check   # 규칙만 비교(아무것도 바꾸지 않음)
+    python proxy_tools/sync_nsg_ip.py           # 다른 규칙의 출발지를 '고정 허용 IP + 현재 IP' 로 맞춤
 """
 
 from __future__ import annotations
@@ -36,6 +37,19 @@ except ImportError:
     pass
 
 RESOURCE_GROUP = os.environ.get("SCENARIO2_RESOURCE_GROUP", "WJY-PROXY-RG")
+
+
+def keep_ips() -> list[str]:
+    """PROXY_ALLOWED_CLIENTS 의 단일 IPv4(/32) 값. 대역은 NSG 단일 IP 규칙 기준에 맞지 않아 뺀다."""
+    out = []
+    for c in os.environ.get("PROXY_ALLOWED_CLIENTS", "").split(","):
+        try:
+            net = ipaddress.ip_network(c.strip(), strict=False)
+        except ValueError:
+            continue
+        if net.version == 4 and net.num_addresses == 1:
+            out.append(f"{net.network_address}/32")
+    return out
 
 
 def my_public_ip() -> str:
@@ -84,29 +98,32 @@ def main() -> int:
     ap.add_argument("--resource-group", default=RESOURCE_GROUP)
     args = ap.parse_args()
 
-    want = f"{my_public_ip()}/32"
-    print(f"현재 공인 IP: {want}  (리소스 그룹 {args.resource_group})")
+    current = f"{my_public_ip()}/32"
+    want = sorted(set(keep_ips()) | {current})
+    print(f"현재 공인 IP: {current}  유지할 IP(PROXY_ALLOWED_CLIENTS): {', '.join(keep_ips()) or '없음'}"
+          f"  (리소스 그룹 {args.resource_group})")
     rules = host_rules(args.resource_group)
     if not rules:
         print("단일 IP 허용 규칙이 있는 NSG 가 없습니다.")
         return 1
     stale = []
     for r in rules:
-        ok = r["src"] == [want]
+        ok = sorted(r["src"]) == want
         print(f"  {'=' if ok else '≠'} {r['nsg']} {r['name']} (포트 {r['port']})  출발지 {', '.join(r['src'])}")
         if not ok:
             stale.append((r["nsg"], r["name"]))
     if not stale:
-        print("모든 규칙이 현재 IP 를 허용합니다. 바꿀 것이 없습니다.")
+        print(f"모든 규칙이 {', '.join(want)} 를 허용합니다. 바꿀 것이 없습니다.")
         return 0
     if args.check:
-        print(f"현재 IP 와 다른 규칙 {len(stale)}개. 맞추려면 --check 없이 실행하세요.")
+        print(f"{', '.join(want)} 와 다른 규칙 {len(stale)}개. 맞추려면 --check 없이 실행하세요.")
         return 0
     for nsg, name in stale:
         r = az("network", "nsg", "rule", "update", "-g", args.resource_group, "--nsg-name", nsg, "-n", name,
-               "--source-address-prefixes", want)
-        print(f"  → {nsg} {name}: 출발지 {r.get('sourceAddressPrefix')} ({r.get('provisioningState')})")
-    print(f"규칙 {len(stale)}개의 출발지를 {want} 로 바꿨습니다.")
+               "--source-address-prefixes", *want)
+        src = r.get("sourceAddressPrefixes") or [r.get("sourceAddressPrefix")]
+        print(f"  → {nsg} {name}: 출발지 {', '.join(map(str, src))} ({r.get('provisioningState')})")
+    print(f"규칙 {len(stale)}개의 출발지를 {', '.join(want)} 로 맞췄습니다.")
     return 0
 
 

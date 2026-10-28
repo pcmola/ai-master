@@ -510,7 +510,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포하고 시험 접속을 보내 차단 로그를 남김 (proxy_fault_inject.py apply)">장애 재현</button></div>
 <div class="row"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
 <b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애를 되돌리는 커밋을 push 하고 wjy-proxy01 에 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌려 배포·확인 (또는 수정 PR 병합 후 배포) (proxy_fault_inject.py restore)">원상 복구</button>
-<button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 이 PC 의 현재 공인 IP 로 바꿉니다. 이전 IP 는 막힙니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: 공인 IP 가 바뀌었으면 NSG 허용 규칙을 현재 IP 로 교체 (sync_nsg_ip.py)">허용 IP 맞추기</button>
+<button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">허용 IP 맞추기</button>
 <button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')" style="margin-left:auto">로그</button></div>
 <div class="jobstate" id="s3fault-state"></div>
 <div class="jobstate" id="s3state"></div></div>
