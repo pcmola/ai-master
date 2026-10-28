@@ -107,7 +107,8 @@ def git(repo: Path, *args: str) -> str:
 # ---------------------------------------------------------------- 2. 로그 수집·감지
 
 def collect() -> list[dict]:
-    """VM 마다 {vm, rows, findings}. 최근 WINDOW_MIN 분 안의 기록만 탐지한다(오래된 장애로 매번 울리지 않게)."""
+    """VM 마다 {vm, rows, findings}, 로그를 못 읽은 VM 은 {vm, error}.
+    최근 WINDOW_MIN 분 안의 기록만 탐지한다(오래된 장애로 매번 울리지 않게)."""
     from dataclasses import asdict
     from proxy_log_detect import ALLOWED_CLIENTS, WHITELIST, detect
     from proxy_log_viewer import read_logs
@@ -127,6 +128,7 @@ def collect() -> list[dict]:
             if "error" in d:
                 s.fail(d["error"][:160])
                 print(f"{vm['name']}: 로그 읽기 실패 — {d['error']}")
+                out.append({"vm": vm, "error": d["error"]})
                 continue
             rows = [r for r in d["rows"] if r["ts"] >= since]
             found = [asdict(f) for f in detect(rows, ALLOWED_CLIENTS, WHITELIST)]
@@ -136,6 +138,26 @@ def collect() -> list[dict]:
                              f"(high·medium {sum(1 for f in found if f['severity'] in SEVERE)}건)")
         out.append({"vm": vm, "rows": rows, "findings": found})
     return out
+
+
+def access_hint(failed: list[dict]) -> None:
+    """SSH 가 타임아웃이면 이 PC 의 공인 IP 가 NSG SSH 허용 IP 와 다른지 확인해 알려 준다(회선 변경·테더링)."""
+    if not any("timed out" in r["error"].lower() for r in failed):
+        return
+    try:
+        from sync_nsg_ip import RESOURCE_GROUP, host_rules, my_public_ip
+        want = f"{my_public_ip()}/32"
+        stale = [r for r in host_rules(RESOURCE_GROUP) if r["port"] == "22" and want not in r["src"]]
+    except Exception as exc:  # az 미로그인 등: 힌트만 못 줄 뿐 진행에는 영향 없음
+        print(f"  (NSG 허용 IP 확인 실패: {type(exc).__name__}: {exc})")
+        return
+    if not stale:
+        print(f"  NSG SSH 허용 IP 는 현재 공인 IP {want} 와 같습니다. VM 의 sshd·네트워크를 확인하세요.")
+        return
+    allowed = ", ".join(sorted({s for r in stale for s in r["src"]}))
+    think("Observation", f"이 PC 공인 IP {want} ≠ NSG SSH 허용 IP {allowed} ({len(stale)}개 NSG)")
+    print(f"원인 추정: 이 PC 의 공인 IP {want} 가 NSG SSH 허용 IP {allowed} 와 다릅니다 "
+          f"→ 허브 '허용 IP 맞추기'(python proxy_tools/sync_nsg_ip.py) 후 다시 실행")
 
 
 def sample_lines(rows: list[dict], n: int = 25) -> list[str]:
@@ -426,7 +448,7 @@ def preflight(args) -> None:
                     else "웹훅 없음 → 로컬 승인 화면으로 대체"),
                    ("Azure DevOps", bool(os.environ.get("AZURE_DEVOPS_PAT")), "Task·PR 생성, Wiki push")]
     simulate(checks)
-    think("Simulation", "예상 분기: 장애 없음 → 1단계에서 종료 · 수정안 검증 실패 → 1회 자기 수정 후 수동 조치(PR 제외)"
+    think("Simulation", "예상 분기: 장애 없음 → 1단계에서 종료 · 로그 못 읽음 → 점검 불가(종료 코드 2) · 수정안 검증 실패 → 1회 자기 수정 후 수동 조치(PR 제외)"
                         + ("" if args.dry_run else " · 승인 No/시간 초과 → 기록만 하고 종료"))
 
 
@@ -437,11 +459,24 @@ def run(args) -> int:
     preflight(args)
     plan_step("collect")
     results = collect()
+    failed = [r for r in results if "error" in r]
+    results = [r for r in results if "error" not in r]
     incidents = [r for r in results if any(f["severity"] in SEVERE for f in r["findings"])]
     for r in results:
         sev = [f for f in r["findings"] if f["severity"] in SEVERE]
         print(f"{r['vm']['name']} ({r['vm']['kind']}): 최근 {WINDOW_MIN}분 {len(r['rows'])}건, "
               + (f"장애 의심 {len(sev)}건: " + ", ".join(f"[{f['severity']}] {f['title']}" for f in sev) if sev else "이상 없음"))
+    for r in failed:
+        print(f"{r['vm']['name']} ({r['vm']['kind']}): 점검 못 함 (로그 읽기 실패)")
+    if failed:
+        think("Observation", f"로그를 못 읽은 VM {len(failed)}대: {', '.join(r['vm']['name'] for r in failed)}"
+                             + (" → 점검 결과를 '장애 없음'으로 볼 수 없음" if not incidents else ""))
+        access_hint(failed)
+    if failed and not incidents:
+        replan(f"로그를 못 읽은 VM {len(failed)}대 → 분석·조치 단계 생략 (점검 불가)", drop=[n for n, _ in PLAN])
+        ok = f"(읽은 {len(results)}대는 이상 없음)" if results else ""
+        print(f"점검 불가: {len(failed)}대의 로그를 읽지 못했습니다{ok}. 접속 문제를 해결한 뒤 다시 실행하세요.")
+        return 2
     if not incidents:
         replan("high·medium 탐지 없음 → 분석·조치 단계 생략", drop=[n for n, _ in PLAN])
         print("감지된 장애가 없습니다. 종료합니다.")

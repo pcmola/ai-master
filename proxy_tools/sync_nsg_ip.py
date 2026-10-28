@@ -65,6 +65,19 @@ def host_rule(rule: dict) -> bool:
     return True
 
 
+def host_rules(resource_group: str) -> list[dict]:
+    """리소스 그룹 NSG 의 단일 IP 허용 규칙: {nsg, name, port, src(/32 로 맞춘 목록)}."""
+    out = []
+    for nsg in sorted(az("network", "nsg", "list", "-g", resource_group, "--query", "[].name") or []):
+        for rule in sorted(az("network", "nsg", "rule", "list", "-g", resource_group, "--nsg-name", nsg),
+                           key=lambda r: r["priority"]):
+            if host_rule(rule):
+                out.append({"nsg": nsg, "name": rule["name"],
+                            "port": rule.get("destinationPortRange") or ",".join(rule.get("destinationPortRanges") or []),
+                            "src": [s if "/" in s else f"{s}/32" for s in sources(rule)]})
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="비교만 하고 바꾸지 않음")
@@ -73,22 +86,16 @@ def main() -> int:
 
     want = f"{my_public_ip()}/32"
     print(f"현재 공인 IP: {want}  (리소스 그룹 {args.resource_group})")
-    nsgs = az("network", "nsg", "list", "-g", args.resource_group, "--query", "[].name")
-    if not nsgs:
-        print("NSG 가 없습니다.")
+    rules = host_rules(args.resource_group)
+    if not rules:
+        print("단일 IP 허용 규칙이 있는 NSG 가 없습니다.")
         return 1
     stale = []
-    for nsg in sorted(nsgs):
-        for rule in sorted(az("network", "nsg", "rule", "list", "-g", args.resource_group, "--nsg-name", nsg),
-                           key=lambda r: r["priority"]):
-            if not host_rule(rule):
-                continue
-            src = [s if "/" in s else f"{s}/32" for s in sources(rule)]
-            ok = src == [want]
-            print(f"  {'=' if ok else '≠'} {nsg} {rule['name']} (포트 {rule.get('destinationPortRange') or ','.join(rule.get('destinationPortRanges') or [])})"
-                  f"  출발지 {', '.join(src)}")
-            if not ok:
-                stale.append((nsg, rule["name"]))
+    for r in rules:
+        ok = r["src"] == [want]
+        print(f"  {'=' if ok else '≠'} {r['nsg']} {r['name']} (포트 {r['port']})  출발지 {', '.join(r['src'])}")
+        if not ok:
+            stale.append((r["nsg"], r["name"]))
     if not stale:
         print("모든 규칙이 현재 IP 를 허용합니다. 바꿀 것이 없습니다.")
         return 0
