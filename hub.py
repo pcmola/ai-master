@@ -267,6 +267,9 @@ JOBS = {
                         "tail": ["--push", "--deploy", "wjy-proxy01"]},
     "scenario3-restore": {"title": "시나리오 3 · 장애 원상 복구", "script": "proxy_tools/proxy_fault_inject.py", "log": "scenario3",
                           "self_log": False, "options": {}, "base": ["restore", "--push", "--deploy", "wjy-proxy01"]},
+    # 공인 IP 가 바뀌어 SSH 가 타임아웃 나면: Proxy VM NSG 의 단일 IP 허용 규칙을 이 PC 의 현재 IP 로 교체
+    "nsg-ip": {"title": "NSG 허용 IP 맞추기", "script": "proxy_tools/sync_nsg_ip.py", "log": "scenario3",
+               "self_log": False, "options": {}},
     "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
                         "self_log": False, "options": {}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
 }
@@ -507,6 +510,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포하고 시험 접속을 보내 차단 로그를 남김 (proxy_fault_inject.py apply)">장애 재현</button></div>
 <div class="row"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
 <b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애를 되돌리는 커밋을 push 하고 wjy-proxy01 에 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌려 배포·확인 (또는 수정 PR 병합 후 배포) (proxy_fault_inject.py restore)">원상 복구</button>
+<button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 이 PC 의 현재 공인 IP 로 바꿉니다. 이전 IP 는 막힙니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: 공인 IP 가 바뀌었으면 NSG 허용 규칙을 현재 IP 로 교체 (sync_nsg_ip.py)">허용 IP 맞추기</button>
 <button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')" style="margin-left:auto">로그</button></div>
 <div class="jobstate" id="s3fault-state"></div>
 <div class="jobstate" id="s3state"></div></div>
@@ -574,14 +578,14 @@ function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
 async function runJob(job,options={}){
   const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
   const d=await r.json();if(d.error){alert(d.error);return}const lk=JOBS_LOG[job];showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');setTimeout(refreshJobs,300)}
-const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3'};
+const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','nsg-ip':'scenario3'};
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11),arg=j.args.length?' '+j.args.join(' '):'';
   if(j.state==='running')return`<span class="jobstate running">● ${esc(j.title)} 실행 중 (PID ${j.pid}, ${since(j.started)}째)${esc(arg)}</span>`;
   return`<span class="jobstate ${j.code===0?'ok':'fail'}">${j.code===0?'✓':'✗'} ${esc(j.title)} 종료 코드 ${j.code} (${t} 시작${esc(arg)})</span>`}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
   const run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');document.getElementById('s2run').disabled=run;document.getElementById('s2setup').disabled=run;
-  const s3=['scenario3','scenario3-fault','scenario3-restore'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
-  ['s3run','s3inject','s3restore'].forEach(id=>document.getElementById(id).disabled=run3);
+  const s3=['scenario3','scenario3-fault','scenario3-restore','nsg-ip'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
+  ['s3run','s3inject','s3restore','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
   const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
     :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 현재 심어진 장애: ${esc(f.active.join(', '))} → 시험이 끝나면 원상 복구</span>`:'<span class="jobstate ok">현재 심어진 장애: 없음 (정상)</span>');

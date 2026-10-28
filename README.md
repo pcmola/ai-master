@@ -334,6 +334,7 @@ flowchart LR
 | | `incident_response.py` | 시나리오 3: 로그 감지 → AI 분석 → Wiki 사례 → proxy-config 원인·수정안 → Teams 승인 → Task → 수정 PR → 장애 대응 이력 Wiki | - |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
 | | `setup_proxy_config.py` | 시나리오 3용 proxy-config 저장소 준비: Azure Repos에 있으면 받고, 없으면 `proxy-config-seed/`로 만들어 첫 커밋 push(허용 클라이언트는 `PROXY_ALLOWED_CLIENTS`) | - |
+| | `sync_nsg_ip.py` | Proxy VM NSG의 단일 IP 허용 규칙(SSH·프록시 포트)을 이 PC의 현재 공인 IP로 교체. 공인 IP가 바뀌어 SSH가 `Connection timed out`일 때 | - |
 | | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣고(`apply`) 되돌림(`restore`), 배포·시험 트래픽까지 | - |
 | | `proxy_policy_monitor.py` | 프록시 VM 전체(Squid·NGINX) 정책 변경 확인 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
 | | `proxy_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki '프록시 정책 현황' 갱신 | - |
@@ -602,7 +603,7 @@ http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 
 | 탭 | 내용 |
 |---|---|
 | 로컬 서버 | 서버 표(상태·주소·PID·가동 시간, 시작·중지·재시작·로그)와 로그 창(**지우기**: 지금까지의 로그를 화면에서만 숨김, 파일은 그대로. **전체 보기**로 되돌림. 시나리오 실행 탭 로그 창도 같음). 주소를 누르면 서버 화면이 새 창으로 열림 |
-| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "로그". 설명은 버튼 툴팁. "현재 심어진 장애"와 최근 실행 1건 표시, `scenario3.log` 실시간 표시 |
+| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "허용 IP 맞추기"(`sync_nsg_ip.py`), "로그". 설명은 버튼 툴팁. "현재 심어진 장애"와 최근 실행 1건 표시, `scenario3.log` 실시간 표시 |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
 
@@ -855,7 +856,7 @@ flowchart LR
 
 ## 7. 프록시 VM 운영
 
-리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트(Squid 8080, NGINX 80)를 허용 클라이언트 IP에만 엽니다(NSG `Allow-SSH`, `Allow-squid-8080`, `Allow-nginx`). Squid는 원래 3128이었는데, 2026-10-23 집 인터넷을 SK브로드밴드로 바꾼 뒤 3128로 나가는 연결이 막혀 2026-10-25에 8080으로 옮겼습니다.
+리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트(Squid 8080, NGINX 80)를 허용 클라이언트 IP에만 엽니다(NSG `Allow-SSH`, `Allow-squid-8080`, `Allow-nginx`). 이 PC의 공인 IP가 바뀌면 `sync_nsg_ip.py`(허브 "허용 IP 맞추기")로 출발지를 현재 IP로 교체합니다. Squid는 원래 3128이었는데, 2026-10-23 집 인터넷을 SK브로드밴드로 바꾼 뒤 3128로 나가는 연결이 막혀 2026-10-25에 8080으로 옮겼습니다.
 
 | VM | 종류 | 접속 로그 위치 | 재시작·VM 중지 후 |
 |---|---|---|---|
@@ -997,6 +998,7 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
   2. 60분 안에 **② 실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
   3. 끝나면 PR을 병합·배포하거나 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`: 심어진 장애를 되돌리는 커밋 push·배포·트래픽 확인).
   - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
+  - 세 VM 모두 SSH가 `connect to host … port 22: Connection timed out`으로 실패하면 VM이 켜져 있어도 이 PC의 공인 IP가 NSG 허용 IP와 다른 경우입니다(회선 변경·테더링). 이때 시나리오 3은 로그를 못 읽고 "감지된 장애가 없습니다"로 끝나므로, **허용 IP 맞추기**(`python proxy_tools\sync_nsg_ip.py`, 비교만: `--check`)로 NSG를 현재 IP로 바꾼 뒤 다시 실행합니다. Squid의 허용 클라이언트(`acl allowed_clients`)는 바꾸지 않습니다.
   - 시험 트래픽은 이 PC에서 프록시 **8080** 포트로 보냅니다(`traffic.sh` 기본값, `PROXY_PORT`로 변경). 이 PC의 네트워크(집, SK브로드밴드)에서 3128로 나가는 연결이 막혀 Squid를 8080으로 옮겼습니다(2026-10-25).
 
 실행 출력은 `data/logs/scenario3.log`(허브에서 봄), 단계별 기록은 `data/traces/scenario3-*.jsonl`에 남습니다.
@@ -1047,6 +1049,7 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 | `proxy_policy_monitor.py` | 없음 | `PROXY_SSH_*` |
 | `proxy_log_detect.py` | `simulate` / `detect` 하위 명령 | `PROXY_ALLOWED_CLIENTS` |
 | `setup_proxy_config.py` | `--check` | `AZURE_DEVOPS_*`, `PROXY_ALLOWED_CLIENTS`, `PROXY_CONFIG_DIR` |
+| `sync_nsg_ip.py` | `--check`, `--resource-group` | `SCENARIO2_RESOURCE_GROUP`(기본 WJY-PROXY-RG) |
 | `proxy_fault_inject.py` (장애 재현) | `list` / `status` / `apply` / `restore`, `--push`·`--deploy <VM 이름 또는 IP>` | 외부(저장소·VM)를 바꾸는 동작이라 옵션으로 명시할 때만 함 |
 
 ```powershell
