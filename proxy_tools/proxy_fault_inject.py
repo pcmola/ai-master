@@ -154,8 +154,14 @@ def apply(name: str, push: bool, deploy: str | None):
     s = SCENARIOS[name]
     sync_main()
     found = active()
+    if found == [name]:  # 커밋·push 는 됐는데 배포(SSH)가 실패한 경우 등: 커밋 없이 배포·시험 트래픽만 다시
+        print(f"이미 심어진 장애: {name} ({git('log', '-1', '--format=%h %s', '--', s['file'])}) → 커밋 없이 다시 배포")
+        print(f"기대 증상: {s['symptom']}")
+        if deploy:
+            deploy_and_check(deploy, expect_fail=True)
+        return
     if found:  # 장애가 겹치면 원인이 섞여 시험 결과를 판단할 수 없다
-        raise RuntimeError(f"이미 심어진 장애가 있습니다: {', '.join(found)}. 먼저 원상 복구(restore)하세요.")
+        raise RuntimeError(f"이미 다른 장애가 심어져 있습니다: {', '.join(found)}. 먼저 원상 복구(restore)하세요.")
     path = REPO / s["file"]
     text = path.read_text(encoding="utf-8")
     if text.count(s["before"]) != 1:
