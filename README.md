@@ -421,7 +421,7 @@ flowchart LR
 | `off` | 웹 검색 안 함 |
 
 - Tavily: https://tavily.com 에 가입해 API 키를 발급받아 `TAVILY_API_KEY`에 넣습니다(무료 플랜으로 시험 가능).
-- GPT: Azure 게이트웨이의 Responses API는 api-version `2025-03-01-preview` 이상에서만 열립니다. 가이드 생성용 `OPENAI_API_VERSION`과 따로 `WEB_SEARCH_API_VERSION`(기본 `2025-04-01-preview`)을 씁니다. 검색어와 열어 볼 페이지는 GPT가 정하고, 답 글의 인용(`url_citation`)을 출처별 결과로 바꿔 Tavily 결과와 같은 방식으로 거릅니다. 한 번에 20~40초 걸려 Tavily(1~2초)보다 느립니다.
+- GPT: Azure 게이트웨이의 Responses API는 api-version `2025-03-01-preview` 이상에서만 열립니다. 가이드 생성용 `OPENAI_API_VERSION`과 따로 `WEB_SEARCH_API_VERSION`(기본 `2025-04-01-preview`)을 씁니다. 검색어와 열어 볼 페이지는 GPT가 정하고, 답 글의 인용(`url_citation`)을 출처별 결과로 바꿔 Tavily 결과와 같은 방식으로 거릅니다. 한 번에 20초에서 40초 걸려 Tavily(1초에서 2초)보다 느립니다.
 
 어느 공급자든 위키 근거가 약할 때만 웹을 검색합니다(기준: `WEB_SEARCH_MIN_SIM`, `WEB_SEARCH_MIN_VARIANT_SIM`).
 
