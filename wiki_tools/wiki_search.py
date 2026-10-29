@@ -6,8 +6,9 @@
 - 가이드 작성 LLM: ANTHROPIC_API_KEY 가 있으면 Claude, 없으면 OpenAI 호환 클라이언트를 쓴다.
 - OpenAI 호환 클라이언트: AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY 면 사내 Azure OpenAI 게이트웨이,
   OPENAI_API_KEY 면 OpenAI. 이 클라이언트가 있으면 임베딩 재순위화도 사용한다.
-- 웹 검색: TAVILY_API_KEY 가 있고 위키 근거가 약하면(최고 임베딩 유사도 < WEB_SEARCH_MIN_SIM, 또는 근거 문서 0건)
-  Tavily 검색 결과를 가이드 근거에 보탠다. 사내 게이트웨이는 내장 web_search 도구(Responses API)를 지원하지 않는다.
+- 웹 검색: 위키 근거가 약하면(최고 임베딩 유사도 < WEB_SEARCH_MIN_SIM, 또는 근거 문서 0건) 웹 검색 결과를 가이드
+  근거에 보탠다. 공급자는 WEB_SEARCH_PROVIDER(auto|tavily|gpt|off). auto 는 TAVILY_API_KEY 가 있으면 Tavily,
+  없으면 GPT 내장 web_search 도구(Responses API, 게이트웨이는 api-version 2025-03-01-preview 이상 필요).
 - 트레이싱: 요청마다 노드(refresh_index → analyze → hybrid_search(embed_query) → select_sources → web_decision →
   web_search → llm_generate | template)별 소요 시간과 결과를 콘솔(허브 로그)과 data/traces/wiki-search-YYYYMMDD.jsonl 에 남긴다.
 """
@@ -552,8 +553,8 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
               ("임베딩", bool(INDEX.embeddings.vectors), "의미 검색 사용" if INDEX.embeddings.vectors
                else "없음 → 키워드 검색만"),
               ("LLM", llm_ready, "가이드 생성" if llm_ready else "설정 없음 → 템플릿 가이드로 대체"),
-              ("웹 검색", bool(os.environ.get("TAVILY_API_KEY")), "Tavily (근거 약할 때만)"
-               if os.environ.get("TAVILY_API_KEY") else "TAVILY_API_KEY 없음 → Wiki 만 사용")])
+              ("웹 검색", bool(web_provider()), f"{WEB_LABEL.get(web_provider())} (근거 약할 때만)"
+               if web_provider() else "공급자 없음(WEB_SEARCH_PROVIDER·키 확인) → Wiki 만 사용")])
     step("analyze")
     concepts, terms, groups, fixes = traced_analyze(query)
     think("Observation", f"개념 {', '.join(concepts) or '없음'} · 고유어 {', '.join(terms[:5]) or '없음'}")
@@ -593,11 +594,11 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
         # 원 질의는 위키에 있어도 수정 요청이 위키 밖 사실(예: 출근지 주소)을 물을 수 있다 → 요청 기준으로 한 번 더 본다.
         web_reason, wq, must = request_web_reason(request, title)
     if web_reason:
-        replan(f"Wiki 근거 부족({web_reason})", add=[("web_search", "웹 검색으로 근거 보완 (Tavily)")], before="llm_generate")
+        replan(f"Wiki 근거 부족({web_reason})", add=[("web_search", f"웹 검색으로 근거 보완 ({WEB_LABEL.get(web_provider())})")], before="llm_generate")
         step("web_search")
         if not wq:
             wq, must = web_query(concepts, terms, option, base), web_must(option, base, core)
-        think("Tool Call", f"tavily.search(query=\"{wq[:60]}\")")
+        think("Tool Call", f"{web_provider()}.search(query=\"{wq[:60]}\")")
         web = web_search(wq, must)
         think("Observation", f"웹 근거 {len(web)}건")
     else:
@@ -744,15 +745,34 @@ def select_chunks(sources, query: str, words: list[str]) -> list[dict]:
         return picked
 
 
+WEB_LABEL = {"tavily": "Tavily", "gpt": "GPT 웹 검색"}
+
+
+def web_provider() -> str | None:
+    """웹 검색 공급자. WEB_SEARCH_PROVIDER=auto(기본)면 TAVILY_API_KEY 가 있으면 Tavily, 없으면 LLM 게이트웨이의 GPT.
+    tavily·gpt 로 고정하면 그 공급자만 쓰고(키·게이트웨이가 없으면 웹 검색 안 함), off 면 웹 검색을 끈다."""
+    want = os.environ.get("WEB_SEARCH_PROVIDER", "auto").strip().lower()
+    tavily = bool(os.environ.get("TAVILY_API_KEY"))
+    gpt = bool(os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY")
+               or os.environ.get("OPENAI_API_KEY"))
+    if want == "tavily":
+        return "tavily" if tavily else None
+    if want == "gpt":
+        return "gpt" if gpt else None
+    if want == "off":
+        return None
+    return "tavily" if tavily else "gpt" if gpt else None
+
+
 def web_search_reason(sources, query: str, option: dict | None = None) -> str | None:
     """위키 근거가 약해 웹 검색이 필요하면 그 이유를, 아니면 None 을 돌려준다.
     2026-10-20 측정: 위키에 있는 질의 5개는 최고 유사도 0.587~0.648, 없는 질의 5개는 0.248~0.463 이라 0.5 를 기준으로 둔다.
     유형(포워드/리버스 등)을 골랐으면 유형 이름만으로도 비교한다. 주제(프록시)는 위키에 많아도 그 유형은 없을 수 있다.
     2026-10-23 측정: '포워드 프록시' 0.499, '리버스 프록시' 0.412(위키 1,026건 중 리버스 언급 2건) 라 0.45 를 기준으로 둔다."""
     limit = float(os.environ.get("WEB_SEARCH_MIN_SIM", "0.5"))
-    with span("web_decision", enabled=bool(os.environ.get("TAVILY_API_KEY")), threshold=limit) as s:
-        if not os.environ.get("TAVILY_API_KEY"):
-            s.set(result="꺼짐 (TAVILY_API_KEY 없음)")
+    with span("web_decision", enabled=bool(web_provider()), provider=web_provider(), threshold=limit) as s:
+        if not web_provider():
+            s.set(result="꺼짐 (웹 검색 공급자 없음)")
             return None
         if not sources:
             s.set(result="웹 검색", reason="관련 위키 문서 없음")
@@ -783,8 +803,8 @@ def request_web_reason(request: str, title: str) -> tuple[str | None, str | None
     가를 수 없다. 그래서 유사도가 기준 미만일 때만 LLM 에 웹에서 찾을 사실이 있는지 묻고 검색어를 받는다."""
     limit = float(os.environ.get("WEB_SEARCH_MIN_SIM", "0.5"))
     with span("web_decision_request", request=request[:80], threshold=limit) as s:
-        if not os.environ.get("TAVILY_API_KEY"):
-            s.set(result="꺼짐 (TAVILY_API_KEY 없음)")
+        if not web_provider():
+            s.set(result="꺼짐 (웹 검색 공급자 없음)")
             return None, None, []
         sims = INDEX.embeddings.similarity(request)
         best = max(sims) if sims else None
@@ -847,28 +867,66 @@ def web_must(option: dict | None, base: str | None, core: list[str]) -> list[str
 
 
 def web_search(query: str, must: list[str] = ()) -> list[dict]:
-    """Tavily 검색 결과(제목·URL·본문 요약)를 돌려준다. must(핵심 개념 동의어)가 하나도 없는 결과는 버린다.
+    """웹 검색 결과(제목·URL·본문 요약)를 돌려준다. must(핵심 개념 동의어)가 하나도 없는 결과는 버린다.
     실패하면 빈 목록(가이드는 위키만으로 만든다)."""
-    body = {"query": query, "search_depth": "basic", "max_results": int(os.environ.get("WEB_SEARCH_MAX", "5"))}
-    if not os.environ.get("TAVILY_API_KEY"):
+    provider = web_provider()
+    if not provider:
         return []
-    req = urllib.request.Request("https://api.tavily.com/search", json.dumps(body).encode("utf-8"),
-                                 {"Content-Type": "application/json",
-                                  "Authorization": f"Bearer {os.environ['TAVILY_API_KEY']}"})
-    with span("web_search", provider="tavily", query=query, max_results=body["max_results"]) as s:
+    limit = int(os.environ.get("WEB_SEARCH_MAX", "5"))
+    with span("web_search", provider=provider, query=query, max_results=limit) as s:
         try:
-            with urllib.request.urlopen(req, timeout=20) as res:
-                results = json.load(res).get("results", [])
+            found = tavily_search(query, limit) if provider == "tavily" else gpt_search(query, limit)
         except Exception as exc:
             s.fail(f"웹 검색 실패 → 위키만 사용: {exc}")
             return []
-        found = [{"title": r.get("title") or r["url"], "url": r["url"], "content": (r.get("content") or "")[:2000]}
-                 for r in results if r.get("url")]
         # 공백은 빼고 비교한다('SK 이노베이션' = 'SK이노베이션').
         flat = lambda t: re.sub(r"\s+", "", t.lower())
         kept = [w for w in found if not must or any(flat(m) in flat(w["title"] + " " + w["content"]) for m in must)]
         s.set(results=len(kept), dropped=len(found) - len(kept), domains=sorted({urlparse(w["url"]).netloc for w in kept})[:5])
         return kept
+
+
+def tavily_search(query: str, limit: int) -> list[dict]:
+    body = {"query": query, "search_depth": "basic", "max_results": limit}
+    req = urllib.request.Request("https://api.tavily.com/search", json.dumps(body).encode("utf-8"),
+                                 {"Content-Type": "application/json",
+                                  "Authorization": f"Bearer {os.environ['TAVILY_API_KEY']}"})
+    with urllib.request.urlopen(req, timeout=20) as res:
+        results = json.load(res).get("results", [])
+    return [{"title": r.get("title") or r["url"], "url": r["url"], "content": (r.get("content") or "")[:2000]}
+            for r in results if r.get("url")]
+
+
+def gpt_search(query: str, limit: int) -> list[dict]:
+    """GPT 내장 web_search 도구(Responses API). 답 글의 url_citation 을 출처별 결과로 바꾸고, 인용 앞 문장을 본문으로 쓴다.
+    Azure 게이트웨이의 Responses API 는 api-version 2025-03-01-preview 이상에서만 열려(2026-10-29 확인)
+    가이드 생성용 OPENAI_API_VERSION 과 따로 WEB_SEARCH_API_VERSION 을 쓴다. 한 번에 15초 안팎 걸린다."""
+    if os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY"):
+        from openai import AzureOpenAI
+        client = AzureOpenAI(api_version=os.environ.get("WEB_SEARCH_API_VERSION", "2025-04-01-preview"),
+                             timeout=OPENAI_TIMEOUT, max_retries=1)
+    else:
+        from openai import OpenAI
+        client = OpenAI(timeout=OPENAI_TIMEOUT, max_retries=1)
+    res = client.responses.create(
+        model=os.environ.get("OPENAI_MODEL", "gpt-6.1-sol"), tools=[{"type": "web_search"}],
+        input=f"웹에서 '{query}' 를 검색해 서로 다른 출처 최대 {limit}곳의 핵심 사실을 한국어로 짧게 정리하라. "
+              "사실마다 줄을 바꾸고 끝에 출처를 인용하라.")
+    by_url: dict[str, dict] = {}
+    for item in res.output:
+        if item.type != "message":
+            continue
+        for part in item.content:
+            text = getattr(part, "text", "") or ""
+            for a in getattr(part, "annotations", None) or []:
+                if a.type != "url_citation":
+                    continue
+                url = re.sub(r"[?&]utm_source=openai$", "", a.url)
+                fact = text[text.rfind("\n", 0, a.start_index) + 1:a.start_index].replace("**", "").strip().lstrip("-*• ").rstrip(" ([")
+                r = by_url.setdefault(url, {"title": a.title or url, "url": url, "content": ""})
+                if fact and fact not in r["content"]:
+                    r["content"] = f"{r['content']} {fact}".strip()[:2000]
+    return list(by_url.values())[:limit]
 
 
 def llm_model(client) -> str:

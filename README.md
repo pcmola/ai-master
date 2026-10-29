@@ -18,7 +18,7 @@
   - [3.2 hosts 등록](#32-hosts-등록)
   - [3.3 Azure DevOps](#33-azure-devops)
   - [3.4 LLM 게이트웨이](#34-llm-게이트웨이)
-  - [3.5 웹 검색 (Tavily)](#35-웹-검색-tavily)
+  - [3.5 웹 검색 (Tavily 또는 GPT)](#35-웹-검색-tavily-또는-gpt)
   - [3.6 Azure 구독과 Proxy VM](#36-azure-구독과-proxy-vm)
   - [3.7 Microsoft Teams](#37-microsoft-teams)
 - [4. 설정](#4-설정)
@@ -68,7 +68,7 @@ flowchart TD
     q(["사용자 명령<br/>'프록시 설정 가이드 알려줘'"]) --> a["1. 명령 해석<br/>개념·오타 교정<br/>유형 되묻기"]
     a --> s["2. Wiki 검색<br/>키워드 + 임베딩"]
     wiki[("Azure DevOps Wiki<br/>(wiki-repo)")] --> s
-    s -. "근거 약함" .-> web["웹 검색<br/>(Tavily)"]
+    s -. "근거 약함" .-> web["웹 검색<br/>(Tavily 또는 GPT)"]
     s --> r["3. RAG·LLM 통합<br/>관련 조각(청크)만 선별"]
     web -.-> r
     r --> g["4. 가이드 생성<br/>근거 문서·출처 표기"]
@@ -95,7 +95,7 @@ flowchart TD
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
 | 1. 사용자 명령 입력 | "프록시 설정 가이드 알려줘", 주제·유형 인식, 모호하면 되묻기(포워드/리버스), 오타 교정 | 개념 사전, 자모 분해 + 편집 거리 오타 교정, 유형 선택 |
-| 2. Azure DevOps Wiki 검색 | 키워드 검색(proxy = 프록시 = 프락시), 의미 기반 검색(임베딩), 근거가 약하면 웹 검색 보완 | BM25 + 문자 bigram + `text-embedding-3-large`, Tavily |
+| 2. Azure DevOps Wiki 검색 | 키워드 검색(proxy = 프록시 = 프락시), 의미 기반 검색(임베딩), 근거가 약하면 웹 검색 보완 | BM25 + 문자 bigram + `text-embedding-3-large`, Tavily 또는 GPT 웹 검색 |
 | 3. RAG·LLM 분석·통합 | 관련 문서 선별, 중복·상충 정리, 단계별 구성 | 상위 15개 문서를 제목 단위 조각(청크)으로 나눠 질의와 가까운 조각 24개만 LLM에 전달(코드 블록·다이어그램은 자르지 않음, 같은·거의 같은 조각은 하나만). 입력 8,364 → 4,801토큰, 생성 57 → 34초(2026-10-24 측정). AI가 등록한 문서(00. AI 문서 생성)는 재료에서 제외 |
 | 4. 가이드 문서 생성 | 설정 방법·예제·주의사항, 단계마다 근거 문서, 웹 출처 따로 표시, 원문 다이어그램 유지 | `OPENAI_MODEL`(gpt-6.1-sol) |
 | 5. 사용자 확인 | 미리보기, "Wiki에 등록" 또는 "다시 생성", Markdown 복사·다운로드 | "Wiki에 등록"은 확인 창(팀원 공개·같은 제목 갱신 안내) 후 진행 |
@@ -280,7 +280,7 @@ flowchart LR
         vm["프록시 VM<br/>Squid (podman)"]
     end
     msteams["Microsoft Teams"]
-    tavily["Tavily 웹 검색<br/>(TAVILY_API_KEY 있을 때)"]
+    tavily["웹 검색<br/>Tavily(키 있을 때) 또는 GPT"]
 
     user --> hub
     hub -- "시작·중지·로그" --> viewer & search & logviewer
@@ -360,7 +360,7 @@ flowchart LR
 | hosts 등록 | 전부(허브·화면) | `127.0.0.1:포트` 주소로 뜸 |
 | Azure DevOps (Wiki·PAT·백로그·설정 저장소) | 1, 2, 3 | 문서 검색·등록, Task·수정 PR 생성 불가 |
 | LLM 게이트웨이 (Azure OpenAI 호환) | 1, 2, 3 | 가이드 생성·검색 임베딩·AI 요약·장애 원인/수정안 분석에 사용(시나리오 2는 AI 요약이 없어도 규칙 비교 가능) |
-| 웹 검색 (Tavily API 키) | 1 | 위키 근거가 약해도 웹 검색 없이 위키만 씀 |
+| 웹 검색 (Tavily API 키 또는 GPT) | 1 | 위키 근거가 약해도 웹 검색 없이 위키만 씀(Tavily 키가 없으면 LLM 게이트웨이의 GPT 웹 검색을 씀) |
 | Azure 구독과 Proxy VM | 2, 3 | 비교할 실제 VM이 없음 |
 | Microsoft Teams (회사·학교 계정, Workflows 웹후크) | 2, 3 | 승인 요청·결과 알림 카드를 못 보냄 |
 
@@ -409,12 +409,21 @@ flowchart LR
 - Azure OpenAI 호환 게이트웨이의 주소와 키를 `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`에 넣습니다.
 - 모델 두 개가 필요합니다: 답변용 `OPENAI_MODEL`(기본 `gpt-6.1-sol`), 임베딩용 `OPENAI_EMBED_MODEL`(기본 `text-embedding-3-large`).
 
-### 3.5 웹 검색 (Tavily)
+### 3.5 웹 검색 (Tavily 또는 GPT)
 
-1. https://tavily.com 에 가입하고 대시보드에서 API 키를 발급합니다(무료 플랜으로 시험 가능).
-2. `.env`의 `TAVILY_API_KEY`에 넣고 Wiki 검색 서버를 재시작합니다.
+공급자는 `.env`의 `WEB_SEARCH_PROVIDER`로 고르고, Wiki 검색 서버가 시작할 때 읽습니다(바꾸면 허브에서 재시작).
 
-위키 근거가 약할 때만 웹을 검색합니다(기준: `WEB_SEARCH_MIN_SIM`, `WEB_SEARCH_MIN_VARIANT_SIM`). 키를 비우면 웹 검색을 하지 않습니다.
+| 값 | 동작 |
+|---|---|
+| `auto` (기본) | `TAVILY_API_KEY`가 있으면 Tavily, 없으면 LLM 게이트웨이의 GPT 웹 검색 |
+| `tavily` | Tavily만. 키가 없으면 웹 검색 안 함 |
+| `gpt` | GPT 내장 `web_search` 도구(Responses API)만. 별도 키 없이 `AZURE_OPENAI_*`(또는 `OPENAI_API_KEY`)를 씀 |
+| `off` | 웹 검색 안 함 |
+
+- Tavily: https://tavily.com 에 가입해 API 키를 발급받아 `TAVILY_API_KEY`에 넣습니다(무료 플랜으로 시험 가능).
+- GPT: Azure 게이트웨이의 Responses API는 api-version `2025-03-01-preview` 이상에서만 열립니다. 가이드 생성용 `OPENAI_API_VERSION`과 따로 `WEB_SEARCH_API_VERSION`(기본 `2025-04-01-preview`)을 씁니다. 검색어와 열어 볼 페이지는 GPT가 정하고, 답 글의 인용(`url_citation`)을 출처별 결과로 바꿔 Tavily 결과와 같은 방식으로 거릅니다. 한 번에 20~40초 걸려 Tavily(1~2초)보다 느립니다.
+
+어느 공급자든 위키 근거가 약할 때만 웹을 검색합니다(기준: `WEB_SEARCH_MIN_SIM`, `WEB_SEARCH_MIN_VARIANT_SIM`).
 
 가이드의 **수정 요청**도 따로 봅니다. 원 질의는 위키에 있어도 수정 요청이 위키 밖 사실을 물을 수 있기 때문입니다(예: "신규 인력 가이드"에 "SK이노베이션에 출근하려면?"). 수정 요청의 위키 유사도가 `WEB_SEARCH_MIN_SIM` 미만이면 LLM에 공개된 사실을 찾아야 하는지 묻습니다. 필요하다고 답하면 LLM이 준 검색어(예: `SK이노베이션 본사 주소`)로 검색하고, 필수어가 없는 결과는 버립니다. "3단계를 더 자세히"처럼 서식만 바꾸는 요청은 유사도가 낮아도 웹을 쓰지 않습니다. 가이드 끝의 '웹 참고 링크'에는 본문에서 실제로 인용한 결과만 붙습니다.
 
@@ -467,7 +476,9 @@ Copy-Item .env.sample .env
 | `OPENAI_MODEL` | `gpt-6.1-sol` | 시나리오 1 가이드 작성, 시나리오 2 AI 요약·비표준 Wiki 파싱, 시나리오 3 장애 원인·수정안 분석에 쓰는 LLM. 사내 게이트웨이 배포 이름이며, 사용 가능한 이름은 해당 게이트웨이에서 확인 |
 | `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. `test/wiki_search_benchmark.py`로 16개 고정 질의를 재현한다 |
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮는다 |
-| `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다. 비우면 웹 검색 안 함 |
+| `WEB_SEARCH_PROVIDER` | `auto` | 웹 검색 공급자: `auto`(Tavily 키가 있으면 Tavily, 없으면 GPT), `tavily`, `gpt`, `off` |
+| `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다 |
+| `WEB_SEARCH_API_VERSION` | `2025-04-01-preview` | GPT 웹 검색(Responses API)에 쓰는 Azure api-version. `2025-03-01-preview` 이상 |
 | `WEB_SEARCH_MIN_SIM` | `0.5` | 위키 최고 임베딩 유사도가 이보다 낮으면 웹 검색. 2026-10-20 측정에서 위키에 있는 질의는 0.59 이상, 없는 질의는 0.46 이하였다 |
 | `WEB_SEARCH_MIN_VARIANT_SIM` | `0.45` | 유형(포워드/리버스 등)을 골랐을 때 유형 이름의 위키 최고 유사도가 이보다 낮으면 웹 검색. 2026-10-23 측정: 포워드 프록시 0.499, 리버스 프록시 0.41 |
 | `WEB_SEARCH_MAX` | `5` | 웹 검색 결과를 몇 건까지 가져올지 |
@@ -675,7 +686,7 @@ flowchart TD
     repo[("wiki-repo 문서")] --> rank
     rank --> filter["핵심 개념이 나오는 문서만<br/>상위 15개 선택"]
     filter --> weak{"위키 근거 약함?<br/>유사도 &lt; 0.5, 0건, 또는<br/>고른 유형 유사도 &lt; 0.45"}
-    weak -- "예 (TAVILY_API_KEY 있을 때)" --> web["Tavily 웹 검색<br/>핵심어 검색어<br/>관련 없는 결과 제거"]
+    weak -- "예 (공급자 있을 때)" --> web["웹 검색 (Tavily 또는 GPT)<br/>핵심어 검색어<br/>관련 없는 결과 제거"]
     weak -- "아니오" --> llm{"Azure OpenAI<br/>설정 있음?"}
     web -- "위키 + 웹 결과" --> llm
     llm -- "있음" --> openai["Azure OpenAI 게이트웨이<br/>gpt-6.1-sol로 가이드 작성"]
@@ -715,7 +726,7 @@ flowchart TD
 - 오타 교정은 한글 3음절 이상·영문 5글자 이상만 고칩니다. 2음절은 `설정`↔`결정`처럼 다른 실제 단어와 거리가 1이라 고치지 않습니다.
 - 고친 단어는 화면 해석 칩(`오타 교정: 프록실 → 프록시`)과 트레이스 `analyze` 줄(`typo_fixes=`)에 나옵니다. 검색은 고친 질의로 하므로 결과가 정상 질의와 같습니다.
 
-#### 웹 검색 (TAVILY_API_KEY 있을 때)
+#### 웹 검색 (WEB_SEARCH_PROVIDER, 3.5 참고)
 
 - 조건: 위키 최고 유사도 < `WEB_SEARCH_MIN_SIM`(0.5), 핵심 개념이 나오는 위키 문서 0건, 또는 고른 유형(예: 리버스 프록시)의 이름 유사도 < `WEB_SEARCH_MIN_VARIANT_SIM`(0.45). 주제(프록시)는 위키에 많아도 그 유형은 없을 수 있기 때문입니다.
 - 검색어는 질의 문장이 아니라 핵심 한글어로 만듭니다(예: `리버스 프록시 설정`). 말투·영문 동의어·`가이드` 같은 일반어를 섞으면 게임·주식·코인 기사가 걸렸습니다.
@@ -774,7 +785,7 @@ flowchart TD
 | Planning | 시작할 때 실행 조건(dry-run, 유형 선택, 수정 요청)에 맞춰 N단계 계획 |
 | Simulation | 실행 전에 각 단계의 전제(LLM·저장소·Teams·임베딩·웹 검색 키)를 점검하고, 대체 경로와 예상 분기를 미리 밝힘 |
 | Step i/N | 계획한 단계 시작 |
-| Tool Call / Observation | SSH·az·git·Wiki 검색·Tavily·LLM 호출과 그 결과 요약 |
+| Tool Call / Observation | SSH·az·git·Wiki 검색·웹 검색(Tavily·GPT)·LLM 호출과 그 결과 요약 |
 | Self-Correction | 검증 실패를 스스로 고침: 시나리오 3 수정안이 규칙 검증에 실패하면 이유를 LLM에 돌려주고 1회 재생성(`incident_response.py`의 `FIX_ATTEMPTS`), AI 검색어로 근거 0건이면 규칙 검색어로 재검색, 시나리오 2 표 파서 실패 → LLM 파싱·원문 대조, 시나리오 1 질의 오타 교정 |
 | Replan | 관찰 결과로 계획 변경: 장애·차이 없음 → 종료, 근거 부족 → 웹 검색 단계 추가, 자동 수정안 없음 → PR 단계 제외, 승인 거절 → 조치 단계 생략 |
 | Decision / Reflection | 분기 판단과, 결과물의 근거·신뢰도 점검 |
@@ -912,7 +923,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 |---|---|---|
 | 기본 흐름 | `프록시 설정 가이드 알려줘` | 유형 선택(포워드/리버스) → 근거 문서 재검색 → 가이드 생성, 원문 링크 |
 | 오타 교정 | `프록실 설정 가이드` | 화면의 "해석" 칩에 `프록시`로 교정되어 표시 |
-| 웹 검색 보완 | `리버스 프록시 설정 가이드` (위키 근거가 약함) | "웹 참고 링크"가 붙음(`TAVILY_API_KEY` 필요) |
+| 웹 검색 보완 | `리버스 프록시 설정 가이드` (위키 근거가 약함) | "웹 참고 링크"가 붙음(웹 검색 공급자 필요, 3.5 참고) |
 | 수정 요청 | 가이드 생성 후 "3단계를 표로 정리해 주세요" | 요청한 부분만 바뀐 새 판 |
 | Wiki 등록 | "Wiki에 등록" | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목` 문서. 시험만 할 때는 `.env`의 `WIKI_REGISTER_PUSH=0`(로컬 커밋만) |
 
