@@ -212,6 +212,51 @@ def proxy(page):
     shot(page, "proxy-log-nginx.png")
 
 
+APPROVAL_DIR = ROOT / "data/approvals"
+APPROVAL_SOURCE = {2: "proxy_status_sync.py", 3: "incident_response.py"}
+
+
+def latest_approval(number: int) -> dict | None:
+    """그 시나리오가 남긴 승인 기록 중 Yes 로 끝까지 처리된 가장 최근 것."""
+    for f in sorted(APPROVAL_DIR.glob("*.json"), reverse=True):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        s = d.get("state") or {}
+        if d.get("source") == APPROVAL_SOURCE[number] and s.get("decision") == "yes" and s.get("done"):
+            return d
+    return None
+
+
+def preview_server(ask: bytes, progress: bytes, status: bytes):
+    """승인·진행 화면을 읽기 전용으로 띄운다(버튼을 눌러도 아무것도 하지 않음)."""
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            data, kind = (status, "application/json") if self.path == "/status" else (
+                progress if self.path == "/progress" else ask, "text/html")
+            self.send_response(200)
+            self.send_header("Content-Type", kind + "; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_POST(self):
+            self.send_error(405, "Read-only screenshot preview")
+
+        def log_message(self, *_):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def recorded_server(saved: dict):
+    """실제 실행 때 저장한 승인 화면 내용과 최종 진행 상태로 같은 화면을 그린다(예시 띠 없음)."""
+    links = [tuple(l) for l in saved.get("links") or []]
+    ask = ask_page(saved["title"], saved["items"], saved["question"], links, saved.get("candidates"))
+    status = json.dumps(saved["state"], ensure_ascii=False).encode("utf-8")
+    return preview_server(ask, progress_page(saved["title"]), status)
+
+
 def example_server(number):
     if number == 2:
         title = "시나리오 2 · 프록시 현황 Wiki 현행화"
@@ -254,32 +299,17 @@ def example_server(number):
         "steps": [{"text": s, "state": "ok", "link": None} for s in steps],
         "links": [["Wiki 뷰어", SITES["viewer"]], ["허브로 돌아가기", SITES["hub"]]],
     }, ensure_ascii=False).encode("utf-8")
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            data, kind = (status, "application/json") if self.path == "/status" else (
-                progress if self.path == "/progress" else ask, "text/html")
-            self.send_response(200)
-            self.send_header("Content-Type", kind + "; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        def do_POST(self):
-            self.send_error(405, "Read-only screenshot preview")
-
-        def log_message(self, *_):
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server
+    return preview_server(ask, progress, status)
 
 
 def approval(page):
     page.set_viewport_size({"width": 960, "height": 860})
     for number, prefix in [(2, "approval"), (3, "scenario3-approval")]:
-        server = example_server(number)
+        # 실제 실행 기록(data/approvals/)이 있으면 그것으로, 없으면 예시 데이터로 그린다(예시는 노란 띠 표시)
+        saved = latest_approval(number)
+        print(f"{prefix}: " + (f"실제 실행 기록 ({saved.get('asked_at')}, {saved['title']})" if saved else "기록 없음 → 예시 데이터"),
+              flush=True)
+        server = recorded_server(saved) if saved else example_server(number)
         try:
             url = f"http://127.0.0.1:{server.server_port}"
             ready(page, url)

@@ -544,6 +544,7 @@ Copy-Item .env.sample .env
 | `proxy_policy_state/` | proxy_policy_publish.py (VM별 정책 기준 스냅샷 `<VM>.json`, 변경 이력) |
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
 | `teams_cards/` | teams_notify.py (보낸 Teams 카드 JSON, README 카드 화면 재촬영용) |
+| `approvals/` | approval_local.py (로컬 승인 화면 내용·최종 진행 상태, README 승인 화면 재촬영용) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
 | `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 "시나리오 실행" 탭에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py·proxy_status_sync.py·proxy_log_viewer.py (요청·실행별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
@@ -1081,10 +1082,10 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 | 시나리오 1 | 실제 Wiki 검색 → 포워드 가이드 생성(캐시가 있으면 "새로 만들기"로 새로 생성) → "다시 선택"으로 같은 질의 재요청(캐시 사용) → 리버스 가이드 생성(웹 검색 보완)·수정 입력 영역 확인 | LLM·임베딩, 조건에 따라 웹 검색 API 호출. Wiki 등록·수정 반영 버튼은 누르지 않음 |
 | 시나리오 2 | 허브에서 저장된 점검 로그 조회 | 새 점검·Teams 요청·Task 생성·Wiki 갱신 없음 |
 | 시나리오 3 | Squid·NGINX 실제 로그·정책 조회, 허브의 기존 실행 로그 조회 | SSH 읽기만 수행. 장애 주입·복구·PR 생성·배포 없음 |
-| 승인·완료 화면 | 실제 승인 UI 렌더러 + 별도 읽기 전용 예시 서버 | 없음. 화면에 **화면 예시 · 외부 반영 없음** 표시 |
+| 승인·완료 화면 | 실제 실행 때 `data/approvals/`에 남긴 승인 화면 내용·최종 진행 상태(시나리오별 Yes로 끝난 최신 1건)를 같은 화면 코드로 읽기 전용 서버에 띄워 촬영. 기록이 없으면 예시 데이터 | 없음. 예시 데이터일 때만 **화면 예시 · 외부 반영 없음** 표시 |
 | Teams 카드 (`--only teams`) | `data/teams_cards/`에 남은 **실제 전송 카드** 중 종류별 최신 1장(시나리오 2·3의 승인 요청·결과)을 Adaptive Cards 공식 렌더러(`adaptivecards@3.0.5`)로 그림 → `teams-scenario2-approval.png`, `teams-scenario2-result.png`, `teams-scenario3-approval.png`, `teams-scenario3-result.png` | 없음. Teams에 다시 보내지 않음. 멘션 이름·계정·PC 이름은 그리기 전에, IP·이메일은 화면에서 가림 |
 
-Teams 카드는 `teams_notify.send`가 보낼 때마다 `data/teams_cards/`(Git 제외)에 JSON으로 남깁니다(`TEAMS_CARD_ARCHIVE=0`이면 끔). Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요해서 보내는 쪽에서 남깁니다. 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2(테스트 환경 준비 → 실행 → Yes)와 시나리오 3(장애 재현 → 실행 → Yes)을 실제로 한 번씩 실행합니다. 스크립트는 표시되는 IP·이메일·ID를 가리고 촬영하며, 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다. 공유 전에는 이미지도 직접 확인합니다. 시나리오 2 로그를 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다(비교·AI 요약만 수행, 로컬 로그·트레이스 기록).
+로컬 승인 화면은 승인을 기다리는 동안에만 떠 있으므로, `approval_local.Approval`이 화면 내용과 끝난 뒤 진행 상태를 `data/approvals/`(Git 제외)에 남깁니다(`APPROVAL_ARCHIVE=0`이면 끔). Teams 카드는 `teams_notify.send`가 보낼 때마다 `data/teams_cards/`(Git 제외)에 JSON으로 남깁니다(`TEAMS_CARD_ARCHIVE=0`이면 끔). Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요해서 보내는 쪽에서 남깁니다. 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2(테스트 환경 준비 → 실행 → Yes)와 시나리오 3(장애 재현 → 실행 → Yes)을 실제로 한 번씩 실행합니다. 스크립트는 표시되는 IP·이메일·ID를 가리고 촬영하며, 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다. 공유 전에는 이미지도 직접 확인합니다. 시나리오 2 로그를 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다(비교·AI 요약만 수행, 로컬 로그·트레이스 기록).
 
 <sub>[↑ 목차로](#목차)</sub>
 
