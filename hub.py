@@ -351,20 +351,13 @@ def s2_links(refresh: bool = False) -> dict:
                     pass
             return {"title": page.stem.replace("-", " "), "path": rel, "local": f"{viewer}/?path={quote(rel)}", "devops": devops}
 
-        data: dict = {"status_page": doc(ps.WIKI_PAGE), "vms": [], "error": None}
+        # Azure 링크는 Portal 의 VM 목록 화면(Compute infrastructure > Virtual machines). 옆에 Proxy VM 상태 요약만 붙인다.
+        data: dict = {"status_page": doc(ps.WIKI_PAGE), "vms": [], "error": None,
+                      "portal_vms": "https://portal.azure.com/#view/Microsoft_Azure_ComputeHub/ComputeHubMenuBlade/~/virtualMachinesBrowse"}
         try:
-            sub = ps.az("account", "show", "--query", "id")
-            vms = ps.proxy_vms()
+            data["vms"] = [{"name": v["name"], "state": v["state"]} for v in ps.proxy_vms()]
         except Exception as exc:
             data["error"] = f"Azure VM 조회 실패: {exc}"[:200]
-            vms, sub = [], ""
-        for v in vms:
-            rid = f"/subscriptions/{sub}/resourceGroups/{v['resource_group']}/providers/Microsoft.Compute/virtualMachines/{v['name']}"
-            data["vms"].append({"name": v["name"], "state": v["state"], "public_ip": v["public_ip"],
-                                "portal": f"https://portal.azure.com/#@/resource{rid}/overview" if sub else ""})
-        data["portal_rg"] = (f"https://portal.azure.com/#@/resource/subscriptions/{sub}/resourceGroups/{ps.RESOURCE_GROUP}/overview"
-                             if sub else "")
-        data["resource_group"] = ps.RESOURCE_GROUP
         _s2_cache.update(at=time.time(), data=data)
         return data
 
@@ -559,7 +552,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
 <button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div>
-<div class="s2links" id="s2links"><span class="muted">Wiki 문서·Proxy VM 링크 불러오는 중…</span></div></div>
+<div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div>
 <div class="card sc"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
 <p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 남깁니다. 시험: wjy-proxy01 (실제 저장소·VM을 바꿈)</p>
 <div class="row" style="flex-wrap:nowrap"><b>①</b><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:1;min-width:0">
@@ -628,17 +621,15 @@ function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t
   document.getElementById('pane-scenarios').hidden=t!=='scenarios';document.getElementById('allbtns').style.visibility=t==='servers'?'':'hidden';
   document.getElementById('mt-servers').classList.toggle('on',t==='servers');document.getElementById('mt-scenarios').classList.toggle('on',t==='scenarios');
   if(t==='scenarios'){refreshJobs();loadS2Links();if(!slogKey)showLog('scenario2','시나리오 2 로그')}}
-// 시나리오 2: Wiki 현황 문서와 Proxy VM(Azure Portal) 링크. 서버가 5분 캐시, '새로 읽기'는 즉시.
+// 시나리오 2: Azure Portal VM 목록과 Wiki 현황 문서, 두 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
 async function loadS2Links(refresh){const box=document.getElementById('s2links');if(refresh)box.innerHTML='<span class="muted">다시 읽는 중…</span>';
   let d;try{d=await (await fetch('/api/s2links'+(refresh?'?refresh=1':''))).json()}catch(e){box.innerHTML='<span class="muted">링크를 불러오지 못했습니다.</span>';return}
   const a=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`:'';
   const doc=x=>`${a(x.local,x.title)}${x.devops?' · '+a(x.devops,'Azure DevOps'):''}`;
   const sp=d.status_page;
-  box.innerHTML=`<div class="head"><b>Wiki 문서 · Proxy VM</b>${d.portal_rg?a(d.portal_rg,'리소스 그룹 '+(d.resource_group||'')):''}<button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`
-    +(sp?`<div>Wiki 현황 문서: ${doc(sp)}${sp.devops?'':' <span class="muted">(Azure DevOps Wiki 에 없음)</span>'}</div>`:'')
-    +(d.error?`<div class="muted">${esc(d.error)}</div>`:'')
-    +(d.vms||[]).map(v=>`<div>${a(v.portal,v.name)||esc(v.name)} <span class="muted">${esc(v.state)} · ${esc(v.public_ip)}</span></div>`).join('')
-    +(d.vms&&!d.vms.length&&!d.error?'<div class="muted">Proxy VM 없음</div>':'')}
+  const up=(d.vms||[]).filter(v=>v.state==='운영').length,n=(d.vms||[]).length;
+  box.innerHTML=`<div class="head">Azure: ${a(d.portal_vms,'Proxy VM 목록')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 운영 (${(d.vms||[]).map(v=>esc(v.name)).join(', ')})`:'Proxy VM 없음'}</span><button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`
+    +(sp?`<div>Wiki: ${doc(sp)}</div>`:'')}
 // ---------------------------------------------------------------- 시나리오 실행
 let jobs={}, slogKey=null;
 function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
