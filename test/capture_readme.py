@@ -99,6 +99,40 @@ def guide(page, label, *, fresh):
     print(f"guide {label}: " + page.locator("#gen").inner_text(), flush=True)
 
 
+# README 설명이 가리키는 곳에 빨간 테두리를 그린다. 각 식은 요소 하나 또는 배열을 돌려주고, 식마다 상자 하나(합친 영역).
+MARK_JS = r"""(exprs) => {
+  document.querySelectorAll('.readme-mark').forEach(e => e.remove());
+  for (const expr of exprs) {
+    let els = new Function('return (' + expr + ')')();
+    els = (Array.isArray(els) ? els : [els]).filter(Boolean);
+    if (!els.length) continue;
+    const r = els.map(e => e.getBoundingClientRect());
+    const x1 = Math.min(...r.map(a => a.left)), y1 = Math.min(...r.map(a => a.top));
+    const x2 = Math.max(...r.map(a => a.right)), y2 = Math.max(...r.map(a => a.bottom));
+    const d = document.createElement('div');
+    d.className = 'readme-mark';
+    Object.assign(d.style, {position: 'absolute', left: (x1 + scrollX - 6) + 'px', top: (y1 + scrollY - 6) + 'px',
+      width: (x2 - x1 + 12) + 'px', height: (y2 - y1 + 12) + 'px', border: '3px solid #e11d48',
+      borderRadius: '6px', pointerEvents: 'none', zIndex: 9999});
+    document.body.appendChild(d);
+  }
+}"""
+BADGE = "document.querySelector('#gen')"
+WEB_CHIP = "[...document.querySelectorAll('#analysis .chip')].filter(e => e.textContent.includes('웹 검색'))"
+# 본문 문단만 본다(다이어그램 글자 '웹 서버' 등은 제외). 웹 자료로 보완했다는 문장.
+WEB_NOTE = "[...document.querySelectorAll('#guide > p')].find(p => p.textContent.includes('웹') && p.textContent.includes('보완'))"
+# 왼쪽 '웹 검색 결과' 제목과 그 뒤 결과들, 가이드 끝 '웹 참고 링크' 제목과 목록
+WEB_RESULTS = ("(() => { const h = [...document.querySelectorAll('#results h2')].find(e => e.textContent.includes('웹 검색 결과'));"
+               " if (!h) return []; const out = [h]; let n = h.nextElementSibling;"
+               " while (n && n.classList.contains('res')) { out.push(n); n = n.nextElementSibling; } return out; })()")
+WEB_LINKS = ("(() => { const h = [...document.querySelectorAll('#guide h2')].find(e => e.textContent.includes('웹 참고 링크'));"
+             " return h ? [h, h.nextElementSibling] : []; })()")
+
+
+def mark(page, *exprs):
+    page.evaluate(MARK_JS, list(exprs))
+
+
 def reselect(page):
     """'다시 선택'으로 같은 질의를 다시 검색해 유형 버튼을 띄운다."""
     page.locator("#re").click()
@@ -113,23 +147,29 @@ def wiki(page):
     shot(page, "wiki-search-type.png")
     # 캐시 저장 전: 캐시가 있으면 '새로 만들기'로 LLM 이 새로 쓰게 한다(이때 캐시에 저장됨). Wiki 등록 버튼은 누르지 않는다.
     guide(page, "포워드", fresh=True)
+    mark(page, BADGE)
     shot(page, "wiki-search-guide.png")
+    mark(page)
     page.locator("#revise").scroll_into_view_if_needed()
     shot(page, "wiki-search-revise.png")
     # 캐시 저장 후: 같은 질의·유형을 다시 고르면 근거 지문이 같아 LLM 없이 저장된 가이드가 나온다.
     reselect(page)
     guide(page, "포워드", fresh=False)
     page.evaluate("window.scrollTo(0, 0)")
+    mark(page, BADGE)
     shot(page, "wiki-search-cache.png")
     # 웹 검색: 리버스 프록시는 위키 근거가 약해(유형 유사도 0.41 < 0.45) 웹 검색 결과를 근거에 보탠다.
     reselect(page)
     guide(page, "리버스", fresh=True)
     page.evaluate("window.scrollTo(0, 0)")
+    mark(page, WEB_CHIP, WEB_NOTE)
     shot(page, "wiki-search-web.png")
     links = page.locator("#guide h2").filter(has_text="웹 참고 링크")
     if links.count():
         links.first.scroll_into_view_if_needed()
+        mark(page, WEB_RESULTS, WEB_LINKS)
         shot(page, "wiki-search-web-links.png")
+    mark(page)
 
 
 def viewer(page):
