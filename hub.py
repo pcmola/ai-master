@@ -639,15 +639,15 @@ function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t
   document.getElementById('pane-scenarios').hidden=t!=='scenarios';document.getElementById('allbtns').style.visibility=t==='servers'?'':'hidden';
   document.getElementById('mt-servers').classList.toggle('on',t==='servers');document.getElementById('mt-scenarios').classList.toggle('on',t==='scenarios');
   if(t==='scenarios'){refreshJobs();loadS2Links();if(!slogKey)showLog('scenario2','시나리오 2 로그')}}
-// 시나리오 2: Azure Portal VM 목록과 Wiki 현황 문서, 두 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
+// 시나리오 2: Wiki 현황 문서와 Azure Portal VM 목록, 두 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
 async function loadS2Links(refresh){const box=document.getElementById('s2links');if(refresh)box.innerHTML='<span class="muted">다시 읽는 중…</span>';
   let d;try{d=await (await fetch('/api/s2links'+(refresh?'?refresh=1':''))).json()}catch(e){box.innerHTML='<span class="muted">링크를 불러오지 못했습니다.</span>';return}
   const a=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`:'';
   const doc=x=>`${a(x.local,x.title)}${x.devops?' · '+a(x.devops,'Azure DevOps'):''}`;
   const sp=d.status_page;
   const up=(d.vms||[]).filter(v=>v.state==='운영').length,n=(d.vms||[]).length;
-  box.innerHTML=`<div class="head">Azure: ${a(d.portal_vms,'Proxy VM 목록')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 실행 중`:'Proxy VM 없음'}</span><button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`
-    +(sp?`<div>Wiki: ${doc(sp)}</div>`:'')}
+  box.innerHTML=`<div class="head">${sp?'Wiki: '+doc(sp):''}<button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`
+    +`<div>Azure: ${a(d.portal_vms,'Proxy VM 목록')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 실행 중`:'Proxy VM 없음'}</span></div>`}
 // ---------------------------------------------------------------- 시나리오 실행
 let jobs={}, slogKey=null;
 function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
