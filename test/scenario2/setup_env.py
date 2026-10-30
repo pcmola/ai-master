@@ -79,7 +79,7 @@ def make_seed(vms: list[dict]) -> tuple[list[dict], list[dict]]:
 
 def render_page(seed: list[dict]) -> str:
     rows = "\n".join("| " + " | ".join(r[f] for f in FIELDS) + " |" for r in seed)
-    return f"""# Proxy VM 현황 (테스트 구독)
+    return f"""# Proxy VM 현황
 
 > 기준 리소스 그룹: {RESOURCE_GROUP}
 > 최종 수정: 2026-10-01 · 작성: 인프라운영팀

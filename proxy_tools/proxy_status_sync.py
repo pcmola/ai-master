@@ -62,7 +62,7 @@ KST = timezone(timedelta(hours=9))
 RESOURCE_GROUP = os.environ.get("SCENARIO2_RESOURCE_GROUP", "WJY-PROXY-RG")
 NAME_PATTERN = r"(?i)(proxy|prxy|pxy)\d*$"
 TEST_PAGE = (WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "06.-네트워크-및-Proxy"
-             / "01.-네트워크-및-Proxy-현황-파악" / "Proxy-VM-현황-(테스트-구독).md")
+             / "01.-네트워크-및-Proxy-현황-파악" / "Proxy-VM-현황.md")
 WIKI_PAGE = WIKI_REPO / os.environ["SCENARIO2_WIKI_PAGE"] if os.environ.get("SCENARIO2_WIKI_PAGE") else TEST_PAGE
 PUSH = os.environ.get("SCENARIO2_PUSH", "0") == "1"
 APPROVAL_TIMEOUT = float(os.environ.get("SCENARIO2_TIMEOUT") or 900)
@@ -339,7 +339,7 @@ def explained(diffs: list[dict], ai: dict | None = None) -> list[str]:
 # ---------------------------------------------------------------- 5 승인
 
 def wiki_fact(links: list[tuple[str, str]]) -> str:
-    """Teams 카드 표(FactSet)에 넣을 문서 링크: 'Proxy VM 현황 (테스트 구독)' (Azure DevOps Wiki) · 로컬 뷰어."""
+    """Teams 카드 표(FactSet)에 넣을 문서 링크: 'Proxy VM 현황' (Azure DevOps Wiki) · 로컬 뷰어."""
     title = WIKI_PAGE.stem.replace("-", " ")
     devops_url = next((u for l, u in links if u and l.startswith("Azure DevOps")), "")
     local_url = next((u for l, u in links if u and "로컬" in l), "")

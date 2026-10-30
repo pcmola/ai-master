@@ -957,7 +957,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 ```mermaid
 flowchart LR
     setup["setup_env.py"] -- "실제 VM 조회" --> az[("Azure<br/>WJY-PROXY-RG")]
-    setup -- "'현행화 전' 문서 쓰기<br/>로컬 커밋" --> wiki[("wiki-repo<br/>Proxy VM 현황 (테스트 구독)")]
+    setup -- "'현행화 전' 문서 쓰기<br/>로컬 커밋" --> wiki[("wiki-repo<br/>Proxy VM 현황")]
     setup -- "스냅샷·정답 저장" --> data[("data/scenario2/")]
     scenario["proxy_status_sync.py<br/>(시나리오 2 실행)"] --> az & wiki
     scenario -- "Yes/No" --> approval["approval_local.py<br/>(Teams 대체)"]
