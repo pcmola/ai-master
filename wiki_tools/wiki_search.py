@@ -48,6 +48,9 @@ GUIDE_CHUNKS = int(os.environ.get("GUIDE_CHUNKS", "24"))           # LLM 에 넘
 GUIDE_CHUNK_CHARS = int(os.environ.get("GUIDE_CHUNK_CHARS", "1500"))  # 조각 하나의 대략적인 최대 길이
 GUIDE_CONTEXT_CHARS = int(os.environ.get("GUIDE_CONTEXT_CHARS", "16000"))  # 넘길 조각 전체 글자 수 상한
 EMBED_WEIGHT = float(os.environ.get("EMBED_WEIGHT", "8"))  # 혼합 검색에서 임베딩 유사도 가중치
+# 가이드 작성 호출만 더 길게 기다린다. 게이트웨이가 응답을 모아 한 번에 보내서, 긴 가이드(수정 요청은 지금 가이드 전체를
+# 다시 씀, 3만 자)는 첫 바이트까지 120초를 넘겼다(2026-10-30 ReadTimeout).
+GUIDE_LLM_TIMEOUT = float(os.environ.get("GUIDE_LLM_TIMEOUT", "300"))
 OPENAI_TIMEOUT = 120  # 초. 게이트웨이가 응답하지 않으면 오래 매달리지 않고 오프라인 검색으로 넘어간다.
 # 검색 결과의 문서 링크. 비우면 wiki_viewer.py 가 뜨는 주소(hosts 의 wiki.local 기준)를 쓴다.
 VIEWER = os.environ.get("WIKI_VIEWER_URL") or site_url("wiki.local", 8765)[2]
@@ -1161,7 +1164,7 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
     try:
         if hasattr(client, "chat"):  # OpenAI / Azure OpenAI 게이트웨이
             stream = client.chat.completions.create(
-                model=llm_model(client), stream=True, stream_options={"include_usage": True},
+                model=llm_model(client), stream=True, stream_options={"include_usage": True}, timeout=GUIDE_LLM_TIMEOUT,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
             chunks, finish = 0, None
             for chunk in stream:
@@ -1171,7 +1174,8 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
                           reasoning_tokens=getattr(u.completion_tokens_details, "reasoning_tokens", None))
                 if chunk.choices:
                     finish = chunk.choices[0].finish_reason or finish
-                piece = chunk.choices[0].delta.content if chunk.choices else None
+                # 게이트웨이가 delta 없는 조각(콘텐츠 필터 결과 등)을 끼워 보낼 때가 있다(2026-10-30 수정 요청 실패)
+                piece = getattr(chunk.choices[0].delta, "content", None) if chunk.choices else None
                 if piece:
                     chunks += 1
                     text += piece
