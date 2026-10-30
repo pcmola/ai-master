@@ -300,7 +300,9 @@ class Index:
             cos = sum(w * d.grams.get(g, 0.0) for g, w in qv.items()) / (qn * d.norm)
             scores[i] = scores[i] / top + 0.5 * cos
             if boost:
-                scores[i] += 0.15 * sum(math.log1p(d.low.count(b)) for b in boost)
+                # 유형 단어는 3번까지만 센다. 그대로 세면 긴 기록 문서가 이긴다(2026-10-30: '01. 프록시 장애 대응 이력'
+                # 18,547자에 '허용' 69·'차단' 95번 → 포워드 유형에서 2위, 설치 가이드는 4위). 상한 3이면 리버스 순위는 그대로.
+                scores[i] += 0.15 * sum(math.log1p(min(d.low.count(b), 3)) for b in boost)
         sims = self.embeddings.similarity(query)
         if sims:
             # 검색 랭킹 비교는 test/wiki_search_benchmark.py와 고정된 16개 케이스로 재현한다.
