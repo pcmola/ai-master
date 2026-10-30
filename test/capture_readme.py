@@ -85,20 +85,51 @@ def shot(page, name, *, full_page=False):
     print(f"captured {name}", flush=True)
 
 
+def guide(page, label, *, fresh):
+    """유형 버튼을 눌러 가이드를 받는다. fresh 면 캐시로 나온 경우 '새로 만들기'로 LLM 생성을 강제한다."""
+    page.locator("#ask .opt").filter(has_text=label).first.click()
+    page.wait_for_function("state.done !== null", timeout=300000)
+    if fresh and page.evaluate("!!state.done.cached"):
+        page.locator("#regen").click()
+        page.wait_for_function("state.done !== null && !state.done.cached", timeout=300000)
+    page.locator("#tools").wait_for(state="visible")
+    # 다이어그램(mermaid)은 가이드가 나온 뒤 따로 그려진다. 다 그려지기 전에 찍으면 빈 칸으로 나온다.
+    page.wait_for_function("[...document.querySelectorAll('#guide .mermaid')].every(e => e.querySelector('svg'))",
+                           timeout=60000)
+    print(f"guide {label}: " + page.locator("#gen").inner_text(), flush=True)
+
+
+def reselect(page):
+    """'다시 선택'으로 같은 질의를 다시 검색해 유형 버튼을 띄운다."""
+    page.locator("#re").click()
+    page.locator("#ask .opt").first.wait_for(timeout=60000)
+
+
 def wiki(page):
     ready(page, SITES["wiki"])
     page.locator("#q").fill("프록시 설정 가이드 알려줘")
     page.locator("#go").click()
     page.locator("#ask .opt").first.wait_for(timeout=60000)
     shot(page, "wiki-search-type.png")
-    # 실제 보이는 유형 버튼을 선택한다. Wiki 등록 버튼은 누르지 않는다.
-    page.locator("#ask .opt").filter(has_text="포워드").first.click()
-    page.wait_for_function("state.done !== null", timeout=240000)
-    page.locator("#tools").wait_for(state="visible")
-    print("guide: " + page.locator("#gen").inner_text(), flush=True)
+    # 캐시 저장 전: 캐시가 있으면 '새로 만들기'로 LLM 이 새로 쓰게 한다(이때 캐시에 저장됨). Wiki 등록 버튼은 누르지 않는다.
+    guide(page, "포워드", fresh=True)
     shot(page, "wiki-search-guide.png")
     page.locator("#revise").scroll_into_view_if_needed()
     shot(page, "wiki-search-revise.png")
+    # 캐시 저장 후: 같은 질의·유형을 다시 고르면 근거 지문이 같아 LLM 없이 저장된 가이드가 나온다.
+    reselect(page)
+    guide(page, "포워드", fresh=False)
+    page.evaluate("window.scrollTo(0, 0)")
+    shot(page, "wiki-search-cache.png")
+    # 웹 검색: 리버스 프록시는 위키 근거가 약해(유형 유사도 0.41 < 0.45) 웹 검색 결과를 근거에 보탠다.
+    reselect(page)
+    guide(page, "리버스", fresh=True)
+    page.evaluate("window.scrollTo(0, 0)")
+    shot(page, "wiki-search-web.png")
+    links = page.locator("#guide h2").filter(has_text="웹 참고 링크")
+    if links.count():
+        links.first.scroll_into_view_if_needed()
+        shot(page, "wiki-search-web-links.png")
 
 
 def viewer(page):
