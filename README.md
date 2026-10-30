@@ -362,7 +362,7 @@ ai-master/
 ├─ proxy_tools/    프록시 VM 생성, 로그 뷰어, 이상 탐지, 프록시 정책(Squid·NGINX) 변경 감지·Task/Wiki 반영
 ├─ teams_tools/    Microsoft Teams 알림, 로컬 승인 화면(Teams 대체)
 ├─ docs/images/    README 실행 화면 캡처 (공인 IP 등은 가린 상태)
-├─ rules/          AI 작업 규칙: Wiki 문서 작성 규칙(WIKI_DOCUMENT_RULES.md). 에이전트가 자동으로 읽는 AGENTS.md 는 루트에 둔다
+├─ rules/          AI 작업 규칙: Wiki 문서 작성 규칙(WIKI_DOCUMENT_RULES.md), README 작성 규칙(README_STYLE_RULES.md). 에이전트가 자동으로 읽는 AGENTS.md 는 루트에 있음
 ├─ pipelines/      Azure Pipelines: Wiki 가 바뀌면 첫 페이지 최근 수정 문서 갱신(wiki-recent.yml)
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
 ├─ test/           API 테스트, 검색 정확도 벤치마크(wiki_search_benchmark.py), 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py)
