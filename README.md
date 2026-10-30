@@ -500,7 +500,7 @@ Copy-Item .env.sample .env
 .\.venv\Scripts\python.exe test\wiki_search_benchmark.py --output data\wiki-search-benchmark.json
 ```
 
-2026-10-26 현재 Wiki 1,032개 문서와 고정 16개 케이스로 실행한 결과는 `EMBED_WEIGHT=0.8`에서 14/16(87.5%), `EMBED_WEIGHT=8`에서 15/16(93.8%)입니다. 과거 코드 주석의 68.8%·87.5%는 당시 테스트셋이 저장되어 있지 않아 이 벤치마크로 재현되는 수치로 표기하지 않습니다.
+2026-10-30 현재 Wiki 1,031개 문서와 고정 16개 케이스로 실행한 결과는 `EMBED_WEIGHT=0.8`에서 15/16(93.8%), `EMBED_WEIGHT=8`(기본값)에서 16/16(100%)입니다(가장 낮은 정답 순위 2위). 2026-10-26 실행(1,032개 문서)은 각각 14/16(87.5%), 15/16(93.8%)였고, 그 뒤 케이스 1개의 정답 경로를 실제 위치(`01.-현황-정리/` 아래)로 고쳤습니다. 과거 코드 주석의 68.8%·87.5%는 당시 테스트셋이 저장되어 있지 않아 이 벤치마크로 재현되는 수치로 표기하지 않습니다.
 | `WIKI_REGISTER_PUSH` | `1` | 시나리오 1 "Wiki에 등록" 때 Azure DevOps Wiki로 push(`0`이면 로컬 커밋만) |
 | `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
 | `PROXY_SSH_USER` / `PROXY_SSH_KEY` | `azureuser` / (비움: 기본 키) | 프록시 VM SSH 접속(정책 변경 감지) |

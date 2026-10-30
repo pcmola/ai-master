@@ -14,5 +14,5 @@
   {"id": "development-environment", "query": "개발 환경 구성", "expected": "AI-Master-프로젝트/01.-개발/02.-개발/01.-개발-환경-구성.md"},
   {"id": "test-plan", "query": "테스트 계획", "expected": "AI-Master-프로젝트/01.-개발/03.-테스트/01.-테스트-계획.md"},
   {"id": "deployment", "query": "배포 절차", "expected": "AI-Master-프로젝트/01.-개발/04.-배포.md"},
-  {"id": "azure-cli-proxy", "query": "VDI Azure CLI 프록시 설정", "expected": "AI-Master-프로젝트/01.-개발/02.-개발/01.-개발-환경-구성/VDI-Azure-CLI-프록시-설정(wsl).md"}
+  {"id": "azure-cli-proxy", "query": "VDI Azure CLI 프록시 설정", "expected": "AI-Master-프로젝트/01.-개발/02.-개발/01.-개발-환경-구성/01.-현황-정리/VDI-Azure-CLI-프록시-설정(wsl).md"}
 ]
