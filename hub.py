@@ -24,7 +24,7 @@ import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common.paths import DATA_DIR, PROJECT_ROOT  # noqa: E402
@@ -375,6 +375,60 @@ def s2_links(refresh: bool = False) -> dict:
         return data
 
 
+APPROVAL_URL = site_url("approval.local", 8771)[2]  # teams_tools/approval_local.py 의 승인 서버
+
+
+def approval_up() -> bool:
+    import socket
+    ip = APPROVAL_URL.split("//", 1)[1].split(":")[0]
+    port = int(APPROVAL_URL.rsplit(":", 1)[1]) if APPROVAL_URL.count(":") == 2 else 80
+    try:
+        with socket.create_connection((hosts_ip(ip), port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def hosts_ip(name: str) -> str:
+    from common.server import hosts_entries
+    return hosts_entries().get(name.lower(), name)
+
+
+def approval_record_page(token: str) -> bytes:
+    """승인 서버가 닫힌 뒤 카드 버튼을 누르면 보여 줄 안내. data/approvals/ 의 기록으로 결정·처리 결과를 보여 준다."""
+    import html as h
+    rec = None
+    for f in sorted((DATA_DIR / "approvals").glob("*.json"), reverse=True):
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if token and d.get("token") == token:
+            rec = d
+            break
+    if rec:
+        s = rec.get("state") or {}
+        said = {"yes": "Yes(승인)", "no": "No(반영 안 함)", "timeout": "시간 초과(반영 안 함)"}.get(s.get("decision"), "결정 없음")
+        icon = {"ok": "✓", "fail": "✗", "run": "↻", "info": "·"}
+        steps = "".join(f"<li>{icon.get(x.get('state'), '·')} {h.escape(x.get('text', ''))}</li>" for x in s.get("steps") or [])
+        links = " · ".join(f'<a href="{h.escape(u)}" target="_blank" rel="noopener">{h.escape(l)}</a>'
+                           for l, u in s.get("links") or [] if u)
+        body = (f"<h1>{h.escape(rec.get('title', ''))}</h1><p class='msg'>이미 끝난 승인 요청입니다. 결정: <b>{said}</b>"
+                f" ({h.escape((rec.get('closed_at') or '').replace('T', ' '))})</p>"
+                + (f"<p>{h.escape(s.get('message', ''))}</p>" if s.get("message") else "")
+                + (f"<ul>{steps}</ul>" if steps else "") + (f"<p>{links}</p>" if links else "")
+                + "<p class='muted'>다시 처리하지 않습니다. 결과는 Teams 결과 카드에도 있습니다.</p>")
+    else:
+        body = ("<h1>승인 요청</h1><p class='msg'>이미 끝났거나 만료된 승인 요청입니다(승인 서버가 닫혀 있음).</p>"
+                "<p class='muted'>처리 결과는 Teams 결과 카드를 확인하세요. 새로 승인하려면 허브에서 시나리오를 다시 실행합니다.</p>")
+    return (f"<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>승인 요청</title>"
+            f"<style>body{{font:14px/1.6 'Segoe UI','Malgun Gothic',sans-serif;background:#f5f5f5;margin:0}}"
+            f".c{{max-width:560px;margin:40px auto;background:#fff;border-radius:8px;box-shadow:0 2px 8px #0002;padding:18px 22px}}"
+            f"h1{{font-size:17px}}.msg{{background:#eef2ff;color:#3730a3;padding:10px 12px;border-radius:6px}}"
+            f".muted{{color:#666;font-size:13px}}ul{{padding-left:4px;list-style:none}}</style></head>"
+            f"<body><div class='c'>{body}</div></body></html>").encode("utf-8")
+
+
 def job_status() -> dict:
     out = {}
     for job, spec in JOBS.items():
@@ -449,6 +503,18 @@ class Handler(BaseHTTPRequestHandler):
             start = qs.get("from", ["0"])[0]
             text, size = log_tail(key, start=int(start) if start.isdigit() else 0)
             self.send_body(text.encode("utf-8"), "text/plain; charset=utf-8", headers={"X-Log-Size": str(size)})
+        elif url.path in ("/approval/decide", "/approval/open"):
+            # Teams 카드 버튼. 승인 서버가 떠 있으면 그리로 넘기고, 닫혔으면(이미 끝난 요청) 기록으로 안내한다.
+            qs = parse_qs(url.query)
+            token = qs.get("token", [""])[0]
+            if approval_up():
+                target = (f"{APPROVAL_URL}/decide?answer={quote(qs.get('answer', [''])[0])}&token={quote(token)}"
+                          if url.path == "/approval/decide" else APPROVAL_URL + "/")
+                self.send_response(302)
+                self.send_header("Location", target)
+                self.end_headers()
+            else:
+                self.send_body(approval_record_page(token), "text/html; charset=utf-8")
         elif url.path == "/api/s2links":
             try:
                 self.send_json(s2_links(parse_qs(url.query).get("refresh") == ["1"]))

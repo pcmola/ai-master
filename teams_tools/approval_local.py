@@ -6,6 +6,8 @@
 - Teams 카드 버튼용 주소도 만든다: /decide?answer=yes|no&token=… 를 브라우저로 열면 바로 결정된다.
   token 은 요청마다 새로 만들어 다른 승인 요청의 버튼으로 결정되는 일을 막는다. 같은 PC 에서 눌러야 한다(127.0.0.1).
 - 주소는 hosts 에 approval.local 이 있으면 그 이름으로, 없으면 http://127.0.0.1:8771 로 뜬다.
+- 허브가 떠 있으면 Teams 카드 버튼은 허브(/approval/…)를 거친다. 승인 서버가 떠 있으면 허브가 그리로 넘기고,
+  이미 끝나 닫혔으면 '연결 거부' 대신 그 요청의 기록(data/approvals/)으로 결정·처리 결과를 보여 준다.
 - request_approval() 은 진행 표시 없이 Yes/No 만 받는 간단한 형태다.
 - 승인 화면에 보인 내용(제목·목록·질문·링크·추정 VM)과 끝난 뒤의 진행 상태를 data/approvals/ 에 JSON 으로 남긴다.
   화면은 승인을 기다리는 동안에만 떠 있어서, README 촬영(test/capture_readme.py --only approval)은 이 기록으로 다시 그린다.
@@ -40,10 +42,21 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR  # noqa: E402
-from common.server import favicon, local_server, open_chrome  # noqa: E402
+from common.server import favicon, local_server, open_chrome, site_url  # noqa: E402
 
 PORT = 8771
 ARCHIVE = DATA_DIR / "approvals"
+HUB = site_url("ai-master.local", 8764)[2]  # hub.py 의 HUB_SITE·HUB_PORT
+
+
+def hub_alive() -> bool:
+    """허브가 떠 있고 /approval/ 경로가 있는가(옛 허브면 카드 버튼이 404 가 되므로 승인 서버로 바로 보낸다)."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{HUB}/approval/open?token=", timeout=2) as res:
+            return res.status == 200
+    except OSError:
+        return False
 
 STYLE = """
 body{margin:0;background:#f5f5f5;font:14px/1.6 "Segoe UI","Malgun Gothic",sans-serif;color:#242424}
@@ -170,7 +183,7 @@ class Approval:
                 state = json.loads(json.dumps(self.state, ensure_ascii=False))
             old = json.loads(self.archive_path.read_text(encoding="utf-8")) if self.archive_path.is_file() else {}
             self.archive_path.write_text(json.dumps({
-                **old, "source": Path(sys.argv[0]).name, "title": self.title, "items": self.items,
+                **old, "source": Path(sys.argv[0]).name, "token": self.token, "title": self.title, "items": self.items,
                 "question": self.question, "links": [list(l) for l in (self.links or [])],
                 "candidates": self.candidates, "state": state, **extra}, ensure_ascii=False, indent=1), encoding="utf-8")
         except (OSError, ValueError):
@@ -276,6 +289,10 @@ class Approval:
         self.save(asked_at=datetime.now().isoformat(timespec="seconds"))
         if open_browser:
             open_chrome(url)
+        if not open_browser and hub_alive():  # Teams 카드 버튼: 끝난 뒤 눌러도 안내가 나오도록 허브를 거친다
+            via = f"{HUB}/approval"
+            return (f"{via}/open?token={self.token}", f"{via}/decide?answer=yes&token={self.token}",
+                    f"{via}/decide?answer=no&token={self.token}")
         return url, f"{url}/decide?answer=yes&token={self.token}", f"{url}/decide?answer=no&token={self.token}"
 
     def wait(self, timeout: float) -> bool | None:
