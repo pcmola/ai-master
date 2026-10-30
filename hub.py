@@ -359,13 +359,16 @@ def s2_links(refresh: bool = False) -> dict:
             data["vms"] = [{"name": v["name"], "state": v["state"]} for v in ps.proxy_vms()]
         except Exception as exc:
             data["error"] = f"Azure VM 조회 실패: {exc}"[:200]
-        # 작업(job)이 아니라 허브 안에서 바로 읽으므로, 무엇을 읽었는지 시나리오 2 로그에 직접 남긴다
+        # 작업(job)이 아니라 허브 안에서 바로 읽으므로, '새로 읽기'를 눌렀을 때 무엇을 읽었는지 시나리오 2 로그에 남긴다
+        # (탭을 열 때마다 남기면 실행 로그 끝이 이 줄들로 가려진다)
         sp = data["status_page"]
         lines = [f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} Azure VM·Wiki 링크 " + ("다시 읽기 (허브 '새로 읽기')" if refresh else "읽기") + " =====",
                  f"az vm list -g {ps.RESOURCE_GROUP}: " + (data["error"] or f"Proxy VM {len(data['vms'])}대 ("
                  + ", ".join(f"{v['name']} {v['state']}" for v in data["vms"]) + ")") + f" · {time.perf_counter() - started:.1f}초",
                  f"Wiki 현황 문서: {sp['path']} (Azure DevOps Wiki: {'있음' if sp['devops'] else '없음, 로컬 전용'})"]
         try:
+            if not refresh:
+                raise OSError("탭을 열 때 읽은 것은 남기지 않음")
             LOG_DIR.mkdir(parents=True, exist_ok=True)
             with open(LOG_DIR / "scenario2.log", "a", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")

@@ -608,7 +608,17 @@ def devops(own_page):
             page.evaluate(REDACTOR)
             page.evaluate(NAME_REDACTOR, names)
             mark(page, *marks)
-            page.screenshot(path=str(OUT / name), animations="disabled")
+            # 허브 Chrome 은 사람이 쓰는 창이라, 다른 탭을 보고 있으면 이 탭이 그려지지 않아 흰 화면이 찍힌다
+            # (2026-10-30 PBI 화면이 전부 흰색) → 앞으로 가져와 찍고, 거의 빈 그림이면 한 번 더 찍는다
+            for attempt in range(3):
+                page.bring_to_front()
+                page.wait_for_timeout(800)
+                shot_bytes = page.screenshot(animations="disabled")
+                if len(shot_bytes) > 40000:
+                    break
+                print(f"  {name}: 빈 화면으로 찍혀 다시 찍음 ({attempt + 1})", flush=True)
+                page.wait_for_timeout(2000)
+            (OUT / name).write_bytes(shot_bytes)
             (EVIDENCE / f"{Path(name).stem}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
             print(f"captured {name} ({url.rsplit('/', 1)[-1]})", flush=True)
     finally:
