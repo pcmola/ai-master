@@ -7,7 +7,8 @@ Teams 카드(--only teams)는 teams_notify 가 보낼 때 남긴 data/teams_card
 Adaptive Cards 공식 렌더러로 그린다. Teams 에 새 메시지를 보내지 않는다.
 --only wikidiff: 시나리오 2 가 마지막으로 고친 현황 문서의 수정 전/후를 wiki-repo 커밋에서 꺼내 나란히 그리고 바뀐 곳을 빨갛게 표시.
 --only devops: 허브가 띄운 Chrome(전용 프로필, 개발자 도구 포트 9222, Azure DevOps 로그인 필요)에 붙어 시나리오 2 의
-  PBI·Task 화면을 찍는다. 승인 기록(data/approvals/)의 처리 단계에서 번호를 찾는다. 이름·이메일은 가린다.
+  PBI·Task, 시나리오 3 의 Task·PR(개요·파일 비교) 화면을 찍는다. 승인 기록(data/approvals/)의 처리 단계 링크를 쓴다.
+  이름·이메일·IP 는 가린다.
 """
 
 from __future__ import annotations
@@ -344,6 +345,7 @@ CARD_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 .meta{font-size:12px;color:#616161;margin-bottom:10px}.meta b{color:#242424}
 #card{border:1px solid #e0e0e0;border-radius:6px;background:#fff}  /* Teams 채널의 카드 테두리 */
 #card .ac-adaptiveCard{border-radius:6px}
+#card .ac-actionSet{flex-wrap:wrap!important;row-gap:8px}  /* 버튼이 넘치면 다음 줄로(실제 Teams 처럼) */
 .ac-pushButton{border:1px solid #d1d1d1!important;background:#fff!important;border-radius:4px!important;font-weight:600}</style>
 </head><body><div id="frame"><div class="meta"><b>Workflows</b> · Teams 일반 채널 · __WHEN__</div><div id="card"></div></div>
 <script>
@@ -544,49 +546,73 @@ DEVOPS_SECTION = ("(t => { const e = [...document.querySelectorAll('span')].find
                   " return e && e.closest('.work-item-form-collapsible-section'); })")
 
 
-def devops_ids() -> dict:
-    """시나리오 2 승인 기록의 처리 단계에서 PBI·Task 번호를 찾는다."""
-    saved = latest_approval(2)
-    text = " ".join(s.get("text", "") for s in ((saved or {}).get("state") or {}).get("steps", []))
-    pbi, task = re.search(r"PBI #(\d+)", text), re.search(r"Task #(\d+)", text)
-    return {"pbi": pbi and pbi.group(1), "task": task and task.group(1)}
+def section(title: str) -> str:
+    return f"{DEVOPS_SECTION}('{title}')"
+
+
+PR_DESCRIPTION = "document.querySelector('.repos-pr-description-card')"
+PR_WORKITEMS = ("(() => { const e = [...document.querySelectorAll('div')].find(x => x.children.length === 0 && x.textContent.trim() === 'Work items');"
+                " return e && e.closest('.rhythm-vertical-8'); })()")
+PR_DIFF = ("(() => { const v = [...document.querySelectorAll('button, a')].find(x => x.textContent.trim() === 'View');"
+           " return v && v.closest('.bolt-card'); })()")
+
+
+def devops_shots() -> list[tuple]:
+    """(파일 이름, 주소, 빨간 테두리 칠 절 이름) 목록. 시나리오별 승인 기록의 처리 단계 링크(PBI·Task·PR 열기)에서 만든다."""
+    shots = []
+    for number in (2, 3):
+        saved = latest_approval(number)
+        steps = ((saved or {}).get("state") or {}).get("steps", [])
+        for s in steps:
+            link = (s.get("link") or [None, None])[1]
+            text = s.get("text", "")
+            if not link:
+                continue
+            if re.search(r"PBI #\d+", text) and "백로그" in text:
+                shots.append((f"devops-scenario{number}-pbi.png", link, "Related Work", [section("Related Work")]))
+            elif re.search(r"Task #\d+ 생성", text) or (number == 3 and "/_workitems/" in link):
+                marks = [section("Description")] + ([section("Development")] if number == 3 else [])
+                shots.append((f"devops-scenario{number}-task.png", link, "Description", marks))
+            elif "/pullrequest/" in link:
+                pr = link.split("?")[0]
+                shots.append((f"devops-scenario{number}-pr.png", pr, "Description", [PR_DESCRIPTION, PR_WORKITEMS]))
+                shots.append((f"devops-scenario{number}-pr-files.png", pr + "?_a=files", "View", [PR_DIFF]))
+    seen, out = set(), []
+    for shot in shots:  # 같은 파일 이름은 처음 것만
+        if shot[0] not in seen:
+            seen.add(shot[0]); out.append(shot)
+    return out
 
 
 def devops(own_page):
-    ids = devops_ids()
-    if not ids["task"]:
-        print("skip devops: 시나리오 2 승인 기록에 Task 번호 없음", flush=True)
+    shots = devops_shots()
+    if not shots:
+        print("skip devops: 승인 기록(data/approvals/)에 PBI·Task·PR 링크 없음", flush=True)
         return
-    base = "https://dev.azure.com/{}/{}".format(os.environ.get("AZURE_DEVOPS_ORG", ""),
-                                                os.environ.get("AZURE_DEVOPS_PROJECT", "").strip('"').replace(" ", "%20"))
     names = [n for n in {os.environ.get("TEAMS_MENTION_NAME", ""), os.environ.get("DEVOPS_DISPLAY_NAME", "")} if n]
-    if True:  # 이미 떠 있는 Playwright 로 허브 Chrome 에 붙는다(sync_playwright 를 겹쳐 띄우면 오류)
-        try:
-            browser = own_page.context.browser.browser_type.connect_over_cdp("http://127.0.0.1:9222")
-        except Exception as exc:
-            print(f"skip devops: 허브 Chrome(포트 9222)에 붙지 못함 — 허브를 띄우고 그 창에서 Azure DevOps 에 로그인하세요 ({exc})", flush=True)
-            return
-        page = browser.contexts[0].new_page()
-        try:
-            page.set_viewport_size({"width": 1600, "height": 1150})
-            for name, wid, section in [("devops-scenario2-pbi.png", ids["pbi"], "Related Work"),
-                                       ("devops-scenario2-task.png", ids["task"], "Description")]:
-                if not wid:
-                    continue
-                page.goto(f"{base}/_workitems/edit/{wid}", wait_until="domcontentloaded", timeout=60000)
-                if "login" in page.url or "signin" in page.url:
-                    print("skip devops: Azure DevOps 로그인 필요(허브 Chrome 창에서 로그인)", flush=True)
-                    return
-                page.locator("span", has_text=section).first.wait_for(timeout=60000)
-                page.wait_for_timeout(2500)  # 링크 목록·설명 늦게 그려짐
-                page.evaluate(REDACTOR)
-                page.evaluate(NAME_REDACTOR, names)
-                mark(page, f"{DEVOPS_SECTION}('{section}')")
-                page.screenshot(path=str(OUT / name), animations="disabled")
-                (EVIDENCE / f"{Path(name).stem}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
-                print(f"captured {name} (#{wid})", flush=True)
-        finally:
-            page.close()
+    try:  # 이미 떠 있는 Playwright 로 허브 Chrome 에 붙는다(sync_playwright 를 겹쳐 띄우면 오류)
+        browser = own_page.context.browser.browser_type.connect_over_cdp("http://127.0.0.1:9222")
+    except Exception as exc:
+        print(f"skip devops: 허브 Chrome(포트 9222)에 붙지 못함 — 허브를 띄우고 그 창에서 Azure DevOps 에 로그인하세요 ({exc})", flush=True)
+        return
+    page = browser.contexts[0].new_page()
+    try:
+        page.set_viewport_size({"width": 1600, "height": 1150})
+        for name, url, wait_text, marks in shots:
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            if "login" in page.url or "signin" in page.url:
+                print("skip devops: Azure DevOps 로그인 필요(허브 Chrome 창에서 로그인)", flush=True)
+                return
+            page.get_by_text(wait_text, exact=True).first.wait_for(timeout=60000)
+            page.wait_for_timeout(3000)  # 링크 목록·설명·비교 화면이 늦게 그려짐
+            page.evaluate(REDACTOR)
+            page.evaluate(NAME_REDACTOR, names)
+            mark(page, *marks)
+            page.screenshot(path=str(OUT / name), animations="disabled")
+            (EVIDENCE / f"{Path(name).stem}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
+            print(f"captured {name} ({url.rsplit('/', 1)[-1]})", flush=True)
+    finally:
+        page.close()
 
 
 def main():

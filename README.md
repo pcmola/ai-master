@@ -260,11 +260,33 @@ NGINX VM을 선택하면 리버스 프록시 접속 로그와 가상 도메인�
 
 ![시나리오 3 - 허브의 기존 실행 결과 로그](docs/images/scenario3-run.png)
 
-조치 승인 요청과 PR 생성 완료 화면은 **예시 데이터**입니다. PR 생성 완료는 실제 VM의 복구 완료를 뜻하지 않습니다:
+**실제 실행 · 2026-10-30 18:08 허용 도메인 오타** (설명하는 부분은 빨간 테두리)
 
-![시나리오 3 - 수정 PR 생성 승인 화면 예시](docs/images/scenario3-approval.png)
+허브 ① "장애 재현"으로 허용 목록의 `.data.go.kr`을 `.date.go.kr`로 바꾼 커밋을 push·배포하고(시험 접속에서 data.go.kr만 403), ② "실행"으로 점검했습니다. Teams 조치 승인 요청 카드에는 AI 1차 분석, 규칙 탐지 3건, 원인 커밋과 수정안, 유사 장애 사례 링크가 들어갑니다:
 
-![시나리오 3 - 수정 PR 생성 완료 화면 예시](docs/images/scenario3-approval-progress.png)
+![시나리오 3 - Teams 조치 승인 요청 카드](docs/images/teams-scenario3-approval.png)
+
+카드의 "자세히 보기"로 연 로컬 승인 화면과, Yes 후 처리 결과 화면입니다(화면 내용·진행 상태를 `data/approvals/`에 남겨 다시 그림):
+
+![시나리오 3 - 로컬 조치 승인 화면](docs/images/scenario3-approval.png)
+
+![시나리오 3 - 조치 처리 결과 화면](docs/images/scenario3-approval-progress.png)
+
+Yes를 누르면 Task #2532, 수정 PR !14, 장애 대응 이력 Wiki가 만들어지고 Teams 결과 카드가 옵니다. **PR 생성은 복구 완료가 아닙니다.** 병합·배포·확인은 사람이 합니다:
+
+![시나리오 3 - Teams 조치 진행 카드](docs/images/teams-scenario3-result.png)
+
+Azure DevOps Task: 탐지 내용·원인·수정안·영향이 설명에 들어가고, 수정 PR과 커밋이 Development에 연결됩니다:
+
+![시나리오 3 - 장애 조치 Task](docs/images/devops-scenario3-task.png)
+
+수정 PR: 원인 커밋, 수정 내용, 영향·확인 방법이 설명에 들어가고 Task가 연결됩니다(병합 전, Active):
+
+![시나리오 3 - 수정 PR 개요](docs/images/devops-scenario3-pr.png)
+
+PR의 파일 비교(병합 전/후): `squid/lists/whitelist.txt` 한 줄만 `.date.go.kr` → `.data.go.kr`로 되돌리고 나머지는 그대로입니다. 바꿀 줄이 파일에 정확히 한 번 있는지 규칙으로 검증한 수정안입니다:
+
+![시나리오 3 - 수정 PR 파일 비교](docs/images/devops-scenario3-pr-files.png)
 
 모든 캡처에서 IP·이메일·구독 ID 등 식별값은 가렸습니다. 재촬영 방법과 외부 반영 범위는 [8.5 README 화면 재촬영](#85-readme-화면-재촬영)에 있습니다.
 
@@ -1103,7 +1125,7 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 | 시나리오 3 | Squid·NGINX 실제 로그·정책 조회, 허브의 기존 실행 로그 조회 | SSH 읽기만 수행. 장애 주입·복구·PR 생성·배포 없음 |
 | 승인·완료 화면 | 실제 실행 때 `data/approvals/`에 남긴 승인 화면 내용·최종 진행 상태(시나리오별 Yes로 끝난 최신 1건)를 같은 화면 코드로 읽기 전용 서버에 띄워 촬영. 기록이 없으면 예시 데이터 | 없음. 예시 데이터일 때만 **화면 예시 · 외부 반영 없음** 표시 |
 | Wiki 수정 전/후 (`--only wikidiff`) | wiki-repo에서 시나리오 2의 마지막 현행화 커밋과 그 직전 파일을 꺼내 위아래로 그리고, 표는 첫 칸(이름)으로 행을 맞춰 바뀐 칸·추가 행·삭제 행을 빨갛게 표시 → `wiki-scenario2-diff.png` | 없음 |
-| Azure DevOps (`--only devops`) | 허브가 띄운 Chrome(전용 프로필, 포트 9222)에 붙어 시나리오 2 승인 기록의 PBI·Task 화면을 찍음 → `devops-scenario2-pbi.png`, `devops-scenario2-task.png`. 그 Chrome 창에서 Azure DevOps에 한 번 로그인해 두어야 함 | 없음(조회만). 이름·이메일·IP는 가리고 프로필 사진은 흐리게 |
+| Azure DevOps (`--only devops`) | 허브가 띄운 Chrome(전용 프로필, 포트 9222)에 붙어 시나리오별 승인 기록의 처리 단계 링크로 화면을 찍음 → 시나리오 2 `devops-scenario2-pbi.png`·`devops-scenario2-task.png`, 시나리오 3 `devops-scenario3-task.png`·`devops-scenario3-pr.png`·`devops-scenario3-pr-files.png`. 그 Chrome 창에서 Azure DevOps에 한 번 로그인해 두어야 함 | 없음(조회만). 이름·이메일·IP는 가리고 프로필 사진은 흐리게 |
 | Teams 카드 (`--only teams`) | `data/teams_cards/`에 남은 **실제 전송 카드** 중 종류별 최신 1장(시나리오 2·3의 승인 요청·결과)을 Adaptive Cards 공식 렌더러(`adaptivecards@3.0.5`)로 그림 → `teams-scenario2-approval.png`, `teams-scenario2-result.png`, `teams-scenario3-approval.png`, `teams-scenario3-result.png` | 없음. Teams에 다시 보내지 않음. 멘션 이름·계정·PC 이름은 그리기 전에, IP·이메일은 화면에서 가림 |
 
 로컬 승인 화면은 승인을 기다리는 동안에만 떠 있으므로, `approval_local.Approval`이 화면 내용과 끝난 뒤 진행 상태를 `data/approvals/`(Git 제외)에 남깁니다(`APPROVAL_ARCHIVE=0`이면 끔). Teams 카드는 `teams_notify.send`가 보낼 때마다 `data/teams_cards/`(Git 제외)에 JSON으로 남깁니다(`TEAMS_CARD_ARCHIVE=0`이면 끔). Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요해서 보내는 쪽에서 남깁니다. 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2(테스트 환경 준비 → 실행 → Yes)와 시나리오 3(장애 재현 → 실행 → Yes)을 실제로 한 번씩 실행합니다. 스크립트는 표시되는 IP·이메일·ID를 가리고 촬영하며, 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다. 공유 전에는 이미지도 직접 확인합니다. 시나리오 2 로그를 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다(비교·AI 요약만 수행, 로컬 로그·트레이스 기록).
