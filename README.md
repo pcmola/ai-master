@@ -288,6 +288,18 @@ PR의 파일 비교(병합 전/후): `squid/lists/whitelist.txt` 한 줄만 `.da
 
 ![시나리오 3 - 수정 PR 파일 비교](docs/images/devops-scenario3-pr-files.png)
 
+**병합 후 · 사람이 PR 검토·병합 → 배포 → 확인**
+
+검토자가 PR !14를 Complete(Squash 병합, 연결된 Task 완료)하면 PR은 Completed, `main`에는 병합 커밋 `fd67c38`이 들어갑니다:
+
+![시나리오 3 - 병합된 PR](docs/images/devops-scenario3-pr-merged.png)
+
+연결된 Task #2532도 Done으로 바뀌고, Development에 PR(Completed)과 수정·이력·병합 커밋이 모두 연결됩니다:
+
+![시나리오 3 - 완료된 Task](docs/images/devops-scenario3-task-done.png)
+
+이후 `scripts/deploy.sh <VM_IP> --restart`로 wjy-proxy01에 배포하고 `scripts/traffic.sh <VM_IP>`로 확인했습니다. 장애 중 `ok=10 fail=10`(data.go.kr CONNECT 403)이던 시험 접속이 `ok=20 fail=0`으로 복구됐습니다(2026-10-30 18:24).
+
 모든 캡처에서 IP·이메일·구독 ID 등 식별값은 가렸습니다. 재촬영 방법과 외부 반영 범위는 [8.5 README 화면 재촬영](#85-readme-화면-재촬영)에 있습니다.
 
 <sub>[↑ 목차로](#목차)</sub>
