@@ -622,7 +622,8 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
                    "results": [{"path": d.path, "title": d.title, "link": view_link(d.path), "score": round(s, 3),
                                 "snippets": matching_lines(d, group_weights(groups) + [([b], 0.3) for b in boost])}
                                for d, s in sources]}
-            yield {"type": "done", "mode": "llm", "model": hit["model"], "markdown": hit["markdown"], "cached": hit["created"]}
+            yield {"type": "done", "mode": "llm", "model": hit["model"], "cached": hit["created"],
+                   "markdown": linkify_sources(hit["markdown"], hit["web"])}  # 예전에 저장한 가이드도 근거를 링크로
             return
     if web_reason:
         replan(f"Wiki 근거 부족({web_reason})", add=[("web_search", f"웹 검색으로 근거 보완 ({WEB_LABEL.get(web_provider())})")], before="llm_generate")
@@ -1035,6 +1036,44 @@ def md_link(title: str, url: str) -> str:
     return f"[{title}]({url.replace('(', '%28').replace(')', '%29').replace(' ', '%20')})"
 
 
+MD_LINK = re.compile(r"\[[^\]\n]*\]\([^)\s]*\)")
+BARE_URL = re.compile(r"https?://[^\s<>`)\]]+")
+
+
+def linkify_sources(markdown: str, web=()) -> str:
+    """본문에 글자로 적힌 근거를 링크로 바꾼다: 위키 문서 경로(AI-Master-프로젝트/…, `…` 포함) → [제목](뷰어),
+    맨 웹 주소 → [웹 결과 제목](주소). 이미 링크인 부분·코드 블록·다이어그램·'원문 링크' 절은 그대로 둔다(여러 번 해도 같음)."""
+    head, sep, tail = markdown.partition("\n## 원문 링크")
+    titles = {w["url"]: w["title"] for w in web}
+    docs = sorted((d for d in INDEX.docs if d.path in head), key=lambda d: -len(d.path))  # 긴 경로(하위 문서) 먼저
+
+    def text_part(s: str) -> str:
+        s = BARE_URL.sub(lambda m: (lambda u, rest: md_link(titles.get(u) or urlparse(u).netloc, u) + rest)(
+            m.group(0).rstrip(".,;:"), m.group(0)[len(m.group(0).rstrip(".,;:")):]), s)
+        parts = MD_LINK.split(s)
+        links = MD_LINK.findall(s)
+        for i, part in enumerate(parts):
+            for d in docs:
+                part = re.sub("`?" + re.escape(d.path) + r"(?:\.md)?`?", lambda _m, d=d: md_link(d.title, view_link(d.path)), part)
+            parts[i] = part
+        return "".join(p + (links[i] if i < len(links) else "") for i, p in enumerate(parts))
+
+    out, end = [], None
+    for line in head.split("\n"):
+        s = line.strip()
+        if end is None and (s.startswith("```") or re.match(r":::\s*mermaid", s)):
+            end = "```" if s.startswith("```") else ":::"
+            out.append(line); continue
+        if end is not None:
+            if s.startswith(end) and (end == "```" or s == ":::"):
+                end = None
+            out.append(line); continue
+        segs = MD_LINK.split(line)
+        keep = MD_LINK.findall(line)
+        out.append("".join(text_part(x) + (keep[i] if i < len(keep) else "") for i, x in enumerate(segs)))
+    return "\n".join(out) + sep + tail
+
+
 def cite(docs: list[Doc]) -> str:
     links = ", ".join(md_link(d.title, view_link(d.path)) for d in docs[:2])
     return links + (f" 외 {len(docs) - 2}건" if len(docs) > 2 else "")
@@ -1202,7 +1241,7 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
                 return None
             text = "".join(b.text for b in res.content if b.type == "text").strip()
             yield from lines(text + "\n")
-        text = unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text))
+        text = linkify_sources(unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text)), web)
         s.set(first_line_ms=round(first) if first is not None else None, lines=n_lines, out_chars=len(text))
         if not text:
             s.fail("빈 응답 → 템플릿 사용")
