@@ -639,7 +639,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
     with span("template", reason="LLM 실패" if client else ("근거 없음" if not (statements or web) else "LLM 설정 없음")) as s:
         markdown = template_guide(query, title, option, statements, sources)
         if web:
-            markdown += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
+            markdown += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- {md_link(w['title'], w['url'])}" for w in web)
         s.set(chars=len(markdown))
     yield {"type": "done", "mode": "template", "model": None, "markdown": markdown}
 
@@ -934,8 +934,14 @@ def llm_model(client) -> str:
             else os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5"))
 
 
+def md_link(title: str, url: str) -> str:
+    """Markdown 링크. 제목의 대괄호(예: '[Nginx] 리버스 프록시 구축')는 링크를 끊으므로 소괄호로, 주소의 괄호·공백은 인코딩한다."""
+    title = " ".join(title.replace("[", "(").replace("]", ")").split()) or url
+    return f"[{title}]({url.replace('(', '%28').replace(')', '%29').replace(' ', '%20')})"
+
+
 def cite(docs: list[Doc]) -> str:
-    links = ", ".join(f"[{d.title}]({view_link(d.path)})" for d in docs[:2])
+    links = ", ".join(md_link(d.title, view_link(d.path)) for d in docs[:2])
     return links + (f" 외 {len(docs) - 2}건" if len(docs) > 2 else "")
 
 
@@ -977,7 +983,7 @@ def template_guide(query, title, option, statements, sources) -> str:
 
     out += ["## 4. 참고 문서", "", "| # | 문서 | 경로 | 관련도 |", "|---|---|---|---|"]
     for i, (d, s) in enumerate(sources, 1):
-        out.append(f"| {i} | [{d.title}]({view_link(d.path)}) | {d.path} | {s:.2f} |")
+        out.append(f"| {i} | {md_link(d.title, view_link(d.path))} | {d.path} | {s:.2f} |")
     return "\n".join(out)
 
 
@@ -1108,11 +1114,11 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
         used = {c["doc"].path for c in context or []}
         cited = [(d, sc) for d, sc in sources if d.path in used] or sources
         if cited:
-            text += "\n\n## 원문 링크\n\n" + "\n".join(f"- [{d.title}]({view_link(d.path)}) — {d.path}" for d, _ in cited)
+            text += "\n\n## 원문 링크\n\n" + "\n".join(f"- {md_link(d.title, view_link(d.path))} — {d.path}" for d, _ in cited)
         # 웹 결과는 본문에 (웹: URL)로 인용한 것만 붙인다. 쓰지 않은 결과(관련 없는 뉴스 등)까지 출처처럼 보이지 않게.
         used_web = [w for w in web if w["url"] in text]
         if used_web:
-            text += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in used_web)
+            text += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- {md_link(w['title'], w['url'])}" for w in used_web)
         s.set(web_cited=len(used_web))
         return text
     except Exception as exc:
