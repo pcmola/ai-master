@@ -61,7 +61,7 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 
 ### 1.1 시나리오 1 · 프록시 설정 가이드 자동 생성
 
-명령어 한 줄로 기존 Azure DevOps Wiki를 검색하고, RAG(검색한 Wiki 문서를 근거로 LLM이 작성)로 통합 가이드 문서를 만듭니다. 사용자가 미리보기로 확인한 뒤 Wiki에 등록합니다. 승인 없이 자동 등록하면 LLM이 잘못 쓴 문서가 팀 Wiki에 쌓이므로, 화면의 버튼을 가벼운 승인으로 씁니다. 화면: http://wiki-search.local
+명령어 한 줄로 기존 Azure DevOps Wiki를 검색하고, RAG(검색한 Wiki 문서를 근거로 LLM이 작성)로 통합 가이드 문서를 만듭니다. 사용자가 미리보기로 확인한 뒤 Wiki에 등록합니다. 승인 없이 자동 등록하면 LLM이 잘못 쓴 문서가 팀 Wiki에 쌓이므로, 화면의 버튼을 가벼운 승인으로 씁니다. 화면: <http://wiki-search.local>
 
 ```mermaid
 flowchart TD
@@ -400,14 +400,14 @@ flowchart LR
 
 | 폴더 | 파일 | 용도 | 주소 (hosts 미등록 시 포트) |
 |---|---|---|---|
-| (루트) | `hub.py` | 로컬 웹서버 허브 | http://ai-master.local (8764) |
-| wiki_tools | `wiki_search.py` | Wiki 의미 검색·가이드 생성 (오타 교정, 웹 검색 보완, 노드별 트레이스) | http://wiki-search.local (8766) |
+| (루트) | `hub.py` | 로컬 웹서버 허브 | <http://ai-master.local> (8764) |
+| wiki_tools | `wiki_search.py` | Wiki 의미 검색·가이드 생성 (오타 교정, 웹 검색 보완, 노드별 트레이스) | <http://wiki-search.local> (8766) |
 | | `wiki_register.py` | 시나리오 1: 가이드를 `02. 운영 > 00. AI 문서 생성` 아래에 등록(같은 제목 갱신, 문서 규칙 준수, push) | - |
-| | `wiki_viewer.py` | Wiki 로컬 읽기 전용 뷰어 (Azure DevOps 문법 렌더링, 코드 구문 강조, 첫 화면은 AI Master 프로젝트 문서) | http://wiki.local (8765) |
+| | `wiki_viewer.py` | Wiki 로컬 읽기 전용 뷰어 (Azure DevOps 문법 렌더링, 코드 구문 강조, 첫 화면은 AI Master 프로젝트 문서) | <http://wiki.local> (8765) |
 | | `wiki_documents.py` | Azure DevOps Wiki 문서 목록·생성·삭제 (REST API) | - |
 | | `wiki_recent.py` | Wiki 첫 페이지(프로젝트 메인 Overview › Summary 의 About)에 최근 수정 문서 5개(한국 시각). Wiki 에 push 가 생길 때마다 Azure Pipelines(`pipelines/wiki-recent.yml`)가 실행해 갱신하므로 Azure DevOps 화면에서 직접 고친 문서도 1~2분 안에 반영. 바뀐 것 없으면 커밋 안 함 | - |
 | proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/NGINX, podman·docker). Squid 로그는 VM 디스크 `/var/log/proxy`에 남김 | - |
-| | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, NGINX는 journald) | http://proxy-log.local (8768) |
+| | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, NGINX는 journald) | <http://proxy-log.local> (8768) |
 | | `incident_response.py` | 시나리오 3: 로그 감지 → AI 분석 → Wiki 사례 → proxy-config 원인·수정안 → Teams 승인 → Task → 수정 PR → 장애 대응 이력 Wiki | - |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
 | | `setup_proxy_config.py` | 시나리오 3용 proxy-config 저장소 준비: Azure Repos에 있으면 받고, 없으면 `proxy-config-seed/`로 만들어 첫 커밋 push(허용 클라이언트는 `PROXY_ALLOWED_CLIENTS`) | - |
@@ -417,7 +417,7 @@ flowchart LR
 | | `proxy_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki '프록시 정책 현황' 갱신 | - |
 | | `proxy_status_sync.py` | 시나리오 2: Wiki Proxy 현황 ↔ Azure VM 비교 → Teams 승인 → Task → Wiki 현행화 → 완료 보고 | - |
 | teams_tools | `teams_notify.py`, `teams_graph.py` | Teams 알림 (Workflows 웹후크 / Graph API). `.env`의 `TEAMS_MENTION`(UPN)을 넣으면 카드마다 그 사람을 @멘션해 Teams 활동 피드에 알림이 뜸 | - |
-| | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | http://127.0.0.1:8771 (요청 중에만) |
+| | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | <http://127.0.0.1:8771> (요청 중에만) |
 | test | `teams_test.py` | Teams 연동 테스트: 웹후크·Graph 를 차례로 시험하고 실패 원인을 안내 (`.env`의 `TEAMS_*`) | - |
 | | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
 
@@ -497,7 +497,7 @@ flowchart LR
 | `gpt` | GPT 내장 `web_search` 도구(Responses API)만. 별도 키 없이 `AZURE_OPENAI_*`(또는 `OPENAI_API_KEY`)를 씀 |
 | `off` | 웹 검색 안 함 |
 
-- Tavily: https://tavily.com 에 가입해 API 키를 발급받아 `TAVILY_API_KEY`에 넣습니다(무료 플랜으로 시험 가능).
+- Tavily: <https://tavily.com> 에 가입해 API 키를 발급받아 `TAVILY_API_KEY`에 넣습니다(무료 플랜으로 시험 가능).
 - GPT: Azure 게이트웨이의 Responses API는 api-version `2025-03-01-preview` 이상에서만 열립니다. 가이드 생성용 `OPENAI_API_VERSION`과 따로 `WEB_SEARCH_API_VERSION`(기본 `2025-04-01-preview`)을 씁니다. 검색어와 열어 볼 페이지는 GPT가 정하고, 답 글의 인용(`url_citation`)을 출처별 결과로 바꿔 Tavily 결과와 같은 방식으로 거릅니다. 한 번에 20초에서 40초 걸려 Tavily(1초에서 2초)보다 느립니다.
 
 어느 공급자든 위키 근거가 약할 때만 웹을 검색합니다(기준: `WEB_SEARCH_MIN_SIM`, `WEB_SEARCH_MIN_VARIANT_SIM`).
@@ -531,8 +531,8 @@ flowchart LR
 4. 카드가 Teams **활동**(종 모양)에도 뜨게 하려면 받을 사람의 계정을 `TEAMS_MENTION`(UPN), `TEAMS_MENTION_NAME`(표시 이름)에 넣습니다. 카드마다 그 사람을 @멘션합니다.
 5. 시험: `python teams_tools\teams_notify.py --title 테스트 "연동 확인"` → 채널에 카드가 오면 성공(HTTP 202).
 
-- Teams 카드의 Yes/No 응답을 이 PC로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다. 그래서 승인 버튼은 이 PC의 로컬 승인 서버(`approval_local.py`, http://127.0.0.1:8771)로 가고, 화면에는 "받았습니다" 확인만 뜹니다. 판단할 내용은 승인 카드에, 처리 단계와 결과는 Teams 결과 카드에 모두 담아 Teams만 보면 되게 했습니다.
-- 카드가 채널에 안 올라오면 Teams 로그인이나 흐름의 연결이 만료된 경우가 많습니다. https://make.powerautomate.com 의 **연결**에서 오류 난 Microsoft Teams 연결을 다시 맺고, **내 흐름** › 해당 흐름 › **28일 실행 기록**에서 성공했는지 봅니다. 흐름의 게시 주체는 **흐름 봇**(Flow bot)이어야 합니다(기본값).
+- Teams 카드의 Yes/No 응답을 이 PC로 돌려받으려면 Power Automate 프리미엄(HTTP 액션)이 필요합니다. 그래서 승인 버튼은 이 PC의 로컬 승인 서버(`approval_local.py`, <http://127.0.0.1:8771>)로 가고, 화면에는 "받았습니다" 확인만 뜹니다. 판단할 내용은 승인 카드에, 처리 단계와 결과는 Teams 결과 카드에 모두 담아 Teams만 보면 되게 했습니다.
+- 카드가 채널에 안 올라오면 Teams 로그인이나 흐름의 연결이 만료된 경우가 많습니다. <https://make.powerautomate.com> 의 **연결**에서 오류 난 Microsoft Teams 연결을 다시 맺고, **내 흐름** › 해당 흐름 › **28일 실행 기록**에서 성공했는지 봅니다. 흐름의 게시 주체는 **흐름 봇**(Flow bot)이어야 합니다(기본값).
 
 <sub>[↑ 목차로](#목차)</sub>
 
@@ -691,7 +691,7 @@ hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다.
 
 ### 5.2 허브 (hub.py)
 
-http://ai-master.local 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 화면은 탭 두 개입니다.
+<http://ai-master.local> 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 화면은 탭 두 개입니다.
 
 Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/decide`, `/approval/open`)를 거칩니다. 승인 서버(8771)가 떠 있으면 그리로 넘기고, 이미 끝나 닫혔으면 "연결 거부" 대신 그 요청의 기록(`data/approvals/`)으로 결정·처리 단계·결과 링크를 보여 줍니다(다시 처리하지 않음). 허브가 꺼져 있거나 옛 버전이면 지금처럼 승인 서버로 바로 연결합니다.
 
@@ -702,7 +702,7 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 | 로컬 서버 | 서버 표(상태·주소·PID·가동 시간, 시작·중지·재시작·로그)와 로그 창(**지우기**: 지금까지의 로그를 화면에서만 숨김, 파일은 그대로. **전체 보기**로 되돌림. 시나리오 실행 탭 로그 창도 같음). 주소를 누르면 서버 화면이 새 창으로 열림 |
 | 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`3대 중 N대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "허용 IP 맞추기"(`sync_nsg_ip.py`), "로그". 설명은 버튼 툴팁. "현재 심어진 장애"와 최근 실행 1건 표시, `scenario3.log` 실시간 표시 |
 
-`http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(http://ai-monitor.local)에서 관리합니다.
+`http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
 
 가상환경(`.\.venv\Scripts\Activate.ps1`)을 켠 뒤 실행합니다. `start.bat`은 가상환경 활성화와 `python hub.py`를 한 번에 하며 아래 옵션도 그대로 받습니다(예: `start.bat --start-all`).
 
@@ -991,7 +991,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 
 리버스 프록시의 `data.wjy.test`·`law.wjy.test`는 NGINX 설정(`server_name`)에만 있는 이름입니다. 요청은 IP로 보내고 이름은 `Host` 머리글에만 실으므로 hosts·DNS가 필요 없습니다.
 
-로그 뷰어(http://proxy-log.local)는 새로고침하는 동안 상단 진행 막대·회전 아이콘·흐린 표를 보여 주고, 끝나면 `갱신 HH:MM:SS · 새 로그 N건`(또는 `변경 없음`)을 잠깐 강조합니다. 로그 소스가 "실제 로그"면 VM의 진짜 로그이고, "가상 로그"일 때만 만들어 낸 데이터입니다.
+로그 뷰어(<http://proxy-log.local>)는 새로고침하는 동안 상단 진행 막대·회전 아이콘·흐린 표를 보여 주고, 끝나면 `갱신 HH:MM:SS · 새 로그 N건`(또는 `변경 없음`)을 잠깐 강조합니다. 로그 소스가 "실제 로그"면 VM의 진짜 로그이고, "가상 로그"일 때만 만들어 낸 데이터입니다.
 
 로그 뷰어 서버는 요청마다 단계별 기록을 허브 로그(`data/logs/proxy-log.log`)와 `data/traces/proxy-log-YYYYMMDD.jsonl`에 남깁니다.
 
@@ -1153,7 +1153,7 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 
 프로젝트 루트에서 실행합니다. 다른 폴더에서 실행해도 `.env`·`wiki-repo`·`data`는 프로젝트 루트 기준으로 찾습니다.
 
-명령줄 옵션은 최소로 두고, 접속 정보·동작 방식은 `.env`로 정합니다. 화면이 있는 기능은 허브(http://ai-master.local)에서 실행하는 것이 기본입니다.
+명령줄 옵션은 최소로 두고, 접속 정보·동작 방식은 `.env`로 정합니다. 화면이 있는 기능은 허브(<http://ai-master.local>)에서 실행하는 것이 기본입니다.
 
 | 도구 | 옵션 | 나머지는 `.env` |
 |---|---|---|
