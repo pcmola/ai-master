@@ -102,31 +102,44 @@ flowchart TD
 | 6. Wiki 문서 등록 | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목`으로 등록, 같은 제목이면 갱신(번호 유지, 이력은 git), Wiki 문서 규칙(채번·`.order`·인코딩·프록시 표기) 준수, 머리에 "AI 생성 · 모델 · 생성 일시 · 질의 · 근거 수" | `wiki_tools/wiki_register.py`. 로컬 뷰어 링크를 Wiki 안 링크로 바꾸고 push. push는 원격 최신 위 임시 작업 트리에서 이 문서 커밋만 만들어 올리므로, wiki-repo에 쌓인 로컬 전용 커밋(시나리오 2 테스트)은 올라가지 않음. 올린 뒤 로컬은 원격 위로 rebase |
 | 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | 등록 후 "Wiki에서 열기"·로컬 뷰어 링크. 가이드 아래 "수정 요청" 입력칸: 지금 가이드와 요청을 함께 보내 고친 판을 받음(요청과 관계없는 부분은 유지, 사용자가 적은 문구는 그대로 반영). 고친 판을 그대로 등록 가능 |
 
-**실행 화면 · 2026-10-30 재촬영** (설명하는 부분은 빨간 테두리로 표시)
+**실행 화면** (2026-10-30 촬영, 설명할 곳은 빨간 테두리)
 
-실제 Wiki를 대상으로 `프록시 설정 가이드 알려줘` 질의 → 포워드/리버스 유형 확인:
+**① 유형 확인**
+
+`프록시 설정 가이드 알려줘`를 입력하면 포워드인지 리버스인지 먼저 묻습니다.
 
 ![Wiki 검색 - 유형 확인](docs/images/wiki-search-type.png)
 
-**캐시 저장 전**: 포워드 프록시 선택 → 근거 문서 재검색 → LLM 가이드 생성(배지 `LLM 작성 · gpt-6.1-sol · 소요 52초`). 이때 가이드가 근거 지문과 함께 캐시에 저장됩니다. 촬영 중에는 **Wiki에 등록하지 않았습니다**:
+**② 가이드 생성 (캐시 저장 전)**
+
+- 포워드를 고르면 근거 문서를 다시 찾고 LLM이 가이드를 씁니다(52초).
+- 만든 가이드는 캐시에 저장됩니다. 촬영 중 Wiki에는 등록하지 않았습니다.
 
 ![Wiki 검색 - 가이드 생성(캐시 저장 전)](docs/images/wiki-search-guide.png)
 
-**캐시 저장 후**: "다시 선택"으로 같은 질의·유형을 다시 고르면 근거 지문이 같아 LLM 없이 저장된 가이드가 바로 나옵니다(배지 `캐시 · 처음 생성 1분 전 · 근거 같음`, 약 1초). "새로 만들기"를 누르면 캐시를 쓰지 않고 다시 생성합니다:
+**③ 같은 질의 다시 하기 (캐시 사용)**
+
+- "다시 선택"으로 같은 유형을 고르면 LLM 없이 저장된 가이드가 바로 나옵니다(약 1초).
+- 근거 문서가 바뀌었으면 새로 만듭니다. "새로 만들기"를 누르면 언제든 새로 만듭니다.
 
 ![Wiki 검색 - 같은 질의 재요청(캐시 사용)](docs/images/wiki-search-cache.png)
 
-가이드의 포트·정책 값은 검색한 Wiki 원문 시점의 값일 수 있습니다. 예를 들어 캡처의 `3128`은 원문 값이고 현재 실습 Squid 포트는 `8080`입니다. 실제 적용·등록 전에는 최신 VM 설정과 대조합니다.
+> 가이드의 포트 값(예: `3128`)은 Wiki 원문 기준입니다. 실습 Squid 포트는 `8080`이니, 적용 전에 실제 설정과 대조합니다.
 
-생성된 가이드 아래의 근거 문서·원문 링크와 수정 요청 입력 영역(수정 반영 전):
+**④ 근거 링크와 수정 요청**
+
+가이드 끝에 근거 문서와 원문 링크가 붙고, 그 아래에서 고칠 내용을 말로 요청합니다.
 
 ![Wiki 검색 - 수정 요청](docs/images/wiki-search-revise.png)
 
-**웹 검색**: 리버스 프록시를 고르면 위키에 그 유형 내용이 적어(유형 유사도 0.41 < 0.45) 웹 검색 결과를 근거에 보탭니다. 해석 칩에 `웹 검색 N건`이 붙고(왼쪽 위 테두리), 가이드는 위키를 우선 근거로 하면서 위키에 없는 설정은 웹 자료로 보완했다고 밝힙니다(오른쪽 아래 테두리):
+**⑤ 웹 검색으로 보완**
+
+- 리버스를 고르면 Wiki에 그 내용이 적어서 웹 검색 결과를 근거에 더합니다.
+- 왼쪽 위에 `웹 검색 N건`이 붙고, 가이드에는 웹 자료로 보완했다고 적힙니다.
 
 ![Wiki 검색 - 웹 검색으로 근거 보완](docs/images/wiki-search-web.png)
 
-왼쪽 아래 "웹 검색 결과"에는 검색어로 찾은 결과 전체(관련 없는 결과는 버린 뒤)가, 가이드 끝 "웹 참고 링크"에는 본문에서 실제로 인용한 결과만 붙습니다:
+- 왼쪽 "웹 검색 결과"는 찾은 결과 전체, 가이드 끝 "웹 참고 링크"는 본문에서 실제로 인용한 것만입니다.
 
 ![Wiki 검색 - 웹 검색 결과와 웹 참고 링크](docs/images/wiki-search-web-links.png)
 
@@ -171,44 +184,56 @@ flowchart TD
 | 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | wiki-repo에 커밋, `.env`의 `SCENARIO2_PUSH=1`이면 Azure DevOps Wiki로 push(기본 0: 로컬만) |
 | 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | Task 상태를 Done으로 바꾸고 Teams 결과 카드 전송(처리 단계 ✓/✗ 목록과 문서·Task 링크). 도중에 실패하면 실패 단계까지 담은 "처리 실패" 카드. No·시간 초과도 결과 카드로 알림 |
 
-**실행 화면 · 2026-10-30 실제 실행(17:41)**
+**실행 화면** (2026-10-30 17:41 실제 실행, 설명할 곳은 빨간 테두리)
 
-허브의 **시나리오 실행** 탭입니다. 시나리오 2 카드 아래 줄에 비교 대상 Wiki 현황 문서와 Azure Portal VM 목록 링크(`3대 중 3대 실행 중`)가 있고, 아래는 "테스트 환경 준비 → 실행" 한 실제 실행의 `scenario2.log` 시작 부분입니다:
+**① 허브에서 실행**
 
-- `▶ proxy_status_sync … dry_run=False` 실행 시작(`[b9272b31]`은 이 실행의 트레이스 id, 같은 실행의 줄은 모두 같은 id).
-- `◆ Planning` 8단계 계획: wiki_read → azure_read → compare → llm_summary → approval → task_create → wiki_update → report.
-- `◆ Simulation` 실행 전 사전 점검 4항목(Wiki 문서·LLM·Teams·Wiki push 설정)과 예상 분기(차이 없음이면 3단계에서 종료, No·시간 초과면 알림만 하고 종료).
-- `◆ Step 1/8`, `◆ Tool Call`, `02 wiki_read 1ms … rows=3` 단계마다 무엇을 호출했고 결과가 무엇인지(아래로 이어서 compare 5건 → 정답 검증 → AI 요약 → Teams 승인 Yes → Task #2531 → Wiki 커밋 → 완료 보고).
+- 카드 아래에 비교 대상 Wiki 문서와 Azure VM 목록 링크가 있습니다.
+- 아래 로그는 이 실행의 시작 부분입니다. 줄마다 의미는 다음과 같습니다.
+
+| 로그 | 의미 |
+|---|---|
+| `▶ proxy_status_sync` | 실행 시작. `[b9272b31]`은 이 실행의 id(같은 실행의 줄은 같은 id) |
+| `◆ Planning` | 8단계 계획: Wiki 읽기 → Azure 읽기 → 비교 → AI 요약 → 승인 → Task → Wiki 갱신 → 보고 |
+| `◆ Simulation` | 실행 전 점검 4항목과 예상 분기(차이 없으면 종료, No면 알림만) |
+| `◆ Step`·`◆ Tool Call` | 단계마다 무엇을 호출했고 결과가 무엇인지 |
 
 ![시나리오 2 - 허브 시나리오 실행 탭과 실제 실행 로그](docs/images/hub-scenarios.png)
 
-**Teams 카드 · 2026-10-30 실제 실행**
+**② Teams 승인 요청**
 
-테스트 환경 준비 → 실행 → Teams에서 Yes를 누른 실제 실행의 카드입니다. 보낸 카드 JSON(`data/teams_cards/`)을 Adaptive Cards 렌더러로 다시 그렸고, 멘션 이름·이메일·IP·PC 이름은 가렸습니다. 승인 요청 카드에는 AI 요약과 규칙으로 찾은 변경 5건, Yes·No·자세히 보기 버튼이 있습니다:
+AI 요약과 규칙으로 찾은 변경 5건, Yes·No·자세히 보기 버튼이 있습니다.
 
 ![시나리오 2 - Teams 승인 요청 카드](docs/images/teams-scenario2-approval.png)
 
-Yes를 누르면 Task 생성 → Wiki 표·변경 이력 갱신 → Task 완료 처리 후 결과 카드가 옵니다(Task #2531 Done, Wiki 커밋 링크):
+**③ Yes 후 결과 알림**
+
+Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니다.
 
 ![시나리오 2 - Teams 현행화 완료 카드](docs/images/teams-scenario2-result.png)
 
-**Azure DevOps · 같은 실행에서 만든 PBI·Task** (이름·이메일·IP는 가림, 설명하는 부분은 빨간 테두리)
+**④ Azure DevOps PBI**
 
-그 달 PBI `2610) Proxy VM 현황 Wiki 현행화` 아래에 실행할 때마다 Task가 하나씩 붙습니다. 상위는 Feature `[공통] Proxy 현황 관리`, 하위 Task는 모두 Done입니다:
+그 달 PBI 아래에 실행할 때마다 Task가 하나씩 붙습니다.
 
 ![시나리오 2 - PBI와 하위 Task](docs/images/devops-scenario2-pbi.png)
 
-Task #2531에는 감지한 변경 5건, 현황 문서 링크, AI 요약이 들어가고, Wiki를 고친 뒤 커밋 번호를 댓글로 남기고 Done으로 바꿉니다:
+**⑤ Azure DevOps Task**
+
+변경 5건, 문서 링크, AI 요약이 들어가고 Wiki를 고친 뒤 Done이 됩니다.
 
 ![시나리오 2 - Task 상세](docs/images/devops-scenario2-task.png)
 
-**Wiki 현황 문서 · 수정 전/후** (빨간색 = 바뀐 곳)
+**⑥ Wiki 문서 수정 전/후** (빨간색 = 바뀐 곳)
 
-수정 전은 테스트 환경 준비가 되돌려 둔 상태(커밋 `e2d609e`), 수정 후는 승인 뒤 시나리오 2가 고친 상태(커밋 `2b8a9ac`)입니다. VM 표의 SIZE·상태·사설 IP 값이 Azure 값으로 바뀌고, Azure에 없는 `wjy-prxy04`는 지워지고(취소선) 새 VM `wjy-proxy03`이 더해졌으며, 변경 이력에 Task 링크와 함께 한 줄이 추가됩니다:
+- 바뀐 값(SIZE·상태·사설 IP), 지워진 VM(취소선), 새 VM, 변경 이력 한 줄이 표시됩니다.
 
 ![시나리오 2 - Wiki 현황 문서 수정 전/후](docs/images/wiki-scenario2-diff.png)
 
-아래 두 장은 같은 실행(2026-10-30 17:41)의 **로컬 승인 화면**과 승인 후 **처리 결과 화면**입니다. 화면 내용과 최종 진행 상태를 `data/approvals/`에 남겨 두었다가 같은 화면 코드로 다시 그렸습니다. Teams 카드의 "자세히 보기"가 이 로컬 승인 화면을 엽니다. Teams 카드에서 바로 Yes/No를 누르면 "받았습니다" 확인만 뜨고 처리 결과는 Teams 결과 카드로 옵니다:
+**⑦ 로컬 승인 화면과 처리 결과**
+
+- Teams 카드의 "자세히 보기"를 누르면 열리는 화면입니다.
+- 카드에서 바로 Yes를 누르면 "받았습니다"만 뜨고, 결과는 Teams 카드로 옵니다.
 
 ![시나리오 2 - 로컬 승인 화면](docs/images/approval.png)
 
@@ -251,59 +276,75 @@ flowchart TD
 
 시험 방법과 결과는 [8.4 시나리오 3 · 시험](#84-시나리오-3--시험)에 있습니다.
 
-**실행 화면 · 2026-10-30 실제 실행(18:08 장애 재현 → 18:24 복구)**
+**실행 화면** (2026-10-30 실제 실행: 18:08 장애 재현 → 18:24 복구, 설명할 곳은 빨간 테두리)
 
-Squid의 **실제 접속 로그**·허용 목록·규칙 탐지 결과입니다. 위쪽은 PR 병합·배포 뒤 시험 접속(18:24, 모두 `TCP_TUNNEL/200`), 아래쪽은 장애 중 data.go.kr 차단(18:08:55 `TCP_DENIED/403`)입니다. 과거 장애 시험의 차단 기록도 포함되므로, 이 화면만으로 현재 장애가 지속 중이라고 판단하지 않습니다:
+시험 내용: 허용 목록의 `.data.go.kr`을 `.date.go.kr`로 바꾼 설정을 wjy-proxy01에 배포했습니다. 그러면 data.go.kr 접속만 막힙니다.
+
+**① 프록시 접속 로그**
+
+- 위쪽은 복구 뒤 시험 접속(모두 허용), 아래쪽은 장애 중 차단(`TCP_DENIED/403`)입니다.
+- 오른쪽 탐지 결과에는 과거 시험 기록도 섞여 있습니다.
 
 ![시나리오 3 - Squid 실제 로그와 탐지 결과](docs/images/proxy-log.png)
 
-NGINX VM을 선택하면 리버스 프록시 접속 로그와 가상 도메인별 연결 대상을 봅니다:
+NGINX VM을 고르면 리버스 프록시 로그를 봅니다.
 
 ![시나리오 3 - NGINX 실제 로그](docs/images/proxy-log-nginx.png)
 
-허브에서 18:09 실제 실행의 `scenario3.log` 시작 부분입니다. `◆ Planning` 9단계(collect → llm_triage → similar → source → llm_fix → approval → task_create → pull_request → wiki_history), `◆ Simulation` 사전 점검 4항목과 예상 분기(장애 없음 → 1단계에서 종료, 로그를 못 읽으면 점검 불가(종료 코드 2), 수정안 검증 실패 → 한 번 자기 수정 후 수동 조치), 이어서 `Step 1/9 collect`의 `az vm list` 호출이 보입니다:
+**② 허브에서 실행**
+
+로그의 `◆ Planning`은 9단계 계획(로그 수집 → AI 분석 → 사례 검색 → 설정 확인 → 수정안 → 승인 → Task → PR → 이력 Wiki), `◆ Simulation`은 실행 전 점검과 예상 분기입니다.
 
 ![시나리오 3 - 허브의 실제 실행 로그](docs/images/scenario3-run.png)
 
-**실제 실행 · 2026-10-30 18:08 허용 도메인 오타** (설명하는 부분은 빨간 테두리)
+**③ Teams 조치 승인 요청**
 
-허브 ① "장애 재현"으로 허용 목록의 `.data.go.kr`을 `.date.go.kr`로 바꾼 커밋을 push·배포하고(시험 접속에서 data.go.kr만 403), ② "실행"으로 점검했습니다. Teams 조치 승인 요청 카드에는 AI 1차 분석, 규칙 탐지 3건, 원인 커밋과 수정안, 유사 장애 사례 링크가 들어갑니다:
+AI 분석, 탐지 3건, 원인 커밋, 수정안, 비슷한 장애 사례 링크가 들어갑니다.
 
 ![시나리오 3 - Teams 조치 승인 요청 카드](docs/images/teams-scenario3-approval.png)
 
-카드의 "자세히 보기"로 연 로컬 승인 화면과, Yes 후 처리 결과 화면입니다(화면 내용·진행 상태를 `data/approvals/`에 남겨 다시 그림):
+**④ 로컬 승인 화면과 처리 결과**
 
 ![시나리오 3 - 로컬 조치 승인 화면](docs/images/scenario3-approval.png)
 
 ![시나리오 3 - 조치 처리 결과 화면](docs/images/scenario3-approval-progress.png)
 
-Yes를 누르면 Task #2532, 수정 PR !14, 장애 대응 이력 Wiki가 만들어지고 Teams 결과 카드가 옵니다. **PR 생성은 복구 완료가 아닙니다.** 병합·배포·확인은 사람이 합니다:
+**⑤ Yes 후 결과 알림**
+
+- Task #2532, 수정 PR !14, 장애 대응 이력 Wiki가 만들어집니다.
+- **PR 생성은 복구 완료가 아닙니다.** 병합·배포·확인은 사람이 합니다.
 
 ![시나리오 3 - Teams 조치 진행 카드](docs/images/teams-scenario3-result.png)
 
-Azure DevOps Task: 탐지 내용·원인·수정안·영향이 설명에 들어가고, 수정 PR과 커밋이 Development에 연결됩니다:
+**⑥ Azure DevOps Task**
+
+설명에 탐지 내용·원인·수정안이 들어가고, PR과 커밋이 연결됩니다.
 
 ![시나리오 3 - 장애 조치 Task](docs/images/devops-scenario3-task.png)
 
-수정 PR: 원인 커밋, 수정 내용, 영향·확인 방법이 설명에 들어가고 Task가 연결됩니다(병합 전, Active):
+**⑦ 수정 PR (병합 전)**
+
+PR 설명에 원인 커밋, 수정 내용, 확인 방법이 들어가고 Task가 연결됩니다.
 
 ![시나리오 3 - 수정 PR 개요](docs/images/devops-scenario3-pr.png)
 
-PR의 파일 비교(병합 전/후): `squid/lists/whitelist.txt` 한 줄만 `.date.go.kr` → `.data.go.kr`로 되돌리고 나머지는 그대로입니다. 바꿀 줄이 파일에 정확히 한 번 있는지 규칙으로 검증한 수정안입니다:
+**⑧ 소스 비교 (병합 전/후)**
+
+`whitelist.txt`에서 `.date.go.kr` 한 줄만 `.data.go.kr`로 되돌립니다.
 
 ![시나리오 3 - 수정 PR 파일 비교](docs/images/devops-scenario3-pr-files.png)
 
-**병합 후 · 사람이 PR 검토·병합 → 배포 → 확인**
+**⑨ 병합 후**
 
-검토자가 PR !14를 Complete(Squash 병합, 연결된 Task 완료)하면 PR은 Completed, `main`에는 병합 커밋 `fd67c38`이 들어갑니다:
+사람이 PR을 검토하고 병합하면 PR은 Completed, Task는 Done이 됩니다.
 
 ![시나리오 3 - 병합된 PR](docs/images/devops-scenario3-pr-merged.png)
 
-연결된 Task #2532도 Done으로 바뀌고, Development에 PR(Completed)과 수정·이력·병합 커밋이 모두 연결됩니다:
-
 ![시나리오 3 - 완료된 Task](docs/images/devops-scenario3-task-done.png)
 
-이후 `scripts/deploy.sh <VM_IP> --restart`로 wjy-proxy01에 배포하고 `scripts/traffic.sh <VM_IP>`로 확인했습니다. 장애 중 `ok=10 fail=10`(data.go.kr CONNECT 403)이던 시험 접속이 `ok=20 fail=0`으로 복구됐습니다(2026-10-30 18:24).
+**⑩ 배포와 복구 확인**
+
+wjy-proxy01에 배포한 뒤 시험 접속을 보냈습니다. 장애 중 `ok=10 fail=10`이던 결과가 `ok=20 fail=0`으로 돌아왔습니다.
 
 모든 캡처에서 IP·이메일·구독 ID 등 식별값은 가렸습니다. 재촬영 방법과 외부 반영 범위는 [8.5 README 화면 재촬영](#85-readme-화면-재촬영)에 있습니다.
 
@@ -551,12 +592,12 @@ Copy-Item .env.sample .env
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `OPENAI_MODEL` | `gpt-6.1-sol` | 시나리오 1 가이드 작성, 시나리오 2 AI 요약·비표준 Wiki 파싱, 시나리오 3 장애 원인·수정안 분석에 쓰는 LLM. 사내 게이트웨이 배포 이름이며, 사용 가능한 이름은 해당 게이트웨이에서 확인 |
-| `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. `test/wiki_search_benchmark.py`로 16개 고정 질의를 재현한다 |
-| `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮는다 |
+| `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. `test/wiki_search_benchmark.py`로 16개 고정 질의로 정확도를 재현합니다 |
+| `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮습니다 |
 | `WEB_SEARCH_PROVIDER` | `auto` | 웹 검색 공급자: `auto`(Tavily 키가 있으면 Tavily, 없으면 GPT), `tavily`, `gpt`, `off` |
-| `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탠다 |
+| `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탭니다 |
 | `WEB_SEARCH_API_VERSION` | `2025-04-01-preview` | GPT 웹 검색(Responses API)에 쓰는 Azure api-version. `2025-03-01-preview` 이상 |
-| `WEB_SEARCH_MIN_SIM` | `0.5` | 위키 최고 임베딩 유사도가 이보다 낮으면 웹 검색. 2026-10-20 측정에서 위키에 있는 질의는 0.59 이상, 없는 질의는 0.46 이하였다 |
+| `WEB_SEARCH_MIN_SIM` | `0.5` | 위키 최고 임베딩 유사도가 이보다 낮으면 웹 검색. 2026-10-20 측정에서 위키에 있는 질의는 0.59 이상, 없는 질의는 0.46 이하였습니다 |
 | `WEB_SEARCH_MIN_VARIANT_SIM` | `0.45` | 유형(포워드/리버스 등)을 골랐을 때 유형 이름의 위키 최고 유사도가 이보다 낮으면 웹 검색. 2026-10-23 측정: 포워드 프록시 0.499, 리버스 프록시 0.41 |
 | `WEB_SEARCH_MAX` | `5` | 웹 검색 결과를 몇 건까지 가져올지 |
 | `TRACE_KEEP_DAYS` | `14` | `data/traces/`의 요청별 트레이스 보관 일수 |
@@ -567,7 +608,7 @@ Copy-Item .env.sample .env
 | `SCENARIO3_EPIC_ID` / `SCENARIO3_FEATURE` / `SCENARIO3_PBI` | `1` / `[공통] 프록시 장애 대응` / `프록시 장애 대응` | 시나리오 3 Task가 달릴 백로그 |
 | `PROXY_CONFIG_DIR` | `../proxy-config` | 시나리오 3이 원인을 찾고 PR을 만드는 Squid 설정 저장소(Azure Repos) 로컬 경로 |
 | `SCENARIO2_TIMEOUT` / `SCENARIO2_WIKI_PAGE` | `900` / (비움) | 승인 대기 초, 비교할 Wiki 문서(wiki-repo 기준 경로, 비우면 테스트 문서) |
-| `GUIDE_LLM_TIMEOUT` | `300` | 가이드 작성·수정 LLM 호출을 기다리는 시간(초). 게이트웨이가 응답을 모아 보내 긴 수정 요청은 120초를 넘긴다 |
+| `GUIDE_LLM_TIMEOUT` | `300` | 가이드 작성·수정 LLM 호출을 기다리는 시간(초). 게이트웨이가 응답을 모아 보내서 긴 수정 요청은 120초를 넘깁니다 |
 | `GUIDE_CACHE_WEB_DAYS` | `7` | 웹 근거를 쓴 가이드를 캐시에서 쓰는 기간(일). 위키 근거만 쓴 가이드는 근거가 바뀔 때까지 씀 |
 | `GUIDE_CHUNKS` / `GUIDE_CHUNK_CHARS` / `GUIDE_CONTEXT_CHARS` | `24` / `1500` / `16000` | 시나리오 1 RAG: LLM에 넘길 조각 수, 조각 하나의 대략 길이, 전체 글자 수 상한. 조각 임베딩은 `data/wiki_search_chunks.json`에 캐시 |
 | `test/wiki_search_benchmark_cases.json` | 16개 | 검색 질의와 기대 정답 문서가 고정된 hit@3 벤치마크 케이스 |
@@ -580,15 +621,15 @@ Copy-Item .env.sample .env
 
 2026-10-30 현재 Wiki 1,031개 문서와 고정 16개 케이스로 실행한 결과는 `EMBED_WEIGHT=0.8`에서 15/16(93.8%), `EMBED_WEIGHT=8`(기본값)에서 16/16(100%)입니다(가장 낮은 정답 순위 2위). 2026-10-26 실행(1,032개 문서)은 각각 14/16(87.5%), 15/16(93.8%)였고, 그 뒤 케이스 1개의 정답 경로를 실제 위치(`01.-현황-정리/` 아래)로 고쳤습니다. 과거 코드 주석의 68.8%·87.5%는 당시 테스트셋이 저장되어 있지 않아 이 벤치마크로 재현되는 수치로 표기하지 않습니다.
 | `WIKI_REGISTER_PUSH` | `1` | 시나리오 1 "Wiki에 등록" 때 Azure DevOps Wiki로 push(`0`이면 로컬 커밋만) |
-| `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 쓴다. 실제 IP는 `.env`에만 둔다 |
+| `PROXY_ALLOWED_CLIENTS` | `203.0.113.10/32` | 프록시를 쓸 수 있는 클라이언트 CIDR(쉼표 구분). 로그 탐지·장애 주입이 이 값을 씁니다. 실제 IP는 `.env`에만 둡니다 |
 | `PROXY_SSH_USER` / `PROXY_SSH_KEY` | `azureuser` / (비움: 기본 키) | 프록시 VM SSH 접속(정책 변경 감지) |
 | `SQUID_RUNTIME` | `podman` | VM에서 Squid 컨테이너를 띄운 런타임(로그 뷰어) |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
 | `TEAMS_CARD_ARCHIVE` | `1` | 보낸 Teams 카드를 `data/teams_cards/`에 JSON으로 남김(README 카드 화면용). `0`이면 끔 |
 
-임베딩 모델을 바꾸면 처음 실행할 때 문서 전체 임베딩을 다시 계산한다(약 2분). 결과는 `data/wiki_search_cache.json`에 캐시된다.
+임베딩 모델을 바꾸면 처음 실행할 때 문서 전체 임베딩을 다시 계산합니다(약 2분). 결과는 `data/wiki_search_cache.json`에 캐시됩니다.
 
-서버는 시작할 때만 `.env`를 읽는다. 값을 바꾸면 허브에서 해당 서버를 재시작해야 적용된다.
+서버는 시작할 때만 `.env`를 읽습니다. 값을 바꾸면 허브에서 해당 서버를 재시작해야 적용됩니다.
 
 ### 4.2 data 폴더
 
@@ -860,7 +901,7 @@ flowchart TD
 
 - 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `chunk_select`(조각 수·줄어든 글자 수·중복) → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
 - 줄은 단계가 끝날 때 찍히고 번호는 시작 순서입니다. 하위 단계가 있는 단계는 시작할 때 `▸ … 시작` 줄을 먼저 찍으므로, 들여 쓴 하위 줄은 항상 바로 위 `▸` 줄의 하위입니다.
-- 줄 앞 표시: `▸` 하위 단계가 있는 단계의 시작, `↻` 진행 중(LLM 응답을 기다리는 동안 5초마다, 게이트웨이가 응답을 모아 한 번에 보내므로 그사이 로그가 멈춘 것처럼 보이지 않게), `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나 먼저 찍힌다.
+- 줄 앞 표시: `▸` 하위 단계가 있는 단계의 시작, `↻` 진행 중(LLM 응답을 기다리는 동안 5초마다, 게이트웨이가 응답을 모아 한 번에 보내므로 그사이 로그가 멈춘 것처럼 보이지 않게), `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나서 먼저 찍힙니다.
 - 줄 앞은 날짜·시각입니다(서버가 며칠씩 돌아도 어느 날 기록인지 알 수 있게 모든 줄에 날짜를 씀). 그 옆 8자리 16진수(예: `07902dac`)는 **트레이스 ID**로, 요청마다 새로 만듭니다. 요청 두 개가 동시에 돌아 줄이 섞여도 ID가 같은 줄만 보면 한 요청의 흐름을 따라갈 수 있고, `data/traces/*.jsonl`에서 `"trace_id"`로 같은 요청의 상세 기록을 찾습니다(예: `Select-String -Path data	races\wiki-search-*.jsonl -Pattern 07902dac`). 시나리오 2 로그도 같습니다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
