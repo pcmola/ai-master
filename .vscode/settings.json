@@ -8,6 +8,10 @@
   "workbench.browser.openLocalhostLinks": false,
   "workbench.externalBrowser": "chrome",
   "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  // AGENTS.md 는 원문 대신 마크다운 미리보기로 연다(고칠 때는 탭 우클릭 → Reopen Editor With… → Text Editor)
+  "workbench.editorAssociations": {
+    "AGENTS.md": "vscode.markdown.preview.editor"
+  },
   // 실행 중에 sys.path 로 추가하는 폴더와 README 캡처용 가상환경(playwright)을 편집기도 찾도록
   "python.analysis.extraPaths": [
     "proxy_tools",
