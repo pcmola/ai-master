@@ -44,6 +44,8 @@ GUIDE_CACHE = DATA_DIR / "guide_cache.json"  # 만든 가이드(질의·유형�
 GUIDE_PROMPT_VERSION = 1  # llm_guide 프롬프트를 고치면 올린다(저장된 가이드가 모두 무효가 된다)
 GUIDE_CACHE_WEB_DAYS = float(os.environ.get("GUIDE_CACHE_WEB_DAYS", "7"))  # 웹 근거를 쓴 가이드의 유효 기간
 AI_DOC_PREFIX = "AI-Master-프로젝트/02.-운영/00.-AI-문서-생성"  # 시나리오 1 이 등록한 문서(가이드 재료에서 제외)
+# 시나리오 2 테스트 문서. 시험할 때마다 일부러 틀린 값으로 되돌려 쓰므로 근거로 부적절하고, 바뀔 때마다 가이드 캐시도 깬다.
+GUIDE_EXCLUDE = {"AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-및-Proxy/01.-네트워크-및-Proxy-현황-파악/Proxy-VM-현황"}
 GUIDE_CHUNKS = int(os.environ.get("GUIDE_CHUNKS", "24"))           # LLM 에 넘길 조각 수 상한
 GUIDE_CHUNK_CHARS = int(os.environ.get("GUIDE_CHUNK_CHARS", "1500"))  # 조각 하나의 대략적인 최대 길이
 GUIDE_CONTEXT_CHARS = int(os.environ.get("GUIDE_CONTEXT_CHARS", "16000"))  # 넘길 조각 전체 글자 수 상한
@@ -582,7 +584,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
         core = min(groups, key=lambda g: sum(1 for d in INDEX.docs if any(s in d.low for s in g))) if groups else []
         # AI 가 만들어 등록한 문서(00. AI 문서 생성)는 재료에서 뺀다. 자기가 쓴 글을 근거로 다시 쓰면 틀린 내용이 이어진다.
         sources = [(d, s) for d, s in ranked if (not core or any(w in d.low for w in core))
-                   and not d.path.startswith(AI_DOC_PREFIX)][:15]
+                   and not d.path.startswith(AI_DOC_PREFIX) and d.path not in GUIDE_EXCLUDE][:15]
 
         statements: dict[str, list[Doc]] = {}
         for d, _ in sources:
@@ -687,9 +689,11 @@ def guide_fingerprint(chunks: list[dict], statements: dict, model: str, web: boo
     """LLM 에 넘길 근거(조각 원문·경로, 근거 문장)와 모델·프롬프트 버전·웹 검색 여부의 지문.
     위키 전체가 아니라 이 질의의 근거만 보므로, 관계없는 문서가 바뀌어도 캐시를 그대로 쓴다.
     웹 결과 내용은 넣지 않는다(확인하려면 웹 검색을 다시 해야 함) → 대신 GUIDE_CACHE_WEB_DAYS 로 만료."""
+    # 순서는 빼고 내용만 본다(정렬). 관계없는 위키 문서가 바뀌어도 단어 희소도·평균 길이가 조금 변해 점수가 비슷한 조각의
+    # 순서가 뒤바뀌는데, 순서까지 넣으면 근거가 같아도 '근거 바뀜'이 됐다(2026-10-30, 재시작 뒤 첫 요청이 늘 느려 보임).
     body = {"v": GUIDE_PROMPT_VERSION, "model": model, "web": web,
-            "chunks": [[c["doc"].path, c.get("heading", ""), c["text"]] for c in chunks],
-            "statements": [[line, [d.path for d in docs]] for line, docs in statements.items()]}
+            "chunks": sorted([c["doc"].path, c.get("heading", ""), c["text"]] for c in chunks),
+            "statements": sorted([line, sorted(d.path for d in docs)] for line, docs in statements.items())}
     return hashlib.sha1(json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
