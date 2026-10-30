@@ -183,15 +183,15 @@ flowchart TD
 
 ![시나리오 2 - Teams 승인 요청 카드](docs/images/teams-scenario2-approval.png)
 
-Yes를 누르면 Task 생성 → Wiki 표·변경 이력 갱신 → Task 완료 처리 후 결과 카드가 옵니다(Task #2530 Done, Wiki 커밋 링크):
+Yes를 누르면 Task 생성 → Wiki 표·변경 이력 갱신 → Task 완료 처리 후 결과 카드가 옵니다(Task #2531 Done, Wiki 커밋 링크):
 
 ![시나리오 2 - Teams 현행화 완료 카드](docs/images/teams-scenario2-result.png)
 
-아래 두 장은 실제 승인 화면 렌더러에 **예시 데이터**를 넣어 촬영한 것으로, 외부 시스템에는 반영하지 않았습니다. Teams 카드의 "자세히 보기"가 이 로컬 승인 화면을 엽니다. Teams 카드에서 바로 Yes/No를 누르면 "받았습니다" 확인만 뜨고 처리 결과는 Teams 결과 카드로 옵니다:
+아래 두 장은 같은 실행(2026-10-30 17:41)의 **로컬 승인 화면**과 승인 후 **처리 결과 화면**입니다. 화면 내용과 최종 진행 상태를 `data/approvals/`에 남겨 두었다가 같은 화면 코드로 다시 그렸습니다. Teams 카드의 "자세히 보기"가 이 로컬 승인 화면을 엽니다. Teams 카드에서 바로 Yes/No를 누르면 "받았습니다" 확인만 뜨고 처리 결과는 Teams 결과 카드로 옵니다:
 
-![시나리오 2 - 로컬 승인 화면 예시](docs/images/approval.png)
+![시나리오 2 - 로컬 승인 화면](docs/images/approval.png)
 
-![시나리오 2 - 승인 후 완료 화면 예시](docs/images/approval-progress.png)
+![시나리오 2 - 승인 후 처리 결과 화면](docs/images/approval-progress.png)
 
 ### 1.3 시나리오 3 · 장애 감지 및 자동 조치
 
