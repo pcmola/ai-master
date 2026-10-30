@@ -342,8 +342,11 @@ def mask_card(card: dict) -> dict:
 def render_card(page, saved: dict, out: Path):
     html = (CARD_PAGE.replace("__WHEN__", saved["sent_at"].replace("T", " "))
             .replace("__CARD__", json.dumps(mask_card(saved["card"]), ensure_ascii=False)))
-    page.set_content(html, wait_until="networkidle")
-    page.wait_for_function("window.rendered === true")
+    # set_content 는 document.write 로 써서, 두 번째 카드부터 외부 렌더러 스크립트가 막혀 본문이 빈 채로 찍혔다 → 파일로 연다
+    src = EVIDENCE / f"{out.stem}.html"
+    src.write_text(html, encoding="utf-8")
+    page.goto(src.as_uri(), wait_until="networkidle")
+    page.wait_for_function("window.rendered === true && document.getElementById('card').children.length > 0")
     page.evaluate(REDACTOR)
     page.evaluate("document.fonts.ready")
     page.locator("#frame").screenshot(path=str(out), animations="disabled")
