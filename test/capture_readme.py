@@ -1,18 +1,24 @@
 """README 화면 재촬영. 조회·가이드 생성만 실행하며 승인·배포·Wiki 등록은 하지 않는다.
 
-사용: python test/capture_readme.py [--inspect] [--only wiki|viewer|hub|proxy|approval|teams]
+사용: python test/capture_readme.py [--inspect] [--only wiki|viewer|hub|proxy|approval|teams|wikidiff|devops]
 필요: pip install playwright, 실행 중인 로컬 서버, 설치된 Google Chrome.
 승인/완료 화면은 실제 렌더러에 예시 데이터를 넣어 별도 읽기 전용 서버로 촬영한다.
 Teams 카드(--only teams)는 teams_notify 가 보낼 때 남긴 data/teams_cards/*.json 중 종류별 최신 카드를
 Adaptive Cards 공식 렌더러로 그린다. Teams 에 새 메시지를 보내지 않는다.
+--only wikidiff: 시나리오 2 가 마지막으로 고친 현황 문서의 수정 전/후를 wiki-repo 커밋에서 꺼내 나란히 그리고 바뀐 곳을 빨갛게 표시.
+--only devops: 허브가 띄운 Chrome(전용 프로필, 개발자 도구 포트 9222, Azure DevOps 로그인 필요)에 붙어 시나리오 2 의
+  PBI·Task 화면을 찍는다. 승인 기록(data/approvals/)의 처리 단계에서 번호를 찾는다. 이름·이메일은 가린다.
 """
 
 from __future__ import annotations
 
 import argparse
+import difflib
+import html as html_mod
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 from datetime import datetime
@@ -336,6 +342,8 @@ CARD_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <style>body{margin:0;padding:20px;background:#f5f5f5;font-family:"Segoe UI","Malgun Gothic",sans-serif}
 #frame{width:600px;background:#fff;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.18);padding:14px 18px}
 .meta{font-size:12px;color:#616161;margin-bottom:10px}.meta b{color:#242424}
+#card{border:1px solid #e0e0e0;border-radius:6px;background:#fff}  /* Teams 채널의 카드 테두리 */
+#card .ac-adaptiveCard{border-radius:6px}
 .ac-pushButton{border:1px solid #d1d1d1!important;background:#fff!important;border-radius:4px!important;font-weight:600}</style>
 </head><body><div id="frame"><div class="meta"><b>Workflows</b> · Teams 일반 채널 · __WHEN__</div><div id="card"></div></div>
 <script>
@@ -394,10 +402,197 @@ def teams(page):
             print(f"skip {name}: data/teams_cards 에 '{pattern}' 카드 없음 (해당 시나리오를 실행하면 생김)", flush=True)
 
 
+# ---------------------------------------------------------------- 시나리오 2 Wiki 수정 전/후
+
+WIKI_REPO = ROOT / "wiki-repo"
+STATUS_DOC = "AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-및-Proxy/01.-네트워크-및-Proxy-현황-파악/Proxy-VM-현황.md"
+DIFF_CSS = """body{margin:0;padding:20px;background:#f5f5f5;font:13px/1.55 "Segoe UI","Malgun Gothic",sans-serif;color:#242424}
+.pane{background:#fff;border-radius:8px;box-shadow:0 1px 3px #0002;padding:14px 20px;margin-bottom:16px}
+.cap{font-weight:700;font-size:14px;margin-bottom:8px}.cap span{font-weight:400;color:#666;margin-left:8px}
+h1{font-size:20px;margin:6px 0}h2{font-size:15px;margin:14px 0 6px;border-bottom:1px solid #eee;padding-bottom:4px}
+blockquote{margin:4px 0;padding:4px 10px;border-left:3px solid #c7d2fe;background:#f8fafc;color:#475569}
+table{border-collapse:collapse;width:100%;font-size:12px;margin:6px 0}td,th{border:1px solid #ddd;padding:4px 6px;text-align:left}
+th{background:#f3f4f6}p,li{margin:3px 0}ul{margin:4px 0;padding-left:20px}code{background:#f1f5f9;padding:0 3px;border-radius:3px}
+.chg{background:#fee2e2;color:#b91c1c;font-weight:700}.add,.add td{background:#fee2e2;color:#b91c1c;font-weight:700}
+.del,.del td{background:#fee2e2;color:#b91c1c;text-decoration:line-through}
+.legend{font-size:12px;color:#666;margin-bottom:12px}.legend b{color:#b91c1c}"""
+
+
+def git_show(rev: str, path: str) -> str:
+    out = subprocess.run(["git", "-C", str(WIKI_REPO), "show", f"{rev}:{path}"], capture_output=True)
+    return out.stdout.decode("utf-8")
+
+
+def inline(s: str) -> str:
+    s = html_mod.escape(s)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    return re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2">\1</a>', s)
+
+
+def blocks(md: str) -> list:
+    """('table', [행들]) 또는 ('line', 줄). 표는 머리글·구분 줄을 포함한 행 목록."""
+    out, table = [], []
+    for line in md.splitlines():
+        if line.startswith("|"):
+            table.append(line)
+            continue
+        if table:
+            out.append(("table", table)); table = []
+        out.append(("line", line))
+    if table:
+        out.append(("table", table))
+    return out
+
+
+def cells(row: str) -> list[str]:
+    return [c.strip() for c in row.strip().strip("|").split("|")]
+
+
+def render_side(md: str, other: str, side: str) -> str:
+    """side='before' 면 삭제·변경을, 'after' 면 추가·변경을 빨갛게 표시한다. 표는 첫 칸(이름·일시)으로 행을 맞춘다."""
+    mine, theirs = blocks(md), blocks(other)
+    other_lines = {x for k, x in theirs if k == "line"}
+    other_tables = [x for k, x in theirs if k == "table"]
+    html, ti, in_list = [], 0, False
+    for kind, x in mine:
+        if kind == "line":
+            line = x
+            mark = ' class="chg"' if line.strip() and line not in other_lines else ""
+            if in_list and not line.startswith("- "):
+                html.append("</ul>"); in_list = False
+            if line.startswith("# "):
+                html.append(f"<h1{mark}>{inline(line[2:])}</h1>")
+            elif line.startswith("## "):
+                html.append(f"<h2{mark}>{inline(line[3:])}</h2>")
+            elif line.startswith(">"):
+                html.append(f"<blockquote><span{mark}>{inline(line.lstrip('> '))}</span></blockquote>")
+            elif line.startswith("- "):
+                if not in_list:
+                    html.append("<ul>"); in_list = True
+                html.append(f"<li><span{mark}>{inline(line[2:])}</span></li>")
+            elif line.strip():
+                html.append(f"<p><span{mark}>{inline(line)}</span></p>")
+            continue
+        if in_list:
+            html.append("</ul>"); in_list = False
+        theirs_t = other_tables[ti] if ti < len(other_tables) else []
+        ti += 1
+        head, rows = cells(x[0]), [cells(r) for r in x[2:]]
+        other_rows = {r[0]: r for r in (cells(r) for r in theirs_t[2:])}
+        body = "".join(f"<th>{inline(h)}</th>" for h in head)
+        trs = [f"<tr>{body}</tr>"]
+        for r in rows:
+            o = other_rows.get(r[0])
+            if o is None:
+                trs.append(f'<tr class="{"del" if side == "before" else "add"}">' + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>")
+            else:
+                trs.append("<tr>" + "".join(f'<td{" class=chg" if i >= len(o) or c != o[i] else ""}>{inline(c)}</td>'
+                                            for i, c in enumerate(r)) + "</tr>")
+        html.append("<table>" + "".join(trs) + "</table>")
+    if in_list:
+        html.append("</ul>")
+    return "\n".join(html)
+
+
+def wikidiff(page):
+    log = subprocess.run(["git", "-C", str(WIKI_REPO), "log", "-1", "--format=%h|%ad|%s", "--date=format:%Y-%m-%d %H:%M",
+                          "--grep=Proxy 현황 현행화", "--", STATUS_DOC], capture_output=True).stdout.decode("utf-8").strip()
+    if not log:
+        print("skip wiki-scenario2-diff.png: 시나리오 2 현행화 커밋 없음", flush=True)
+        return
+    rev, when, subject = log.split("|", 2)
+    before, after = git_show(f"{rev}^", STATUS_DOC), git_show(rev, STATUS_DOC)
+    prev = subprocess.run(["git", "-C", str(WIKI_REPO), "log", "-1", "--format=%h", f"{rev}^"],
+                          capture_output=True).stdout.decode().strip()
+    doc = (f"<!doctype html><html><head><meta charset='utf-8'><style>{DIFF_CSS}</style></head><body>"
+           f"<div class='legend'>Wiki <b>Proxy VM 현황</b> · 시나리오 2 현행화 전/후 비교 · <b>빨간색</b> = 바뀐 곳"
+           f"(수정 전: 지워지거나 바뀐 값, 수정 후: 새로 생기거나 바뀐 값)</div>"
+           f"<div class='pane'><div class='cap'>수정 전<span>커밋 {prev} · 테스트 환경 준비가 '현행화 전'으로 되돌린 상태</span></div>"
+           f"{render_side(before, after, 'before')}</div>"
+           f"<div class='pane'><div class='cap'>수정 후<span>커밋 {rev} · {when} · {html_mod.escape(subject)}</span></div>"
+           f"{render_side(after, before, 'after')}</div></body></html>")
+    src = EVIDENCE / "wiki-scenario2-diff.html"
+    src.write_text(doc, encoding="utf-8")
+    page.set_viewport_size({"width": 1200, "height": 900})
+    page.goto(src.as_uri(), wait_until="load")
+    page.evaluate(REDACTOR)
+    page.screenshot(path=str(OUT / "wiki-scenario2-diff.png"), full_page=True, animations="disabled")
+    (EVIDENCE / "wiki-scenario2-diff.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
+    print(f"captured wiki-scenario2-diff.png ({prev} → {rev}, {when})", flush=True)
+
+
+# ---------------------------------------------------------------- 시나리오 2 Azure DevOps PBI·Task
+
+NAME_REDACTOR = r"""(names) => {
+  const fix = s => names.reduce((a, n) => n ? a.split(n).join('담당자') : a, s);
+  const sweep = () => { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const ns = []; while (w.nextNode()) ns.push(w.currentNode);
+    for (const n of ns) { const s = fix(n.nodeValue); if (s !== n.nodeValue) n.nodeValue = s; }
+    for (const el of document.querySelectorAll('input, textarea')) { const s = fix(el.value); if (s !== el.value) el.value = s; }
+    for (const el of document.querySelectorAll('[title],[aria-label],[placeholder]'))
+      for (const a of ['title', 'aria-label', 'placeholder']) if (el.hasAttribute(a)) el.setAttribute(a, fix(el.getAttribute(a))); };
+  // 이름 첫 글자가 보이는 프로필 동그라미는 흐리게
+  const st = document.createElement('style');
+  st.textContent = '[class*="bolt-coin"], [class*="identity-picture"], [class*="avatar"] { filter: blur(5px) !important; }';
+  document.head.appendChild(st);
+  // 오른쪽 위 로그인 계정 동그라미(클래스가 달라 위치로 찾는다)
+  const me = document.elementFromPoint(innerWidth - 32, 24); if (me) me.style.filter = 'blur(5px)';
+  sweep(); new MutationObserver(sweep).observe(document.body, {subtree: true, childList: true, characterData: true});
+}"""
+DEVOPS_SECTION = ("(t => { const e = [...document.querySelectorAll('span')].find(x => x.textContent.trim() === t);"
+                  " return e && e.closest('.work-item-form-collapsible-section'); })")
+
+
+def devops_ids() -> dict:
+    """시나리오 2 승인 기록의 처리 단계에서 PBI·Task 번호를 찾는다."""
+    saved = latest_approval(2)
+    text = " ".join(s.get("text", "") for s in ((saved or {}).get("state") or {}).get("steps", []))
+    pbi, task = re.search(r"PBI #(\d+)", text), re.search(r"Task #(\d+)", text)
+    return {"pbi": pbi and pbi.group(1), "task": task and task.group(1)}
+
+
+def devops(own_page):
+    ids = devops_ids()
+    if not ids["task"]:
+        print("skip devops: 시나리오 2 승인 기록에 Task 번호 없음", flush=True)
+        return
+    base = "https://dev.azure.com/{}/{}".format(os.environ.get("AZURE_DEVOPS_ORG", ""),
+                                                os.environ.get("AZURE_DEVOPS_PROJECT", "").strip('"').replace(" ", "%20"))
+    names = [n for n in {os.environ.get("TEAMS_MENTION_NAME", ""), os.environ.get("DEVOPS_DISPLAY_NAME", "")} if n]
+    if True:  # 이미 떠 있는 Playwright 로 허브 Chrome 에 붙는다(sync_playwright 를 겹쳐 띄우면 오류)
+        try:
+            browser = own_page.context.browser.browser_type.connect_over_cdp("http://127.0.0.1:9222")
+        except Exception as exc:
+            print(f"skip devops: 허브 Chrome(포트 9222)에 붙지 못함 — 허브를 띄우고 그 창에서 Azure DevOps 에 로그인하세요 ({exc})", flush=True)
+            return
+        page = browser.contexts[0].new_page()
+        try:
+            page.set_viewport_size({"width": 1600, "height": 1150})
+            for name, wid, section in [("devops-scenario2-pbi.png", ids["pbi"], "Related Work"),
+                                       ("devops-scenario2-task.png", ids["task"], "Description")]:
+                if not wid:
+                    continue
+                page.goto(f"{base}/_workitems/edit/{wid}", wait_until="domcontentloaded", timeout=60000)
+                if "login" in page.url or "signin" in page.url:
+                    print("skip devops: Azure DevOps 로그인 필요(허브 Chrome 창에서 로그인)", flush=True)
+                    return
+                page.locator("span", has_text=section).first.wait_for(timeout=60000)
+                page.wait_for_timeout(2500)  # 링크 목록·설명 늦게 그려짐
+                page.evaluate(REDACTOR)
+                page.evaluate(NAME_REDACTOR, names)
+                mark(page, f"{DEVOPS_SECTION}('{section}')")
+                page.screenshot(path=str(OUT / name), animations="disabled")
+                (EVIDENCE / f"{Path(name).stem}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
+                print(f"captured {name} (#{wid})", flush=True)
+        finally:
+            page.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inspect", action="store_true", help="DOM 확인만; 검색·촬영 안 함")
-    parser.add_argument("--only", choices=["wiki", "viewer", "hub", "proxy", "approval", "teams"])
+    parser.add_argument("--only", choices=["wiki", "viewer", "hub", "proxy", "approval", "teams", "wikidiff", "devops"])
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     EVIDENCE.mkdir(parents=True, exist_ok=True)
@@ -415,7 +610,7 @@ def main():
                 ), flush=True)
         else:
             for name, capture in [("wiki", wiki), ("viewer", viewer), ("hub", hub), ("proxy", proxy), ("approval", approval),
-                                  ("teams", teams)]:
+                                  ("teams", teams), ("wikidiff", wikidiff), ("devops", devops)]:
                 if not args.only or args.only == name:
                     capture(page)
             print("Finished:", datetime.now().astimezone().isoformat(timespec="seconds"), flush=True)

@@ -187,6 +187,22 @@ Yes를 누르면 Task 생성 → Wiki 표·변경 이력 갱신 → Task 완료 
 
 ![시나리오 2 - Teams 현행화 완료 카드](docs/images/teams-scenario2-result.png)
 
+**Azure DevOps · 같은 실행에서 만든 PBI·Task** (이름·이메일·IP는 가림, 설명하는 부분은 빨간 테두리)
+
+그 달 PBI `2610) Proxy VM 현황 Wiki 현행화` 아래에 실행할 때마다 Task가 하나씩 붙습니다. 상위는 Feature `[공통] Proxy 현황 관리`, 하위 Task는 모두 Done입니다:
+
+![시나리오 2 - PBI와 하위 Task](docs/images/devops-scenario2-pbi.png)
+
+Task #2531에는 감지한 변경 5건, 현황 문서 링크, AI 요약이 들어가고, Wiki를 고친 뒤 커밋 번호를 댓글로 남기고 Done으로 바꿉니다:
+
+![시나리오 2 - Task 상세](docs/images/devops-scenario2-task.png)
+
+**Wiki 현황 문서 · 수정 전/후** (빨간색 = 바뀐 곳)
+
+수정 전은 테스트 환경 준비가 되돌려 둔 상태(커밋 `e2d609e`), 수정 후는 승인 뒤 시나리오 2가 고친 상태(커밋 `2b8a9ac`)입니다. VM 표의 SIZE·상태·사설 IP 값이 Azure 값으로 바뀌고, Azure에 없는 `wjy-prxy04`는 지워지고(취소선) 새 VM `wjy-proxy03`이 더해졌으며, 변경 이력에 Task 링크와 함께 한 줄이 추가됩니다:
+
+![시나리오 2 - Wiki 현황 문서 수정 전/후](docs/images/wiki-scenario2-diff.png)
+
 아래 두 장은 같은 실행(2026-10-30 17:41)의 **로컬 승인 화면**과 승인 후 **처리 결과 화면**입니다. 화면 내용과 최종 진행 상태를 `data/approvals/`에 남겨 두었다가 같은 화면 코드로 다시 그렸습니다. Teams 카드의 "자세히 보기"가 이 로컬 승인 화면을 엽니다. Teams 카드에서 바로 Yes/No를 누르면 "받았습니다" 확인만 뜨고 처리 결과는 Teams 결과 카드로 옵니다:
 
 ![시나리오 2 - 로컬 승인 화면](docs/images/approval.png)
@@ -1077,7 +1093,7 @@ python -m venv data/readme-capture-venv
 & .\data\readme-capture-venv\Scripts\python.exe test\capture_readme.py
 ```
 
-Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy|approval|teams`로 특정 화면 묶음만 다시 찍을 수 있습니다(`--only wiki`처럼 하나를 지정).
+Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy|approval|teams|wikidiff|devops`로 특정 화면 묶음만 다시 찍을 수 있습니다(`--only wiki`처럼 하나를 지정).
 
 | 화면 | 캡처 시 수행하는 동작 | 외부 반영 |
 |---|---|---|
@@ -1085,6 +1101,8 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 | 시나리오 2 | 허브에서 저장된 점검 로그 조회 | 새 점검·Teams 요청·Task 생성·Wiki 갱신 없음 |
 | 시나리오 3 | Squid·NGINX 실제 로그·정책 조회, 허브의 기존 실행 로그 조회 | SSH 읽기만 수행. 장애 주입·복구·PR 생성·배포 없음 |
 | 승인·완료 화면 | 실제 실행 때 `data/approvals/`에 남긴 승인 화면 내용·최종 진행 상태(시나리오별 Yes로 끝난 최신 1건)를 같은 화면 코드로 읽기 전용 서버에 띄워 촬영. 기록이 없으면 예시 데이터 | 없음. 예시 데이터일 때만 **화면 예시 · 외부 반영 없음** 표시 |
+| Wiki 수정 전/후 (`--only wikidiff`) | wiki-repo에서 시나리오 2의 마지막 현행화 커밋과 그 직전 파일을 꺼내 위아래로 그리고, 표는 첫 칸(이름)으로 행을 맞춰 바뀐 칸·추가 행·삭제 행을 빨갛게 표시 → `wiki-scenario2-diff.png` | 없음 |
+| Azure DevOps (`--only devops`) | 허브가 띄운 Chrome(전용 프로필, 포트 9222)에 붙어 시나리오 2 승인 기록의 PBI·Task 화면을 찍음 → `devops-scenario2-pbi.png`, `devops-scenario2-task.png`. 그 Chrome 창에서 Azure DevOps에 한 번 로그인해 두어야 함 | 없음(조회만). 이름·이메일·IP는 가리고 프로필 사진은 흐리게 |
 | Teams 카드 (`--only teams`) | `data/teams_cards/`에 남은 **실제 전송 카드** 중 종류별 최신 1장(시나리오 2·3의 승인 요청·결과)을 Adaptive Cards 공식 렌더러(`adaptivecards@3.0.5`)로 그림 → `teams-scenario2-approval.png`, `teams-scenario2-result.png`, `teams-scenario3-approval.png`, `teams-scenario3-result.png` | 없음. Teams에 다시 보내지 않음. 멘션 이름·계정·PC 이름은 그리기 전에, IP·이메일은 화면에서 가림 |
 
 로컬 승인 화면은 승인을 기다리는 동안에만 떠 있으므로, `approval_local.Approval`이 화면 내용과 끝난 뒤 진행 상태를 `data/approvals/`(Git 제외)에 남깁니다(`APPROVAL_ARCHIVE=0`이면 끔). Teams 카드는 `teams_notify.send`가 보낼 때마다 `data/teams_cards/`(Git 제외)에 JSON으로 남깁니다(`TEAMS_CARD_ARCHIVE=0`이면 끔). Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요해서 보내는 쪽에서 남깁니다. 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2(테스트 환경 준비 → 실행 → Yes)와 시나리오 3(장애 재현 → 실행 → Yes)을 실제로 한 번씩 실행합니다. 스크립트는 표시되는 IP·이메일·ID를 가리고 촬영하며, 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다. 공유 전에는 이미지도 직접 확인합니다. 시나리오 2 로그를 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다(비교·AI 요약만 수행, 로컬 로그·트레이스 기록).
