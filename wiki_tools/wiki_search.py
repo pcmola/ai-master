@@ -9,6 +9,8 @@
 - 웹 검색: 위키 근거가 약하면(최고 임베딩 유사도 < WEB_SEARCH_MIN_SIM, 또는 근거 문서 0건) 웹 검색 결과를 가이드
   근거에 보탠다. 공급자는 WEB_SEARCH_PROVIDER(auto|tavily|gpt|off). auto 는 TAVILY_API_KEY 가 있으면 Tavily,
   없으면 GPT 내장 web_search 도구(Responses API, 게이트웨이는 api-version 2025-03-01-preview 이상 필요).
+- 가이드 캐시: 같은 질의·유형이고 LLM 에 넘길 근거 조각·모델·프롬프트 버전·웹 검색 여부가 같으면(지문 비교) LLM 을
+  건너뛰고 저장된 가이드를 낸다. 웹을 쓴 가이드는 GUIDE_CACHE_WEB_DAYS 일이 지나면 새로 만든다. 수정 요청 결과는 저장하지 않는다.
 - 트레이싱: 요청마다 노드(refresh_index → analyze → hybrid_search(embed_query) → select_sources → web_decision →
   web_search → llm_generate | template)별 소요 시간과 결과를 콘솔(허브 로그)과 data/traces/wiki-search-YYYYMMDD.jsonl 에 남긴다.
 """
@@ -28,7 +30,7 @@ from collections import Counter
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR, ENV_FILE, WIKI_REPO  # noqa: E402
@@ -38,6 +40,9 @@ from common.trace import heartbeat, plan, replan, simulate, span, step, think, t
 ROOT = WIKI_REPO.resolve()
 CACHE = DATA_DIR / "wiki_search_cache.json"
 CHUNK_CACHE = DATA_DIR / "wiki_search_chunks.json"  # 가이드 재료 조각(청크) 임베딩 캐시
+GUIDE_CACHE = DATA_DIR / "guide_cache.json"  # 만든 가이드(질의·유형별)와 근거 지문
+GUIDE_PROMPT_VERSION = 1  # llm_guide 프롬프트를 고치면 올린다(저장된 가이드가 모두 무효가 된다)
+GUIDE_CACHE_WEB_DAYS = float(os.environ.get("GUIDE_CACHE_WEB_DAYS", "7"))  # 웹 근거를 쓴 가이드의 유효 기간
 AI_DOC_PREFIX = "AI-Master-프로젝트/02.-운영/00.-AI-문서-생성"  # 시나리오 1 이 등록한 문서(가이드 재료에서 제외)
 GUIDE_CHUNKS = int(os.environ.get("GUIDE_CHUNKS", "24"))           # LLM 에 넘길 조각 수 상한
 GUIDE_CHUNK_CHARS = int(os.environ.get("GUIDE_CHUNK_CHARS", "1500"))  # 조각 하나의 대략적인 최대 길이
@@ -535,9 +540,10 @@ def do_guide(query: str, key: str | None, variant: str | None, revise: dict | No
     return result
 
 
-def guide_events(query: str, key: str | None, variant: str | None, revise: dict | None = None):
+def guide_events(query: str, key: str | None, variant: str | None, revise: dict | None = None, fresh: bool = False):
     """가이드 생성 과정을 이벤트로 낸다: meta(검색 결과) → delta(LLM 이 쓴 완성된 줄, 여러 번) → done(최종 Markdown).
-    revise={"markdown": 지금 가이드, "request": 수정 요청} 이면 근거 조각을 요청까지 반영해 다시 고르고 가이드를 고쳐 쓴다."""
+    revise={"markdown": 지금 가이드, "request": 수정 요청} 이면 근거 조각을 요청까지 반영해 다시 고르고 가이드를 고쳐 쓴다.
+    근거 지문이 저장된 가이드와 같으면 LLM 없이 그 가이드를 낸다(done.cached=처음 생성 시각). fresh 면 캐시를 보지 않는다."""
     option = CLARIFY[key]["options"][variant] if key in CLARIFY and variant in CLARIFY[key]["options"] else None
     plan(f"'{query[:40]}' 통합 가이드 작성" + (f" (유형: {option['label']})" if option else "")
          + (" · 수정 요청 반영" if revise else ""),
@@ -593,6 +599,24 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
     if not web_reason and request:
         # 원 질의는 위키에 있어도 수정 요청이 위키 밖 사실(예: 출근지 주소)을 물을 수 있다 → 요청 기준으로 한 번 더 본다.
         web_reason, wq, must = request_web_reason(request, title)
+    llm = claude_client() or openai_client()
+    ckey = fp = None
+    if not revise and llm:  # 웹 검색(특히 GPT 는 수십 초)보다 앞에서 본다
+        ckey = cache_key(query, key, variant)
+        fp = guide_fingerprint(chunks, statements, llm_model(llm), bool(web_reason))
+        hit = guide_cache_get(ckey, fp, fresh)
+        if hit:
+            replan(f"근거 지문이 저장된 가이드와 같음 (처음 생성 {hit['created_at']})", drop=["llm_generate"],
+                   add=[("guide_cache", "저장된 가이드 사용 (LLM 생략)")])
+            step("guide_cache")
+            yield {"type": "meta", "title": title, "model": hit["model"], "web": hit["web"], "web_reason": web_reason,
+                   "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms, "fixes": fixes},
+                   "highlights": sorted({w for g in groups for w in g} | set(boost), key=len, reverse=True),
+                   "results": [{"path": d.path, "title": d.title, "link": view_link(d.path), "score": round(s, 3),
+                                "snippets": matching_lines(d, group_weights(groups) + [([b], 0.3) for b in boost])}
+                               for d, s in sources]}
+            yield {"type": "done", "mode": "llm", "model": hit["model"], "markdown": hit["markdown"], "cached": hit["created"]}
+            return
     if web_reason:
         replan(f"Wiki 근거 부족({web_reason})", add=[("web_search", f"웹 검색으로 근거 보완 ({WEB_LABEL.get(web_provider())})")], before="llm_generate")
         step("web_search")
@@ -603,7 +627,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
         think("Observation", f"웹 근거 {len(web)}건")
     else:
         think("Decision", "Wiki 근거로 충분 → 웹 검색 생략")
-    client = (claude_client() or openai_client()) if statements or web else None
+    client = llm if statements or web else None
     model = llm_model(client) if client else None
     highlights = sorted({w for g in groups for w in g} | set(boost), key=len, reverse=True)
     weighted = group_weights(groups) + [([b], 0.3) for b in boost]
@@ -627,6 +651,8 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
     if markdown:
         think("Reflection", f"가이드 {len(markdown):,}자 · 근거 문서 {len({c['doc'].path for c in chunks}) or len(sources)}건"
                             + (f" + 웹 {len(web)}건" if web else "") + " 출처 표기 · 근거 없는 내용은 '근거 없음'으로 표시하도록 지시")
+        if ckey:
+            guide_cache_put(ckey, fp, markdown, model, web)
         yield {"type": "done", "mode": "llm", "model": model, "markdown": markdown}
         return
     if revise:  # 수정 요청이 실패하면 지금 가이드를 그대로 돌려준다(템플릿으로 덮지 않는다)
@@ -642,6 +668,66 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
             markdown += "\n\n## 웹 참고 링크\n\n" + "\n".join(f"- {md_link(w['title'], w['url'])}" for w in web)
         s.set(chars=len(markdown))
     yield {"type": "done", "mode": "template", "model": None, "markdown": markdown}
+
+
+_guide_cache_lock = threading.Lock()
+
+
+def cache_key(query: str, key: str | None, variant: str | None) -> str:
+    """질의(앞뒤·연속 공백, 대소문자 정리) + 고른 유형. 표현이 다른 질의는 다른 키다(엉뚱한 가이드가 나가지 않게)."""
+    return f"{' '.join(query.lower().split())}|{key or ''}|{variant or ''}"
+
+
+def guide_fingerprint(chunks: list[dict], statements: dict, model: str, web: bool) -> str:
+    """LLM 에 넘길 근거(조각 원문·경로, 근거 문장)와 모델·프롬프트 버전·웹 검색 여부의 지문.
+    위키 전체가 아니라 이 질의의 근거만 보므로, 관계없는 문서가 바뀌어도 캐시를 그대로 쓴다.
+    웹 결과 내용은 넣지 않는다(확인하려면 웹 검색을 다시 해야 함) → 대신 GUIDE_CACHE_WEB_DAYS 로 만료."""
+    body = {"v": GUIDE_PROMPT_VERSION, "model": model, "web": web,
+            "chunks": [[c["doc"].path, c.get("heading", ""), c["text"]] for c in chunks],
+            "statements": [[line, [d.path for d in docs]] for line, docs in statements.items()]}
+    return hashlib.sha1(json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _load_guide_cache() -> dict:
+    try:
+        return json.loads(GUIDE_CACHE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def guide_cache_get(ckey: str, fp: str, fresh: bool = False) -> dict | None:
+    with span("guide_cache", fresh=fresh) as s:
+        hit = _load_guide_cache().get(ckey)
+        if fresh:
+            s.set(result="건너뜀 (새로 만들기)")
+            return None
+        if not hit:
+            s.set(result="없음")
+            return None
+        age = (time.time() - hit["created"]) / 86400
+        s.set(age_days=round(age, 1), web=len(hit.get("web") or []))
+        if hit.get("fp") != fp:
+            s.set(result="근거 바뀜 → 새로 생성")
+            return None
+        if hit.get("web") and age > GUIDE_CACHE_WEB_DAYS:
+            s.set(result=f"웹 근거 {GUIDE_CACHE_WEB_DAYS:g}일 지남 → 새로 생성")
+            return None
+        s.set(result="사용")
+        return {**hit, "created_at": time.strftime("%Y-%m-%d %H:%M", time.localtime(hit["created"]))}
+
+
+def guide_cache_put(ckey: str, fp: str, markdown: str, model: str | None, web: list[dict]):
+    with _guide_cache_lock:
+        cache = _load_guide_cache()
+        cache[ckey] = {"fp": fp, "markdown": markdown, "model": model, "created": time.time(),
+                       "web": [{"title": w["title"], "url": w["url"]} for w in web]}
+        if len(cache) > 300:  # 오래된 것부터 지운다
+            for k in sorted(cache, key=lambda k: cache[k]["created"])[:len(cache) - 300]:
+                del cache[k]
+        GUIDE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = GUIDE_CACHE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(GUIDE_CACHE)
 
 
 def split_chunks(doc: Doc) -> list[dict]:
@@ -1168,7 +1254,7 @@ mark{background:var(--hl);padding:0 1px;border-radius:2px}
 <form class="search" id="form"><input id="q" placeholder="예: 프록시 설정 가이드 알려줘" autocomplete="off" autofocus><button id="go">검색</button></form>
 <div class="steps"><span class="step" id="s1">1. 문서 검색</span><span class="step" id="s2">2. 유형 확인</span><span class="step" id="s3">3. 관련 문서 재검색</span><span class="step" id="s4">4. 가이드 생성</span></div>
 <div class="grid"><section class="card"><h2>검색 결과</h2><div id="analysis"></div><div id="results"><div class="empty">질문을 입력하세요.</div></div></section>
-<section><div id="ask"></div><div class="card" id="guideCard"><div class="tools" id="tools" hidden><span class="gen" id="gen"></span><button class="ghost" id="regen" title="같은 질의·유형으로 가이드를 다시 만든다">다시 생성</button><button class="ghost" id="copy">Markdown 복사</button><button class="ghost" id="dl">.md 다운로드</button><button id="reg" title="02. 운영 > 00. AI 문서 생성 아래에 등록">Wiki에 등록</button></div><div id="regResult"></div><div class="guide" id="guide"><div class="empty">검색 후 가이드가 여기에 생성됩니다.</div></div><div class="revise" id="revise" hidden><b>수정 요청</b> <span class="muted" id="revCount"></span><textarea id="revText" rows="2" placeholder="예: 3단계를 더 자세히 써 주세요 / nginx 예시를 추가해 주세요 / 주의사항을 표로 정리해 주세요"></textarea><div class="revbar"><span class="muted">지금 가이드와 요청을 함께 보내 고친 판을 만듭니다. 요청과 관계없는 부분은 그대로 둡니다.</span><button id="revBtn">수정 반영</button></div></div></div></section></div>
+<section><div id="ask"></div><div class="card" id="guideCard"><div class="tools" id="tools" hidden><span class="gen" id="gen"></span><button class="ghost" id="regen" title="저장된 가이드(캐시)를 쓰지 않고 같은 질의·유형으로 LLM 이 새로 만든다">새로 만들기</button><button class="ghost" id="copy">Markdown 복사</button><button class="ghost" id="dl">.md 다운로드</button><button id="reg" title="02. 운영 > 00. AI 문서 생성 아래에 등록">Wiki에 등록</button></div><div id="regResult"></div><div class="guide" id="guide"><div class="empty">검색 후 가이드가 여기에 생성됩니다.</div></div><div class="revise" id="revise" hidden><b>수정 요청</b> <span class="muted" id="revCount"></span><textarea id="revText" rows="2" placeholder="예: 3단계를 더 자세히 써 주세요 / nginx 예시를 추가해 주세요 / 주의사항을 표로 정리해 주세요"></textarea><div class="revbar"><span class="muted">지금 가이드와 요청을 함께 보내 고친 판을 만듭니다. 요청과 관계없는 부분은 그대로 둡니다.</span><button id="revBtn">수정 반영</button></div></div></div></section></div>
 </div>
 <script>
 const $=s=>document.querySelector(s);let state={q:'',md:'',title:'guide'};
@@ -1181,7 +1267,7 @@ for(const raw of src.replace(/\r/g,'').split('\n')){const line=raw.trimEnd();let
 if(m=line.match(/^(#{1,4})\s+(.*)$/)){fl();out+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`}else if(m=line.match(/^\s{2,}(\S.*)$/)){out=out.replace(/<\/li>$/,'<br><span class="muted">'+inline(m[1])+'</span></li>')}else if(m=line.match(/^[-*]\s+(.*)$/)){if(!list){out+='<ul>';list=true}out+='<li>'+inline(m[1])+'</li>'}else if(m=line.match(/^>\s?(.*)$/)){fl();out+='<blockquote>'+inline(m[1])+'</blockquote>'}else if(line.trim()){fl();out+='<p>'+inline(line)+'</p>'}else if(!list)fl()}if(code)out+=`<pre><code>${esc(code.lines.join('\n'))}</code></pre>`;fl();return out}
 // 완성된 가이드의 코드 블록 구문 강조(highlight.js, cdnjs). 언어가 없으면 자동 판별, 못 불러오면 그대로 둔다.
 function highlightCode(){if(!window.hljs){setTimeout(()=>window.hljs&&highlightCode(),500);return}document.querySelectorAll('#guide pre code:not(.hljs)').forEach(el=>{try{hljs.highlightElement(el)}catch(e){}})}
-let mermaidLib;async function diagrams(){const els=[...document.querySelectorAll('#guide .mermaid')];if(!els.length)return;try{mermaidLib=mermaidLib||(await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs')).default;mermaidLib.initialize({startOnLoad:false,securityLevel:'strict'});await mermaidLib.run({nodes:els,suppressErrors:true})}catch(e){console.warn('mermaid',e)}els.filter(el=>!el.querySelector('svg')).forEach(el=>{el.outerHTML='<pre><code>'+esc(el.textContent)+'</code></pre><p class="muted" style="font-size:11px">다이어그램을 그리지 못해 원문을 표시합니다.</p>'})}
+let mermaidLib;async function diagrams(){const els=[...document.querySelectorAll('#guide .mermaid')];if(!els.length)return;try{mermaidLib=mermaidLib||(await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs')).default;mermaidLib.initialize({startOnLoad:false,securityLevel:'strict'});els.forEach(el=>{el.textContent=el.textContent.replace(/https?:\/\//g,'')});await mermaidLib.run({nodes:els,suppressErrors:true})}catch(e){console.warn('mermaid',e)}els.filter(el=>!el.querySelector('svg')).forEach(el=>{el.outerHTML='<pre><code>'+esc(el.textContent)+'</code></pre><p class="muted" style="font-size:11px">다이어그램을 그리지 못해 원문을 표시합니다.</p>'})}
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()}
 function showResults(d,label){const a=d.analysis;$('#analysis').innerHTML='<div class="chips">해석: '+a.concepts.map(c=>`<span class="chip" title="${esc(c.words.join(', '))}">${esc(c.words[0])} ≈ ${esc(c.words.slice(1).join(' · '))}</span>`).join('')+a.terms.map(t=>`<span class="chip">${esc(t)}</span>`).join('')+(a.fixes||[]).map(f=>`<span class="chip" style="background:#fef3c7;color:#92400e" title="오타로 보고 고쳐서 검색">오타 교정: ${esc(f.from)} → ${esc(f.to)}</span>`).join('')+(label?`<span class="chip" style="background:#d9f5e6;color:#11643c">${esc(label)}</span>`:'')+((d.web||[]).length?`<span class="chip" style="background:#fef3c7;color:#92400e" title="${esc(d.web_reason||'')}">웹 검색 ${d.web.length}건</span>`:'')+` <span>· ${d.results.length}건</span></div>`;
 const web=(d.web||[]).length?`<h2 style="margin-top:18px">웹 검색 결과 <span class="muted" style="font-size:12px;font-weight:400">${esc(d.web_reason||'')}</span></h2>`+d.web.map(w=>`<div class="res"><a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a><div class="p">${esc(w.url)}</div></div>`).join(''):'';
@@ -1193,7 +1279,8 @@ if(d.clarify){steps(2);$('#guide').innerHTML='<div class="empty">위에서 유�
 $('#ask').innerHTML=`<div class="card ask" style="margin-bottom:16px"><h2>${esc(d.clarify.question)}</h2><div class="opts">${d.clarify.options.map(o=>`<button class="opt" data-k="${esc(d.clarify.key)}" data-v="${esc(o.id)}"><b>${esc(o.label)}</b><span>${esc(o.desc)}</span></button>`).join('')}</div></div>`;
 document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>guide(b.dataset.k,b.dataset.v,b.querySelector('b').textContent))}
 else guide(d.variant&&d.variant.key,d.variant&&d.variant.id,d.variant&&d.variant.label)}
-async function guide(key,variant,label,revise){steps(3);Object.assign(state,{key,variant,label,done:null});state.rev=revise?(state.rev||0)+1:0;$('#regResult').innerHTML='';$('#revise').hidden=true;const prev=state.md;if(label)$('#ask').innerHTML=`<div class="card" style="margin-bottom:16px">선택한 유형: <b>${esc(label)}</b> <button class="ghost" style="float:right;padding:3px 10px" id="re">다시 선택</button></div>`;const re=$('#re');if(re)re.onclick=()=>search(state.q);
+function ago(t){const s=Date.now()/1000-t;return s<3600?Math.max(1,Math.round(s/60))+'분 전':s<86400?Math.round(s/3600)+'시간 전':Math.round(s/86400)+'일 전'}
+async function guide(key,variant,label,revise,fresh){steps(3);Object.assign(state,{key,variant,label,done:null});state.rev=revise?(state.rev||0)+1:0;$('#regResult').innerHTML='';$('#revise').hidden=true;const prev=state.md;if(label)$('#ask').innerHTML=`<div class="card" style="margin-bottom:16px">선택한 유형: <b>${esc(label)}</b> <button class="ghost" style="float:right;padding:3px 10px" id="re">다시 선택</button></div>`;const re=$('#re');if(re)re.onclick=()=>search(state.q);
 const t0=Date.now(),sec=()=>Math.floor((Date.now()-t0)/1000);
 $('#guide').innerHTML='<div class="wait">'+(revise?'수정 요청을 반영하는 중… ('+esc(revise.request)+')':'관련 문서를 다시 검색해 가이드를 만드는 중…')+' <b id="elapsed">0초</b><div class="prog"><i></i></div></div>';
 const tick=setInterval(()=>{const e=$('#elapsed');if(e)e.textContent=sec()+'초';const g=$('#gen');if(g.classList.contains('live'))g.textContent=g.textContent.replace(/\d+초$/,sec()+'초')},1000);
@@ -1201,8 +1288,8 @@ if(state.ctl)state.ctl.abort();const ctl=state.ctl=new AbortController();const g
 const draw=()=>{timer=null;if(drawn!==text.length){drawn=text.length;$('#guide').innerHTML=md(text)}};
 const on=e=>{if(e.type==='meta'){model=e.model;state.title=e.title;state.meta={sources:e.results.length,web:(e.web||[]).length};showResults(e,label?label+' 기준 재검색':'')}
 else if(e.type==='delta'){if(!text){steps(4);g.className='gen live';g.textContent=`작성 중 · ${model||'LLM'} · ${sec()}초`;$('#tools').hidden=false}text+=e.text;if(!timer)timer=setTimeout(draw,120)}
-else if(e.type==='done'){clearTimeout(timer);steps(4,true);if(e.revise_failed){state.rev--;$('#regResult').innerHTML='<div class="regerr">수정 요청을 반영하지 못해 이전 가이드를 그대로 보여 줍니다.</div>'}state.md=e.markdown;state.done=e;$('#revise').hidden=false;$('#revCount').textContent=state.rev?`(수정 ${state.rev}회 반영됨)`:'';$('#guide').innerHTML=md(e.markdown);g.className='gen'+(e.mode==='llm'?' llm':'');g.textContent=`생성 방식: ${e.mode==='llm'?'LLM 작성'+(e.model?' · '+e.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams();highlightCode()}};
-try{const r=await fetch('/api/guide/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:state.q,key,variant,revise}),signal:ctl.signal});if(!r.ok)throw new Error(await r.text());
+else if(e.type==='done'){clearTimeout(timer);steps(4,true);if(e.revise_failed){state.rev--;$('#regResult').innerHTML='<div class="regerr">수정 요청을 반영하지 못해 이전 가이드를 그대로 보여 줍니다.</div>'}state.md=e.markdown;state.done=e;$('#revise').hidden=false;$('#revCount').textContent=state.rev?`(수정 ${state.rev}회 반영됨)`:'';$('#guide').innerHTML=md(e.markdown);g.className='gen'+(e.mode==='llm'?' llm':'');g.textContent=e.cached?`캐시 · 처음 생성 ${ago(e.cached)}${e.model?' · '+e.model:''} · 근거 같음 (새로 만들기로 다시 생성)`:`생성 방식: ${e.mode==='llm'?'LLM 작성'+(e.model?' · '+e.model:''):'문서 조합 템플릿'} · 소요 ${sec()}초`;$('#tools').hidden=false;diagrams();highlightCode()}};
+try{const r=await fetch('/api/guide/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:state.q,key,variant,revise,fresh:!!fresh}),signal:ctl.signal});if(!r.ok)throw new Error(await r.text());
 const rd=r.body.getReader(),dec=new TextDecoder();let buf='';for(;;){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(line.trim())on(JSON.parse(line))}}}
 catch(err){if(err.name==='AbortError')return;$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+' ('+sec()+'초)</div>'}finally{clearInterval(tick)}}
 $('#form').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)search(q).catch(err=>{$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+'</div>'})};
@@ -1210,7 +1297,7 @@ $('#form').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(q)sea
 {const q0=new URLSearchParams(location.search).get('q');if(q0){$('#q').value=q0;search(q0).catch(err=>{$('#guide').innerHTML='<div class="empty">오류: '+esc(err.message)+'</div>'})}}
 $('#copy').onclick=()=>navigator.clipboard.writeText(state.md).then(()=>{$('#copy').textContent='복사됨';setTimeout(()=>$('#copy').textContent='Markdown 복사',1200)});
 $('#dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([state.md],{type:'text/markdown'}));a.download=state.title.replace(/\s+/g,'-')+'.md';a.click()};
-$('#regen').onclick=()=>guide(state.key,state.variant,state.label);
+$('#regen').onclick=()=>guide(state.key,state.variant,state.label,null,true);
 // 7단계 수정 요청: 지금 가이드와 요청을 함께 보내 고친 판을 받는다. 결과는 그대로 'Wiki에 등록'할 수 있다.
 $('#revBtn').onclick=()=>{const req=$('#revText').value.trim();if(!req||!state.done)return;$('#revText').value='';guide(state.key,state.variant,state.label,{markdown:state.md,request:req})};$('#revText').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))$('#revBtn').click()});
 // 시나리오 1의 가벼운 승인: 미리보기를 확인한 사람이 눌러야 등록한다(같은 제목이면 갱신).
@@ -1253,7 +1340,13 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True
 
     def do_GET(self):
-        if urlparse(self.path).path != "/":
+        path = urlparse(self.path).path
+        if path != "/":
+            # 가이드 본문의 Wiki 안 링크(/AI-Master-프로젝트/…)는 Azure Wiki 기준이라 이 화면에서 누르면 여기로 온다
+            # (LLM 이 근거 문서의 링크를 옮겨 씀) → 같은 문서를 로컬 뷰어로 연다.
+            rel = unquote(path).strip("/")
+            if rel and not rel.startswith(("api/", "favicon")):
+                self.send_response(302); self.send_header("Location", view_link(rel)); self.end_headers(); return
             self.send_error(404); return
         data = HTML_PAGE.replace("__FAVICON__", favicon("G", "#16a34a")).encode("utf-8")
         self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1284,7 +1377,9 @@ class Handler(BaseHTTPRequestHandler):
                 revise = body.get("revise") if isinstance(body.get("revise"), dict) else None
                 if revise:
                     t.set(revise=str(revise.get("request", ""))[:80])
-                self.send_stream(guide_events(q, body.get("key"), body.get("variant"), revise), t)
+                if body.get("fresh"):
+                    t.set(fresh=True)
+                self.send_stream(guide_events(q, body.get("key"), body.get("variant"), revise, bool(body.get("fresh"))), t)
         except (ValueError, json.JSONDecodeError):
             self.send_json({"error": "bad request"}, 400)
 
