@@ -171,11 +171,16 @@ flowchart TD
 | 7. Wiki 현행화 | 표는 규칙으로 정확히 갱신, 변경 이력 추가, Azure DevOps Wiki 반영 | wiki-repo에 커밋, `.env`의 `SCENARIO2_PUSH=1`이면 Azure DevOps Wiki로 push(기본 0: 로컬만) |
 | 8. 완료 보고 | Task 완료 처리, Teams 결과 알림(문서·Task 링크) | Task 상태를 Done으로 바꾸고 Teams 결과 카드 전송(처리 단계 ✓/✗ 목록과 문서·Task 링크). 도중에 실패하면 실패 단계까지 담은 "처리 실패" 카드. No·시간 초과도 결과 카드로 알림 |
 
-**실행 화면 · 2026-10-25 재촬영**
+**실행 화면 · 2026-10-30 실제 실행(17:41)**
 
-허브의 **시나리오 실행** 탭과 실제 `--dry-run` 점검 로그입니다. 신규·삭제·상태·SIZE·사설 IP 변경 **5건**이 테스트 정답과 일치했습니다. 촬영 점검에서는 Teams 승인 요청·Task 생성·Wiki 갱신·VM 태그 변경을 하지 않았습니다:
+허브의 **시나리오 실행** 탭입니다. 시나리오 2 카드 아래 줄에 비교 대상 Wiki 현황 문서와 Azure Portal VM 목록 링크(`3대 중 3대 실행 중`)가 있고, 아래는 "테스트 환경 준비 → 실행" 한 실제 실행의 `scenario2.log` 시작 부분입니다:
 
-![시나리오 2 - 허브와 변경 5건 점검 로그](docs/images/hub-scenarios.png)
+- `▶ proxy_status_sync … dry_run=False` 실행 시작(`[b9272b31]`은 이 실행의 트레이스 id, 같은 실행의 줄은 모두 같은 id).
+- `◆ Planning` 8단계 계획: wiki_read → azure_read → compare → llm_summary → approval → task_create → wiki_update → report.
+- `◆ Simulation` 실행 전 사전 점검 4항목(Wiki 문서·LLM·Teams·Wiki push 설정)과 예상 분기(차이 없음이면 3단계에서 종료, No·시간 초과면 알림만 하고 종료).
+- `◆ Step 1/8`, `◆ Tool Call`, `02 wiki_read 1ms … rows=3` 단계마다 무엇을 호출했고 결과가 무엇인지(아래로 이어서 compare 5건 → 정답 검증 → AI 요약 → Teams 승인 Yes → Task #2531 → Wiki 커밋 → 완료 보고).
+
+![시나리오 2 - 허브 시나리오 실행 탭과 실제 실행 로그](docs/images/hub-scenarios.png)
 
 **Teams 카드 · 2026-10-30 실제 실행**
 
@@ -246,9 +251,9 @@ flowchart TD
 
 시험 방법과 결과는 [8.4 시나리오 3 · 시험](#84-시나리오-3--시험)에 있습니다.
 
-**실행 화면 · 2026-10-25 재촬영**
+**실행 화면 · 2026-10-30 실제 실행(18:08 장애 재현 → 18:24 복구)**
 
-Squid의 **실제 접속 로그**·허용 목록·규칙 탐지 결과입니다. 과거 장애 시험의 차단 기록도 포함되므로, 이 화면만으로 현재 장애가 지속 중이라고 판단하지 않습니다:
+Squid의 **실제 접속 로그**·허용 목록·규칙 탐지 결과입니다. 위쪽은 PR 병합·배포 뒤 시험 접속(18:24, 모두 `TCP_TUNNEL/200`), 아래쪽은 장애 중 data.go.kr 차단(18:08:55 `TCP_DENIED/403`)입니다. 과거 장애 시험의 차단 기록도 포함되므로, 이 화면만으로 현재 장애가 지속 중이라고 판단하지 않습니다:
 
 ![시나리오 3 - Squid 실제 로그와 탐지 결과](docs/images/proxy-log.png)
 
@@ -256,9 +261,9 @@ NGINX VM을 선택하면 리버스 프록시 접속 로그와 가상 도메인�
 
 ![시나리오 3 - NGINX 실제 로그](docs/images/proxy-log-nginx.png)
 
-허브에서 **기존 시나리오 3 실행 로그**를 조회한 화면입니다. 캡처를 위해 장애를 다시 주입하거나 Task·PR을 추가 생성하지 않았습니다:
+허브에서 18:09 실제 실행의 `scenario3.log` 시작 부분입니다. `◆ Planning` 9단계(collect → llm_triage → similar → source → llm_fix → approval → task_create → pull_request → wiki_history), `◆ Simulation` 사전 점검 4항목과 예상 분기(장애 없음 → 1단계에서 종료, 로그를 못 읽으면 점검 불가(종료 코드 2), 수정안 검증 실패 → 한 번 자기 수정 후 수동 조치), 이어서 `Step 1/9 collect`의 `az vm list` 호출이 보입니다:
 
-![시나리오 3 - 허브의 기존 실행 결과 로그](docs/images/scenario3-run.png)
+![시나리오 3 - 허브의 실제 실행 로그](docs/images/scenario3-run.png)
 
 **실제 실행 · 2026-10-30 18:08 허용 도메인 오타** (설명하는 부분은 빨간 테두리)
 

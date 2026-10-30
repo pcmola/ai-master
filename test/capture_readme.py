@@ -188,6 +188,16 @@ def viewer(page):
     shot(page, "wiki-viewer.png")
 
 
+def scroll_to_last(page, marker: str):
+    """#slog 에서 marker 가 마지막으로 나온 줄이 맨 위에 오도록 스크롤한다(줄 높이로 계산)."""
+    page.locator("#slog").evaluate("""(el, m) => {
+      const lines = el.textContent.split(String.fromCharCode(10)); let i = -1;
+      lines.forEach((l, k) => { if (l.includes(m)) i = k; });
+      if (i < 0) { el.scrollTop = el.scrollHeight; return; }
+      el.scrollTop = Math.max(0, i - 1) * (el.scrollHeight / lines.length);
+    }""", marker)
+
+
 def hub(page):
     ready(page, SITES["hub"])
     page.locator("#rows button").first.wait_for()
@@ -196,13 +206,13 @@ def hub(page):
     with page.expect_response(lambda r: "/api/log?" in r.url and "scenario2" in r.url):
         page.locator('button.slog[data-key="scenario2"]').click()
     page.wait_for_function("document.querySelector('#slog').textContent.length > 100")
-    # 끝부분에 방금 수행한 dry-run 비교 결과가 나온다.
-    page.locator("#slog").evaluate("el => el.scrollTop = el.scrollHeight")
+    # 마지막 실제 실행(승인까지 한 실행) 시작 줄로 스크롤한다. 그 뒤의 '새로 읽기' 기록 줄은 화면 아래로 밀린다.
+    scroll_to_last(page, "시작: proxy_status_sync.py ")
     shot(page, "hub-scenarios.png")
     with page.expect_response(lambda r: "/api/log?" in r.url and "scenario3" in r.url):
         page.locator('button.slog[data-key="scenario3"]').click()
     page.wait_for_function("document.querySelector('#slog').textContent.includes('incident_response')")
-    page.locator("#slog").evaluate("el => el.scrollTop = el.scrollHeight")
+    scroll_to_last(page, "시작: incident_response.py")
     shot(page, "scenario3-run.png")
 
 
