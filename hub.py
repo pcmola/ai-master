@@ -495,7 +495,7 @@ __FAVICON__<title>__TITLE__</title>
 --top:#0b111b;--blue:#6ea0ff;--soft:#1d2636;--code:#0b111b}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Segoe UI","Malgun Gothic",sans-serif}
 header{background:var(--top);color:#fff;display:flex;align-items:center;gap:12px;padding:12px 24px;flex-wrap:wrap}
-header h1{font-size:16px;margin:0;font-weight:700}header .time{color:#aebbd0;font-size:12px;margin-right:auto}
+header h1{font-size:16px;margin:0;font-weight:700}header .time{color:#aebbd0;font-size:12px;margin-right:auto}header .time.stale{color:#fca5a5;font-weight:700}
 button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 10px;cursor:pointer}
 button:hover{border-color:var(--blue)}button:disabled{opacity:.45;cursor:default}
 header button{background:#22324f;border-color:#34476b;color:#fff}
@@ -597,9 +597,14 @@ function render(){
 <button ${busy?'disabled':''} onclick="act('${s.key}','restart')">재시작</button>
 <button ${busy||!n?'disabled':''} onclick="act('${s.key}','stop')">중지</button>
 <button class="${s.key===selected?'logon':''}" onclick="pick('${s.key}')">로그</button></div></td></tr>`}).join('')}
+// 머리글 시각: 서버 상태를 마지막으로 받은 때. 10초 넘게 못 받으면 허브가 죽었거나 멈춘 것 → 빨간 '허브 응답 없음'
+// (그동안 표의 '실행 중'은 옛 정보). 요청이 매달려도 알 수 있게 응답과 따로 1초마다 본다.
+let lastOk=Date.now(),lastOkText='';
+function staleCheck(){const el=document.getElementById('time');const stale=Date.now()-lastOk>10000;el.classList.toggle('stale',stale);
+  el.textContent=stale?'허브 응답 없음'+(lastOkText?' (마지막 확인 '+lastOkText+')':''):(lastOkText?'서버 상태 확인 '+lastOkText:'')}
 async function refresh(){
   try{const r=await fetch('/api/status');const d=await r.json();if(d.error)throw new Error(d.error);
-    servers=d.servers;document.getElementById('time').textContent='갱신 '+d.time.slice(11);
+    servers=d.servers;lastOk=Date.now();lastOkText=d.time.slice(11);staleCheck();
     document.getElementById('err').hidden=true;render();if(selected)loadLog()}
   catch(e){const el=document.getElementById('err');el.hidden=false;el.textContent='상태를 읽지 못했습니다: '+e.message}}
 // 로그 '지우기': 파일은 그대로 두고, 누른 시점의 파일 크기를 기억해 그 뒤만 보여 준다(브라우저에 저장, 새로고침해도 유지).
@@ -664,7 +669,7 @@ async function loadSLog(){const pre=document.getElementById('slog');const atEnd=
 function fit(){for(const id of ['log','slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
   if(top>0)pre.style.height=Math.max(160,innerHeight-top-22)+'px'}}
 addEventListener('resize',fit);setInterval(fit,500);
-refresh();setInterval(refresh,3000);setInterval(()=>{if(!document.getElementById('pane-scenarios').hidden)refreshJobs()},2000);
+refresh();setInterval(refresh,3000);setInterval(staleCheck,1000);setInterval(()=>{if(!document.getElementById('pane-scenarios').hidden)refreshJobs()},2000);
 tab(location.hash==='#scenarios'?'scenarios':'servers');
 </script></body></html>"""
 
