@@ -3,6 +3,8 @@
 - Teams 의 Workflows 앱에서 "Teams 웹후크 요청을 받으면 채팅 또는 채널에 게시" 흐름을 만들고,
   발급된 URL 을 .env 의 TEAMS_WEBHOOK_URL 에 넣는다. 이 URL 자체가 인증 수단이므로 외부에 노출하지 않는다.
 - 메시지는 Adaptive Card 로 보낸다. 웹후크는 정상 접수 시 202 를 돌려준다(실제 게시는 흐름이 비동기로 처리).
+- 보낸 카드는 data/teams_cards/ 에 JSON 으로 남긴다(README 화면용, test/capture_readme.py --only teams 가 그린다).
+  Teams 채널 이력은 Graph 로 읽으려면 관리자 동의 권한이 필요해서, 보내는 쪽에서 남긴다. TEAMS_CARD_ARCHIVE=0 이면 끈다.
 - 채널 게시만으로는 Teams '활동' 피드에 알림이 오지 않는다. .env 의 TEAMS_MENTION(받을 사람 UPN)을 넣으면
   카드 첫 줄에 그 사람을 @멘션해서 활동 피드에 알림이 뜨게 한다(TEAMS_MENTION_NAME 은 표시 이름).
 
@@ -21,10 +23,13 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
-from common.paths import ENV_FILE  # noqa: E402
+from common.paths import DATA_DIR, ENV_FILE  # noqa: E402
+
+CARD_ARCHIVE = DATA_DIR / "teams_cards"
 
 try:
     from dotenv import load_dotenv
@@ -96,17 +101,39 @@ def send(text: str, title: str | None = None, url: str | None = None,
     url = url or os.environ.get("TEAMS_WEBHOOK_URL")
     if not url:
         raise SystemExit("TEAMS_WEBHOOK_URL 이 설정되지 않았습니다. .env 에 Workflows 웹후크 URL 을 넣으세요.")
-    data = json.dumps(build_card(text, title, facts, buttons), ensure_ascii=False).encode("utf-8")
+    card = build_card(text, title, facts, buttons)
+    data = json.dumps(card, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST",
                                  headers={"Content-Type": "application/json; charset=utf-8"})
+    status: int | str = "?"
     try:
         with urllib.request.urlopen(req, timeout=15) as res:
+            status = res.status
             return res.status
     except urllib.error.HTTPError as exc:
+        status = exc.code
         detail = exc.read().decode("utf-8", errors="replace")[:500]
         raise SystemExit(f"Teams 전송 실패: HTTP {exc.code} {detail}")
     except urllib.error.URLError as exc:
+        status = f"network: {exc.reason}"
         raise SystemExit(f"Teams 전송 실패(네트워크): {exc.reason}")
+    finally:
+        archive(card, title, status)
+
+
+def archive(card: dict, title: str | None, status) -> None:
+    """보낸 카드를 data/teams_cards/YYYYMMDD-HHMMSS-ffffff.json 에 남긴다. 실패해도 전송에는 영향 없음."""
+    if os.environ.get("TEAMS_CARD_ARCHIVE", "1") == "0":
+        return
+    try:
+        now = datetime.now()
+        CARD_ARCHIVE.mkdir(parents=True, exist_ok=True)
+        (CARD_ARCHIVE / f"{now:%Y%m%d-%H%M%S-%f}.json").write_text(json.dumps(
+            {"sent_at": now.isoformat(timespec="seconds"), "title": title, "status": status,
+             "source": Path(sys.argv[0]).name, "card": card["attachments"][0]["content"]},
+            ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def main():

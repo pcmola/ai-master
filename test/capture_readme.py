@@ -1,14 +1,18 @@
 """README 화면 재촬영. 조회·가이드 생성만 실행하며 승인·배포·Wiki 등록은 하지 않는다.
 
-사용: python test/capture_readme.py [--inspect] [--only wiki|viewer|hub|proxy|approval]
+사용: python test/capture_readme.py [--inspect] [--only wiki|viewer|hub|proxy|approval|teams]
 필요: pip install playwright, 실행 중인 로컬 서버, 설치된 Google Chrome.
 승인/완료 화면은 실제 렌더러에 예시 데이터를 넣어 별도 읽기 전용 서버로 촬영한다.
+Teams 카드(--only teams)는 teams_notify 가 보낼 때 남긴 data/teams_cards/*.json 중 종류별 최신 카드를
+Adaptive Cards 공식 렌더러로 그린다. Teams 에 새 메시지를 보내지 않는다.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 import threading
 from datetime import datetime
@@ -20,6 +24,13 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from teams_tools.approval_local import ask_page, progress_page  # noqa: E402
+from common.paths import ENV_FILE  # noqa: E402
+
+try:  # Teams 카드에서 가릴 멘션 이름·계정(TEAMS_MENTION_NAME·TEAMS_MENTION)
+    from dotenv import load_dotenv
+    load_dotenv(ENV_FILE)
+except ImportError:
+    pass
 
 OUT = ROOT / "docs/images"
 EVIDENCE = ROOT / "data/readme-capture"
@@ -210,10 +221,79 @@ def approval(page):
             server.server_close()
 
 
+# (파일 이름, 카드 제목 패턴). 각 패턴에 맞는 카드 중 전송에 성공한 가장 최근 카드를 그린다.
+TEAMS_SHOTS = [
+    ("teams-scenario2-approval.png", r"\[Proxy 현황\] 변경 \d+건 · 승인 요청"),
+    ("teams-scenario2-result.png", r"\[Proxy 현황\] 현행화 완료"),
+    ("teams-scenario3-approval.png", r"\[프록시 장애\] .+ · 조치 승인 요청"),
+    ("teams-scenario3-result.png", r"\[프록시 장애\] 조치 진행"),
+]
+CARD_DIR = ROOT / "data/teams_cards"
+CARD_PAGE = """<!doctype html><html><head><meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/adaptivecards@3.0.5/dist/adaptivecards.min.js"></script>
+<style>body{margin:0;padding:20px;background:#f5f5f5;font-family:"Segoe UI","Malgun Gothic",sans-serif}
+#frame{width:600px;background:#fff;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.18);padding:14px 18px}
+.meta{font-size:12px;color:#616161;margin-bottom:10px}.meta b{color:#242424}
+.ac-pushButton{border:1px solid #d1d1d1!important;background:#fff!important;border-radius:4px!important;font-weight:600}</style>
+</head><body><div id="frame"><div class="meta"><b>Workflows</b> · Teams 일반 채널 · __WHEN__</div><div id="card"></div></div>
+<script>
+const md = window.markdownit();
+AdaptiveCards.AdaptiveCard.onProcessMarkdown = (text, result) => { result.outputHtml = md.render(text); result.didProcess = true; };
+const card = new AdaptiveCards.AdaptiveCard();
+card.hostConfig = new AdaptiveCards.HostConfig({fontFamily: "Segoe UI, Malgun Gothic, sans-serif"});
+card.parse(__CARD__);
+document.getElementById("card").appendChild(card.render());
+window.rendered = true;
+</script></body></html>"""
+
+
+def latest_card(pattern: str) -> dict | None:
+    for f in sorted(CARD_DIR.glob("*.json"), reverse=True):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if re.fullmatch(pattern, d.get("title") or "") and str(d.get("status")).startswith("2"):
+            return d
+    return None
+
+
+def mask_card(card: dict) -> dict:
+    """멘션(<at>이름</at>)·담당자 계정·PC 이름은 그리기 전에 가린다. IP·이메일은 REDACTOR 가 화면에서 가린다."""
+    secrets = {os.environ.get("TEAMS_MENTION_NAME", ""): "담당자", os.environ.get("TEAMS_MENTION", ""): "[계정 숨김]",
+               os.environ.get("COMPUTERNAME", ""): "[PC]"}
+    text = json.dumps(card, ensure_ascii=False)
+    text = re.sub(r"<at>[^<]*</at>", "@담당자", text)
+    for value, label in secrets.items():
+        if value:
+            text = text.replace(value, label)
+    return json.loads(text)
+
+
+def render_card(page, saved: dict, out: Path):
+    html = (CARD_PAGE.replace("__WHEN__", saved["sent_at"].replace("T", " "))
+            .replace("__CARD__", json.dumps(mask_card(saved["card"]), ensure_ascii=False)))
+    page.set_content(html, wait_until="networkidle")
+    page.wait_for_function("window.rendered === true")
+    page.evaluate(REDACTOR)
+    page.evaluate("document.fonts.ready")
+    page.locator("#frame").screenshot(path=str(out), animations="disabled")
+    (EVIDENCE / f"{out.stem}.txt").write_text(page.locator("#frame").inner_text(), encoding="utf-8")
+    print(f"captured {out.name} ({saved['title']} · {saved['sent_at']})", flush=True)
+
+
+def teams(page):
+    page.set_viewport_size({"width": 700, "height": 1200})
+    for name, pattern in TEAMS_SHOTS:
+        saved = latest_card(pattern)
+        if saved:
+            render_card(page, saved, OUT / name)
+        else:
+            print(f"skip {name}: data/teams_cards 에 '{pattern}' 카드 없음 (해당 시나리오를 실행하면 생김)", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inspect", action="store_true", help="DOM 확인만; 검색·촬영 안 함")
-    parser.add_argument("--only", choices=["wiki", "viewer", "hub", "proxy", "approval"])
+    parser.add_argument("--only", choices=["wiki", "viewer", "hub", "proxy", "approval", "teams"])
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     EVIDENCE.mkdir(parents=True, exist_ok=True)
@@ -230,7 +310,8 @@ def main():
                     "els => els.map(e => ({tag:e.tagName,id:e.id,text:e.textContent.slice(0,100)}))"
                 ), flush=True)
         else:
-            for name, capture in [("wiki", wiki), ("viewer", viewer), ("hub", hub), ("proxy", proxy), ("approval", approval)]:
+            for name, capture in [("wiki", wiki), ("viewer", viewer), ("hub", hub), ("proxy", proxy), ("approval", approval),
+                                  ("teams", teams)]:
                 if not args.only or args.only == name:
                     capture(page)
             print("Finished:", datetime.now().astimezone().isoformat(timespec="seconds"), flush=True)

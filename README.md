@@ -507,6 +507,7 @@ Copy-Item .env.sample .env
 | `PROXY_SSH_USER` / `PROXY_SSH_KEY` | `azureuser` / (비움: 기본 키) | 프록시 VM SSH 접속(정책 변경 감지) |
 | `SQUID_RUNTIME` | `podman` | VM에서 Squid 컨테이너를 띄운 런타임(로그 뷰어) |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
+| `TEAMS_CARD_ARCHIVE` | `1` | 보낸 Teams 카드를 `data/teams_cards/`에 JSON으로 남김(README 카드 화면용). `0`이면 끔 |
 
 임베딩 모델을 바꾸면 처음 실행할 때 문서 전체 임베딩을 다시 계산한다(약 2분). 결과는 `data/wiki_search_cache.json`에 캐시된다.
 
@@ -520,6 +521,7 @@ Copy-Item .env.sample .env
 | `sim_access.log` | proxy_log_detect.py simulate (가상 프록시 로그) |
 | `proxy_policy_state/` | proxy_policy_publish.py (VM별 정책 기준 스냅샷 `<VM>.json`, 변경 이력) |
 | `teams_token_cache.json` | teams_graph.py (Graph 로그인 토큰, 공유 금지) |
+| `teams_cards/` | teams_notify.py (보낸 Teams 카드 JSON, README 카드 화면 재촬영용) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
 | `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 "시나리오 실행" 탭에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py·proxy_status_sync.py·proxy_log_viewer.py (요청·실행별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
@@ -1045,12 +1047,12 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 
 ```powershell
 python -m venv data/readme-capture-venv
-& .\data\readme-capture-venv\Scripts\python.exe -m pip install playwright
+& .\data\readme-capture-venv\Scripts\python.exe -m pip install playwright python-dotenv
 & .\data\readme-capture-venv\Scripts\python.exe test\capture_readme.py --inspect
 & .\data\readme-capture-venv\Scripts\python.exe test\capture_readme.py
 ```
 
-Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy|approval`로 특정 화면 묶음만 다시 찍을 수 있습니다(`--only wiki`처럼 하나를 지정).
+Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy|approval|teams`로 특정 화면 묶음만 다시 찍을 수 있습니다(`--only wiki`처럼 하나를 지정).
 
 | 화면 | 캡처 시 수행하는 동작 | 외부 반영 |
 |---|---|---|
@@ -1058,8 +1060,9 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 | 시나리오 2 | 허브에서 저장된 점검 로그 조회 | 새 점검·Teams 요청·Task 생성·Wiki 갱신 없음 |
 | 시나리오 3 | Squid·NGINX 실제 로그·정책 조회, 허브의 기존 실행 로그 조회 | SSH 읽기만 수행. 장애 주입·복구·PR 생성·배포 없음 |
 | 승인·완료 화면 | 실제 승인 UI 렌더러 + 별도 읽기 전용 예시 서버 | 없음. 화면에 **화면 예시 · 외부 반영 없음** 표시 |
+| Teams 카드 (`--only teams`) | `data/teams_cards/`에 남은 **실제 전송 카드** 중 종류별 최신 1장(시나리오 2·3의 승인 요청·결과)을 Adaptive Cards 공식 렌더러(`adaptivecards@3.0.5`)로 그림 → `teams-scenario2-approval.png`, `teams-scenario2-result.png`, `teams-scenario3-approval.png`, `teams-scenario3-result.png` | 없음. Teams에 다시 보내지 않음. 멘션 이름·계정·PC 이름은 그리기 전에, IP·이메일은 화면에서 가림 |
 
-스크립트는 표시되는 IP·이메일·ID를 가리고 촬영하며, 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다. 공유 전에는 이미지도 직접 확인합니다. 시나리오 2 로그를 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다(비교·AI 요약만 수행, 로컬 로그·트레이스 기록).
+Teams 카드는 `teams_notify.send`가 보낼 때마다 `data/teams_cards/`(Git 제외)에 JSON으로 남깁니다(`TEAMS_CARD_ARCHIVE=0`이면 끔). Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요해서 보내는 쪽에서 남깁니다. 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2(테스트 환경 준비 → 실행 → Yes)와 시나리오 3(장애 재현 → 실행 → Yes)을 실제로 한 번씩 실행합니다. 스크립트는 표시되는 IP·이메일·ID를 가리고 촬영하며, 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다. 공유 전에는 이미지도 직접 확인합니다. 시나리오 2 로그를 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다(비교·AI 요약만 수행, 로컬 로그·트레이스 기록).
 
 <sub>[↑ 목차로](#목차)</sub>
 
