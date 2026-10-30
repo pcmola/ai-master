@@ -354,10 +354,23 @@ def s2_links(refresh: bool = False) -> dict:
         # Azure 링크는 Portal 의 VM 목록 화면(Compute infrastructure > Virtual machines). 옆에 Proxy VM 상태 요약만 붙인다.
         data: dict = {"status_page": doc(ps.WIKI_PAGE), "vms": [], "error": None,
                       "portal_vms": "https://portal.azure.com/#view/Microsoft_Azure_ComputeHub/ComputeHubMenuBlade/~/virtualMachinesBrowse"}
+        started = time.perf_counter()
         try:
             data["vms"] = [{"name": v["name"], "state": v["state"]} for v in ps.proxy_vms()]
         except Exception as exc:
             data["error"] = f"Azure VM 조회 실패: {exc}"[:200]
+        # 작업(job)이 아니라 허브 안에서 바로 읽으므로, 무엇을 읽었는지 시나리오 2 로그에 직접 남긴다
+        sp = data["status_page"]
+        lines = [f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} Azure VM·Wiki 링크 " + ("다시 읽기 (허브 '새로 읽기')" if refresh else "읽기") + " =====",
+                 f"az vm list -g {ps.RESOURCE_GROUP}: " + (data["error"] or f"Proxy VM {len(data['vms'])}대 ("
+                 + ", ".join(f"{v['name']} {v['state']}" for v in data["vms"]) + ")") + f" · {time.perf_counter() - started:.1f}초",
+                 f"Wiki 현황 문서: {sp['path']} (Azure DevOps Wiki: {'있음' if sp['devops'] else '없음, 로컬 전용'})"]
+        try:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            with open(LOG_DIR / "scenario2.log", "a", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+        except OSError:
+            pass
         _s2_cache.update(at=time.time(), data=data)
         return data
 
@@ -523,7 +536,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 .sc .opts{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}.sc .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sc button.main{background:var(--blue);border-color:var(--blue);color:#fff}.jobstate{font-size:13px}
 .s2links{font-size:13px;border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px}.s2links a{color:var(--blue);text-decoration:none}
-.s2links .head{display:flex;gap:8px;align-items:center}
+.s2links .head{display:flex;gap:8px;align-items:center}.s2links a,.s2links button{white-space:nowrap}
 .jobstate.running{color:var(--warn)}.jobstate.ok{color:var(--ok)}.jobstate.fail{color:var(--bad)}
 @media(max-width:820px){.hide-sm{display:none}main{padding:12px}}
 </style></head><body>
