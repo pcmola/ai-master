@@ -646,7 +646,7 @@ async function loadS2Links(refresh){const box=document.getElementById('s2links')
   const doc=x=>`${a(x.local,x.title)}${x.devops?' · '+a(x.devops,'Azure DevOps'):''}`;
   const sp=d.status_page;
   const up=(d.vms||[]).filter(v=>v.state==='운영').length,n=(d.vms||[]).length;
-  box.innerHTML=`<div class="head">Azure: ${a(d.portal_vms,'Proxy VM 목록')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 운영 (${(d.vms||[]).map(v=>esc(v.name)).join(', ')})`:'Proxy VM 없음'}</span><button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`
+  box.innerHTML=`<div class="head">Azure: ${a(d.portal_vms,'Proxy VM 목록')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 실행 중`:'Proxy VM 없음'}</span><button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`
     +(sp?`<div>Wiki: ${doc(sp)}</div>`:'')}
 // ---------------------------------------------------------------- 시나리오 실행
 let jobs={}, slogKey=null;
