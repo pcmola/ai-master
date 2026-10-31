@@ -65,22 +65,31 @@ def linkify(text: str) -> str:
 
 
 FINDING = re.compile(r"\s*[-*] \[(?:high|medium|low|info)\]", re.I)  # 탐지 항목: 연속되면 한 묶음으로 붙인다
+ITEM = re.compile(r"\s*[-*] ")
+LONG_ITEM = 100  # 이보다 긴 항목(AI 분석·원인·수정안처럼 여러 줄로 접히는 것)만 앞뒤에 간격을 둔다
 
 
 def paragraphs(text: str) -> list[str]:
-    """본문을 문단과 글머리 항목 단위로 나눈다. 한 TextBlock 안의 목록은 줄 간격이 빽빽해서
-    항목마다 TextBlock 을 따로 만들어 사이에 간격을 준다. 항목에 이어진 줄은 그 항목에 붙인다.
-    단 '- [medium] …' 같은 탐지 항목이 이어지면 한 TextBlock 에 둬서 붙여 보인다."""
+    """본문을 TextBlock 단위로 나눈다. 문단(빈 줄)과, 목록 앞의 일반 줄(예: **처리 단계**)에서 나눈다.
+    목록 항목은 짧으면 한 TextBlock 에 붙여 두고(변경 목록·처리 단계), 긴 항목만 따로 떼어 사이에 간격을 준다.
+    '- [medium] …' 같은 탐지 항목이 이어지면 길어도 한 묶음으로 붙인다."""
     parts: list[str] = []
     for para in re.split(r"\n\s*\n", text.strip()):
         cur: list[str] = []
+        item = ""  # cur 의 마지막 항목(이어진 줄 포함)
         for line in para.splitlines():
-            if re.match(r"\s*[-*] ", line) and cur and not (FINDING.match(line) and FINDING.match(cur[0])):
-                parts.append("\n".join(cur))
+            is_item = bool(ITEM.match(line))
+            if cur and is_item:
+                findings = FINDING.match(line) and FINDING.match(item)
+                long_ = len(line.strip()) > LONG_ITEM or len(item) > LONG_ITEM
+                listy = ITEM.match(cur[0]) or re.fullmatch(r"\*\*[^*]+\*\*", cur[0].strip())  # **처리 단계** 는 목록에 붙인다
+                if not listy or (long_ and not findings):
+                    parts.append("\n".join(cur))
+                    cur = []
+            elif cur and ITEM.match(cur[0]) and not is_item and not re.match(r"\s", line):
+                parts.append("\n".join(cur))  # 목록 뒤에 이어진 일반 줄은 새 문단
                 cur = []
-            elif cur and re.match(r"\s*[-*] ", cur[0]) and not re.match(r"\s", line) and not re.match(r"[-*] ", line):
-                parts.append("\n".join(cur))  # 목록 뒤에 이어진 일반 줄(예: **처리 단계**)은 새 문단
-                cur = []
+            item = line.strip() if is_item else (item + " " + line.strip()).strip()
             cur.append(line)
         if cur:
             parts.append("\n".join(cur))
