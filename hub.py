@@ -346,13 +346,31 @@ def run_job(job: str, options: dict) -> dict:
     return {"pid": proc.pid, "args": args}
 
 
+_fault_fetch = {"at": 0.0, "busy": False}
+FAULT_FETCH_SEC = 30
+
+
+def _fetch_proxy_config(fi):
+    try:
+        fi.git("fetch", "-q", "origin")
+    except Exception:
+        pass
+    finally:
+        _fault_fetch.update(at=time.monotonic(), busy=False)
+
+
 def fault_state() -> dict:
-    """시나리오 3 시험용 장애가 proxy-config(로컬 main)에 심어져 있는지. 터미널에서 바꾼 것도 보이도록 파일을 직접 본다."""
+    """시나리오 3 시험용 장애가 proxy-config 원격 main(origin/main)에 심어져 있는지.
+    로컬 사본은 장애 재현·원상 복구 때만 최신화되므로, Azure DevOps 에서 수정 PR 을 병합해도 로컬은 장애 그대로였다
+    (2026-10-31). 그래서 30초마다 뒤에서 git fetch 하고 origin/main 내용을 본다(화면 갱신은 2초라 기다리지 않음)."""
     try:
         sys.path.insert(0, str(PROJECT_ROOT / "proxy_tools"))
         import proxy_fault_inject as fi
+        if not _fault_fetch["busy"] and time.monotonic() - _fault_fetch["at"] > FAULT_FETCH_SEC:
+            _fault_fetch["busy"] = True
+            threading.Thread(target=_fetch_proxy_config, args=(fi,), daemon=True).start()
         names = {"whitelist-typo": "허용 도메인 오타", "client-acl-typo": "허용 클라이언트 IP 오타", "bad-dns": "잘못된 DNS 서버"}
-        return {"active": [names.get(n, n) for n in fi.active()]}
+        return {"active": [names.get(n, n) for n in fi.active("origin/main")]}
     except Exception as exc:  # 저장소가 없거나 읽기 실패
         return {"error": str(exc)[:120]}
 

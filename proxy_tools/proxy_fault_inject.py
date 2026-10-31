@@ -101,11 +101,19 @@ def vm_ip(target: str) -> str:
     raise RuntimeError(f"프록시 VM '{target}' 을 찾지 못했습니다.")
 
 
-def active() -> list[str]:
+def active(ref: str | None = None) -> list[str]:
+    """심어진 장애 목록. ref(예: origin/main)를 주면 로컬 파일 대신 그 커밋의 내용을 본다."""
     found = []
     for name, s in SCENARIOS.items():
-        path = REPO / s["file"]
-        if path.is_file() and s["after"] in path.read_text(encoding="utf-8"):
+        if ref:
+            try:
+                text = git("show", f"{ref}:{s['file']}")
+            except RuntimeError:
+                continue
+        else:
+            path = REPO / s["file"]
+            text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if s["after"] in text:
             found.append(name)
     return found
 
