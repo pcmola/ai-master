@@ -108,10 +108,12 @@ def git(repo: Path, *args: str) -> str:
 
 def collect() -> list[dict]:
     """VM 마다 {vm, rows, findings}, 로그를 못 읽은 VM 은 {vm, error}.
-    최근 WINDOW_MIN 분 안의 기록만 탐지한다(오래된 장애로 매번 울리지 않게)."""
+    최근 WINDOW_MIN 분 안의 기록만 탐지한다(오래된 장애로 매번 울리지 않게).
+    squid VM 은 마지막 설정 배포 이후 기록만 본다. 그 전 기록은 지금 설정이 아니라 예전 설정의 결과다
+    (2026-10-31: 원상 복구 전 장애 시험의 차단 5회가 다음 시험 3회에 더해져 8회로 보고됨)."""
     from dataclasses import asdict
     from proxy_log_detect import ALLOWED_CLIENTS, WHITELIST, detect
-    from proxy_log_viewer import read_logs
+    from proxy_log_viewer import read_logs, ssh
     from proxy_policy_monitor import proxy_targets
     since = time.time() - WINDOW_MIN * 60
     out = []
@@ -130,11 +132,21 @@ def collect() -> list[dict]:
                 print(f"{vm['name']}: 로그 읽기 실패 — {d['error']}")
                 out.append({"vm": vm, "error": d["error"]})
                 continue
-            rows = [r for r in d["rows"] if r["ts"] >= since]
+            vm_since, deployed = since, None
+            if vm["kind"] == "squid":  # deploy.sh 가 install 로 파일을 쓰므로 proxy.conf 수정 시각 = 마지막 배포 시각
+                out_s, err = ssh(vm["ip"], "stat -c %Y /etc/proxy/proxy.conf", "last deploy time")
+                if not err and out_s.strip().isdigit():
+                    deployed = int(out_s.strip())
+                    vm_since = max(since, deployed)
+            rows = [r for r in d["rows"] if r["ts"] >= vm_since]
+            if deployed and deployed > since:
+                s.set(since_deploy=time.strftime("%H:%M:%S", time.localtime(deployed)))
             found = [asdict(f) for f in detect(rows, ALLOWED_CLIENTS, WHITELIST)]
             s.set(rows=len(rows), denied=sum(1 for r in rows if r.get("denied")), findings=len(found),
                   severe=sum(1 for f in found if f["severity"] in SEVERE))
-        think("Observation", f"{vm['name']}: 최근 {WINDOW_MIN}분 {len(rows)}건, 규칙 탐지 {len(found)}건 "
+        scope = (f"마지막 배포({time.strftime('%H:%M:%S', time.localtime(vm_since))}) 이후" if vm_since > since
+                 else f"최근 {WINDOW_MIN}분")
+        think("Observation", f"{vm['name']}: {scope} {len(rows)}건, 규칙 탐지 {len(found)}건 "
                              f"(high·medium {sum(1 for f in found if f['severity'] in SEVERE)}건)")
         out.append({"vm": vm, "rows": rows, "findings": found})
     return out
