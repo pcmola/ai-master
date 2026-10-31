@@ -98,6 +98,15 @@ class DevOps:
     def add_comment(self, task_id: int, text: str):
         self.request("POST", f"/_apis/wit/workItems/{task_id}/comments?api-version=7.1-preview.4", {"text": text})
 
+    def pipeline_url(self, name: str) -> str:
+        """이름으로 찾은 파이프라인의 실행 목록 화면(Run pipeline 버튼이 있는 곳). 못 찾으면 Pipelines 첫 화면."""
+        try:
+            found = [p for p in self.request("GET", "/_apis/pipelines?api-version=7.1", None).get("value", [])
+                     if p.get("name") == name]
+        except Exception:
+            found = []
+        return f"{self.base}/_build?definitionId={found[0]['id']}" if found else f"{self.base}/_build"
+
     def task_url(self, task_id: int) -> str:
         return f"{self.base}/_workitems/edit/{task_id}"
 

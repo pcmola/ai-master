@@ -58,6 +58,7 @@ WINDOW_MIN = int(os.environ.get("SCENARIO3_WINDOW_MIN") or 60)
 APPROVAL_TIMEOUT = float(os.environ.get("SCENARIO3_TIMEOUT") or 900)
 CONFIG_REPO = Path(os.environ.get("PROXY_CONFIG_DIR") or PROJECT_ROOT.parent / "proxy-config")
 CONFIG_REPO_NAME = "proxy-config"
+DEPLOY_PIPELINE = os.environ.get("SCENARIO3_DEPLOY_PIPELINE", "proxy-config VM 배포")  # 병합 후 사람이 Run 하는 배포 파이프라인
 HISTORY_DIR = WIKI_REPO / "AI-Master-프로젝트" / "02.-운영" / "01.-공통" / "04.-장애-대응"
 HISTORY_PAGE = HISTORY_DIR / "01.-프록시-장애-대응-이력.md"
 LOG_FILE = DATA_DIR / "logs" / "scenario3.log"
@@ -646,22 +647,26 @@ def run(args) -> int:
         step("장애 대응 이력 Wiki 에 이번 건을 더했습니다", "ok", ("이력 Wiki", wiki_url))
         print(f"장애 대응 이력: {wiki_url}")
 
+        # 소스 병합과 VM 배포를 따로 하므로(2026-10-31) PR 다음 순서로 배포 파이프라인 버튼을 둔다
+        links = ([("Task 열기", dv.task_url(task))]
+                 + ([("① PR 열기", pr["url"]), ("② 병합 후 VM 배포", dv.pipeline_url(DEPLOY_PIPELINE))] if pr else [])
+                 + [("이력 Wiki", wiki_url)])
         if os.environ.get("TEAMS_WEBHOOK_URL"):
             from teams_tools import teams_notify
             with span("teams_notify", kind="result"):
                 teams_notify.send(f"{headline} 장애 조치를 시작했습니다. "
-                                  + ("수정 PR 을 검토·병합한 뒤 배포해 주세요." if pr else "자동 수정안이 없어 Task 에서 수동 조치가 필요합니다.")
+                                  + ("① 수정 PR 을 검토·병합한 뒤 ② VM 배포 파이프라인을 실행해 주세요(병합만으로는 VM 에 반영되지 않음)."
+                                     if pr else "자동 수정안이 없어 Task 에서 수동 조치가 필요합니다.")
                                   + f"\n\n**처리 단계**\n{ap.steps_text()}",
                                   "[프록시 장애] 조치 진행",
                                   facts=[("Task", f"[#{task}]({dv.task_url(task)})")]
                                         + ([("PR", f"[!{pr['id']}]({pr['url']})")] if pr else []) + [("감지 시각", when)],
-                                  buttons=[("Task 열기", dv.task_url(task))] + ([("PR 열기", pr["url"])] if pr else [])
-                                          + [("이력 Wiki", wiki_url)])
+                                  buttons=links)
         think("Reflection", f"계획한 조치 완료: Task #{task}" + (f" · PR !{pr['id']}" if pr else " · PR 없음(수동 조치)")
-                            + " · 이력 Wiki → 남은 일(사람): " + ("PR 검토·병합 → deploy.sh 배포 → traffic.sh 확인" if pr
+                            + " · 이력 Wiki → 남은 일(사람): " + (f"PR 검토·병합 → '{DEPLOY_PIPELINE}' 파이프라인 실행 → traffic.sh 확인" if pr
                                                                else "Task 의 수동 조치"))
-        ap.finish("조치를 시작했습니다. " + ("수정 PR 을 검토·병합한 뒤 배포하세요." if pr else "Task 에서 수동 조치하세요."),
-                  [("Task 열기", dv.task_url(task))] + ([("PR 열기", pr["url"])] if pr else []) + [("이력 Wiki", wiki_url)])
+        ap.finish("조치를 시작했습니다. " + ("① 수정 PR 을 검토·병합한 뒤 ② VM 배포 파이프라인을 실행하세요." if pr
+                                            else "Task 에서 수동 조치하세요."), links)
         return 0
     except Exception as exc:
         ap.step(f"실패: {exc}", "fail")
