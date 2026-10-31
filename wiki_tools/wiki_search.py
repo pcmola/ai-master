@@ -49,6 +49,7 @@ GUIDE_EXCLUDE = {"AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-
 GUIDE_CHUNKS = int(os.environ.get("GUIDE_CHUNKS", "24"))           # LLM 에 넘길 조각 수 상한
 GUIDE_CHUNK_CHARS = int(os.environ.get("GUIDE_CHUNK_CHARS", "1500"))  # 조각 하나의 대략적인 최대 길이
 GUIDE_CONTEXT_CHARS = int(os.environ.get("GUIDE_CONTEXT_CHARS", "16000"))  # 넘길 조각 전체 글자 수 상한
+REVISE_EXTRA_CHUNKS = 6  # 수정 요청으로 새로 걸린 조각을 기존 근거 뒤에 덧붙이는 상한
 EMBED_WEIGHT = float(os.environ.get("EMBED_WEIGHT", "8"))  # 혼합 검색에서 임베딩 유사도 가중치
 # 가이드 작성 호출만 더 길게 기다린다. 게이트웨이가 응답을 모아 한 번에 보내서, 긴 가이드(수정 요청은 지금 가이드 전체를
 # 다시 씀, 3만 자)는 첫 바이트까지 120초를 넘겼다(2026-10-30 ReadTimeout).
@@ -595,7 +596,14 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
     think("Observation", f"후보 {len(ranked)}건 중 근거 문서 {len(sources)}건, 근거 문장 {len(statements)}개")
     request = (revise or {}).get("request", "").strip()
     step("chunk_select")
-    chunks = select_chunks(sources, f"{search_query} {request}".strip(), [w for g in groups for w in g] + boost)
+    words = [w for g in groups for w in g] + boost
+    chunks = select_chunks(sources, search_query, words)
+    if request:
+        # 처음 생성 때 고른 조각은 순서까지 그대로 두고, 요청으로 새로 걸린 조각만 뒤에 붙인다.
+        # 프롬프트 앞부분이 같아야 모델 쪽 프롬프트 캐시가 맞는다(2026-10-31 측정: 다시 고르면 적중 0).
+        have = {(c["doc"].path, c["order"]) for c in chunks}
+        chunks += [dict(c, extra=True) for c in select_chunks(sources, f"{search_query} {request}", words)
+                   if (c["doc"].path, c["order"]) not in have][:REVISE_EXTRA_CHUNKS]
 
     title = f"{option['label'] if option else query.strip()} 가이드"
     step("web_decision")
@@ -1133,15 +1141,22 @@ def llm_guide(client, query, title, option, statements, sources, web=(), chunks=
 
     # 질의와 가까운 조각만 넘긴다(select_chunks). 조각은 문서별로 묶고 문서 안 원래 순서대로 둔다.
     rank = {d.path: i for i, (d, _) in enumerate(sources, 1)}
-    by_doc: dict[str, list[dict]] = {}
-    for c in chunks or []:
-        by_doc.setdefault(c["doc"].path, []).append(c)
-    docs = "\n\n".join(
-        f'<document rank="{rank[path]}" path="{path}" title="{cs[0]["doc"].title}">\n'
-        + "\n\n".join(f'<section heading="{c["heading"]}">\n{MERMAID.sub(stash, c["text"])}\n</section>'
-                       for c in sorted(cs, key=lambda c: c["order"]))
-        + "\n</document>"
-        for path, cs in sorted(by_doc.items(), key=lambda kv: rank[kv[0]]))
+
+    def render(cs_all: list[dict]) -> str:
+        groups: dict[str, list[dict]] = {}
+        for c in cs_all:
+            groups.setdefault(c["doc"].path, []).append(c)
+        return "\n\n".join(
+            f'<document rank="{rank[path]}" path="{path}" title="{cs[0]["doc"].title}">\n'
+            + "\n\n".join(f'<section heading="{c["heading"]}">\n{MERMAID.sub(stash, c["text"])}\n</section>'
+                           for c in sorted(cs, key=lambda c: c["order"]))
+            + "\n</document>"
+            for path, cs in sorted(groups.items(), key=lambda kv: rank[kv[0]]))
+
+    # 수정 요청으로 새로 걸린 조각(extra)은 따로 뒤에 둔다. 앞부분이 처음 생성 때와 같아야 프롬프트 캐시가 맞는다.
+    extra = [c for c in chunks or [] if c.get("extra")]
+    by_doc = {c["doc"].path for c in chunks or []}
+    docs = render([c for c in chunks or [] if not c.get("extra")])
     webs = "\n\n".join(f'<web rank="{i}" url="{w["url"]}" title="{w["title"]}">\n{w["content"]}\n</web>'
                          for i, w in enumerate(web, 1))
     basis = ("위 위키 문서를 우선 근거로 삼고, 위키에 없는 부분만 <web_results> 의 웹 검색 결과로 보완해 "
@@ -1165,10 +1180,15 @@ def llm_guide(client, query, title, option, statements, sources, web=(), chunks=
               "다이어그램을 글·표·ASCII 로 풀어 쓰지 말고 '[[DIAGRAM-n]]' 한 줄만 단독으로 적어라. 괄호 속 설명은 옮기지 마라.\n"
               "- 각 문서는 질의와 관련된 절(section)만 발췌되어 있다. 발췌에 없는 내용은 추측하지 마라.\n"
               f"- 첫 줄은 '# {title}'로 시작하고, Markdown 본문만 출력하라.")
+    prompts = [prompt]
     if revise:  # 수정 요청: 지금 가이드를 요청대로 고쳐 전체를 다시 쓴다
+        # 별도 메시지로 보낸다. 게이트웨이 프롬프트 캐시는 메시지 단위라, 근거 메시지가 처음 생성 때와 같으면 그만큼 적중한다
+        # (2026-10-31 실험: 같은 메시지 뒤에 덧붙이면 적중 0, 메시지를 나누면 근거 5,281토큰 적중).
         current = re.split(r"\n## (?:원문 링크|웹 참고 링크)\n", revise.get("markdown", ""))[0].strip()
         bare = lambda m: (diagrams.append(m.group(0)), f"[[DIAGRAM-{len(diagrams)}]]")[1]  # 지금 가이드의 그림은 설명 없이
-        prompt += ("\n\n<current_guide>\n" + MERMAID.sub(bare, current) + "\n</current_guide>\n\n"
+        prompts.append((f"<extra_documents>\n{render(extra)}\n</extra_documents>\n"
+                        "<extra_documents> 는 수정 요청과 관련해 더 찾은 발췌다. 앞의 <documents> 와 같은 근거로 쓴다.\n\n" if extra else "")
+                   + "<current_guide>\n" + MERMAID.sub(bare, current) + "\n</current_guide>\n\n"
                    f"<request>\n{revise.get('request', '').strip()}\n</request>\n\n"
                    "위 <current_guide> 를 <request> 대로 고친 가이드 전체를 다시 출력하라. 요청과 관계없는 부분은 "
                    "문장·순서·코드를 바꾸지 말고 그대로 두라.\n"
@@ -1179,14 +1199,15 @@ def llm_guide(client, query, title, option, statements, sources, web=(), chunks=
                    "근거가 없으면 그 자리에 '근거 없음'이라고 적어라.\n"
                    "- '원문 링크'·'웹 참고 링크' 절은 쓰지 마라(자동으로 붙는다).")
     system = "너는 사내 위키 문서를 근거로 운영 가이드를 작성하는 기술 문서 작성자다."
-    with span("llm_generate", model=llm_model(client), docs=len(by_doc), context_chunks=len(chunks or []), web=len(web),
-              diagrams=len(diagrams), revise=bool(revise), prompt_chars=len(system) + len(prompt)) as s:
-        result = yield from _llm_run(client, system, prompt, diagrams, sources, web, s, chunks)  # chunks → context
+    with span("llm_generate", model=llm_model(client), docs=len(by_doc), context_chunks=len(chunks or []), extra_chunks=len(extra), web=len(web),
+              diagrams=len(diagrams), revise=bool(revise), prompt_chars=len(system) + sum(map(len, prompts))) as s:
+        result = yield from _llm_run(client, system, prompts, diagrams, sources, web, s, chunks)  # chunks → context
     return result
 
 
-def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
-    """llm_guide 의 호출부. s(llm_generate 노드)에 첫 응답 시각, 줄 수, 토큰 사용량, 실패 이유를 남긴다."""
+def _llm_run(client, system, prompts, diagrams, sources, web, s, context=None):
+    """llm_guide 의 호출부. s(llm_generate 노드)에 첫 응답 시각, 줄 수, 토큰 사용량, 실패 이유를 남긴다.
+    prompts 는 user 메시지 목록이다. 첫 메시지(근거)는 프롬프트 캐시 대상이다."""
     text, pending = "", ""
     started, first, n_lines = time.perf_counter(), None, 0
 
@@ -1208,12 +1229,13 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
         if hasattr(client, "chat"):  # OpenAI / Azure OpenAI 게이트웨이
             stream = client.chat.completions.create(
                 model=llm_model(client), stream=True, stream_options={"include_usage": True}, timeout=GUIDE_LLM_TIMEOUT,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
+                messages=[{"role": "system", "content": system}] + [{"role": "user", "content": p} for p in prompts])
             chunks, finish = 0, None
             for chunk in stream:
                 if getattr(chunk, "usage", None):  # include_usage: 마지막 조각에 토큰 사용량이 온다
                     u = chunk.usage
                     s.set(prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
+                          cached_tokens=getattr(u.prompt_tokens_details, "cached_tokens", None),  # 프롬프트 캐시 적중분
                           reasoning_tokens=getattr(u.completion_tokens_details, "reasoning_tokens", None))
                 if chunk.choices:
                     finish = chunk.choices[0].finish_reason or finish
@@ -1232,10 +1254,14 @@ def _llm_run(client, system, prompt, diagrams, sources, web, s, context=None):
             # 안전 분류기가 거절하면 서버가 다른 모델로 이어서 답하게 한다(지원 모델만).
             extra = ({"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
                      if model in {"claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"} else {"betas": []})
+            # 근거 블록 끝에 캐시 표시를 달아 수정 요청 때 근거를 다시 읽지 않게 한다.
+            content = [{"type": "text", "text": p} for p in prompts]
+            content[0]["cache_control"] = {"type": "ephemeral"}
             res = client.beta.messages.create(
                 model=model, max_tokens=16000, output_config={"effort": "medium"},
-                system=system, messages=[{"role": "user", "content": prompt}], **extra)
-            s.set(prompt_tokens=res.usage.input_tokens, completion_tokens=res.usage.output_tokens, finish=res.stop_reason)
+                system=system, messages=[{"role": "user", "content": content}], **extra)
+            s.set(prompt_tokens=res.usage.input_tokens, completion_tokens=res.usage.output_tokens, finish=res.stop_reason,
+                  cached_tokens=getattr(res.usage, "cache_read_input_tokens", None))
             if res.stop_reason == "refusal":
                 s.fail(f"LLM 거절 → 템플릿 사용: {res.stop_details}")
                 return None
