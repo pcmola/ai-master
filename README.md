@@ -626,6 +626,8 @@ Copy-Item .env.sample .env
 | `SQUID_RUNTIME` | `podman` | VM에서 Squid 컨테이너를 띄운 런타임(로그 뷰어) |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
 | `TEAMS_CARD_ARCHIVE` | `1` | 보낸 Teams 카드를 `data/teams_cards/`에 JSON으로 남김(README 카드 화면용). `0`이면 끔 |
+| `TEAMS_WINDOW_ARRANGE` | `1` | 카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 절반으로 옮기고 앞으로 가져옴. `0`이면 끔 |
+| `WINDOW_ARRANGE` | `1` | 창 옮기기 전체 스위치(`common/winlayout.py`). 처리 결과 브라우저 창(제목 `처리 결과`·`승인 접수`)도 같은 크기로 옮김. `0`이면 모두 끔 |
 
 임베딩 모델을 바꾸면 처음 실행할 때 문서 전체 임베딩을 다시 계산합니다(약 2분). 결과는 `data/wiki_search_cache.json`에 캐시됩니다.
 

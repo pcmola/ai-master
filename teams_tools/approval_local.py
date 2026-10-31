@@ -43,6 +43,9 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR  # noqa: E402
 from common.server import favicon, local_server, open_chrome, site_url  # noqa: E402
+from common.winlayout import BROWSERS, arrange_later  # noqa: E402
+
+RESULT_TITLES = ("처리 결과", "승인 접수")  # 이 제목의 브라우저 창을 화면 가로 전체 × 위쪽 절반으로 옮긴다
 
 PORT = 8771
 ARCHIVE = DATA_DIR / "approvals"
@@ -92,7 +95,17 @@ def shell(title: str, inner: str, script: str = "") -> bytes:
             f'<meta name="viewport" content="width=device-width,initial-scale=1">{favicon("✓", "#5b5fc7")}<title>{html.escape(title)}</title>'
             f'<style>{STYLE}</style></head><body><div class="card"><div class="head">{html.escape(title)}'
             f'<small>로컬 승인 화면 (Teams 대체)</small></div><div class="body">{inner}</div></div>'
-            f'<script>{script}</script></body></html>').encode("utf-8")
+            f'<script>{OPEN_TOP_JS}{script}</script></body></html>').encode("utf-8")
+
+
+# 새 창 링크(Task·PR·이력 Wiki 등)는 화면 가로 전체 × 위쪽 절반 창으로 연다. 같은 글자의 링크는 같은 창을 다시 쓴다.
+# 팝업이 막히거나 Ctrl/Shift 를 누르고 클릭하면 원래대로 새 탭으로 연다.
+OPEN_TOP_JS = """document.addEventListener('click',e=>{const a=e.target.closest('a[target=_blank]');
+if(!a||e.ctrlKey||e.shiftKey||e.metaKey)return;
+const w=screen.availWidth,h=Math.round(screen.availHeight/2),l=screen.availLeft||0,t=screen.availTop||0;
+const win=window.open(a.href,'top-'+a.textContent.trim().replace(/\\s+/g,'-'),`popup,width=${w},height=${h},left=${l},top=${t}`);
+if(win){win.opener=null;e.preventDefault()}});
+"""
 
 
 def guess_html(candidates: list[str] | None) -> str:
@@ -164,6 +177,7 @@ class Approval:
         self.excluded: list[str] = []
         self.token = secrets.token_urlsafe(9)
         self.decided, self.final_seen = threading.Event(), threading.Event()
+        self.arranged = False  # 처리 결과 창을 위쪽 절반으로 옮겼는지(한 번만)
         self.answer: bool | None = None
         self.state = {"decision": None, "steps": [], "done": False, "ok": True, "message": "", "links": []}
         self.lock = threading.Lock()
@@ -244,6 +258,11 @@ class Approval:
                         if ap.state["done"]:
                             ap.final_seen.set()
                     return self.reply(data, kind="application/json; charset=utf-8")
+                if url.path in ("/progress", "/decide"):
+                    # 처리 결과 창은 Teams 링크로 열린 일반 탭이라 페이지가 크기를 못 바꾼다 → 창 제목으로 찾아 옮긴다(한 번만)
+                    if not ap.arranged:
+                        ap.arranged = True
+                        arrange_later(BROWSERS, RESULT_TITLES)
                 if url.path == "/progress":
                     return self.reply(progress)
                 if url.path == "/decide":  # Teams 카드 버튼

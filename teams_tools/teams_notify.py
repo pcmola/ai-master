@@ -109,7 +109,8 @@ def send(text: str, title: str | None = None, url: str | None = None,
     try:
         with urllib.request.urlopen(req, timeout=15) as res:
             status = res.status
-            return res.status
+        arrange_teams_window()
+        return status
     except urllib.error.HTTPError as exc:
         status = exc.code
         detail = exc.read().decode("utf-8", errors="replace")[:500]
@@ -119,6 +120,15 @@ def send(text: str, title: str | None = None, url: str | None = None,
         raise SystemExit(f"Teams 전송 실패(네트워크): {exc.reason}")
     finally:
         archive(card, title, status)
+
+
+def arrange_teams_window() -> bool:
+    """카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 절반으로 옮기고 앞으로 가져온다.
+    Teams 가 안 떠 있거나 실패해도 전송에는 영향 없음. TEAMS_WINDOW_ARRANGE=0 이면 끈다."""
+    if os.environ.get("TEAMS_WINDOW_ARRANGE", "1") == "0":
+        return False
+    from common.winlayout import arrange_top_half
+    return arrange_top_half(("ms-teams.exe", "teams.exe"))  # 새 Teams·예전 Teams
 
 
 def archive(card: dict, title: str | None, status) -> None:
