@@ -21,6 +21,7 @@ data/scenario2/
 사용 예:
     python test/scenario2/setup_env.py            # 꺼진 VM 켜기 + 표·정답 재생성 + 문서 초기화(시나리오 실행 전마다)
     python test/scenario2/setup_env.py --check    # 점검만(아무것도 바꾸지 않음)
+    python test/scenario2/setup_env.py --restore  # 원상 복구: 저장된 '현행화 전' 표로 문서만 되돌림(Azure 조회·VM 시작 없음)
 """
 
 from __future__ import annotations
@@ -197,7 +198,18 @@ def start_vms(timeout: float = 420) -> bool:
 def main() -> int:
     p = argparse.ArgumentParser(description="시나리오 2 테스트 환경 점검·초기화")
     p.add_argument("--check", action="store_true", help="점검만 하고 문서·정답은 바꾸지 않음")
+    p.add_argument("--restore", action="store_true",
+                   help="원상 복구: data/scenario2/seed.json 으로 Wiki 테스트 문서만 '현행화 전'으로 되돌림")
     args = p.parse_args()
+
+    if args.restore:  # 시나리오 2 를 한 번 돌린 뒤 같은 정답으로 다시 시험할 때. VM·정답은 그대로 둔다
+        print("시나리오 2 원상 복구: Wiki 테스트 문서를 '현행화 전' 표로 되돌립니다")
+        if not (OUT / "seed.json").is_file():
+            print("  [실패] data/scenario2/seed.json 이 없습니다. 먼저 '테스트 환경 준비'를 실행하세요.")
+            return 1
+        ok = reset_wiki(json.loads((OUT / "seed.json").read_text(encoding="utf-8")))
+        print("결과:", "원상 복구 완료 (다시 '실행'하면 같은 차이를 찾아야 합니다)" if ok else "원상 복구 실패")
+        return 0 if ok else 1
 
     print("시나리오 2 테스트 환경 점검")
     OUT.mkdir(parents=True, exist_ok=True)
