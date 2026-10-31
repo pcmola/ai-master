@@ -715,11 +715,12 @@ function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t
 // 시나리오 2: Wiki 현황 문서와 Azure Portal VM 목록, 한 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
 async function loadS2Links(refresh){const box=document.getElementById('s2links');if(refresh)box.innerHTML='<span class="muted">다시 읽는 중…</span>';
   let d;try{d=await (await fetch('/api/s2links'+(refresh?'?refresh=1':''))).json()}catch(e){box.innerHTML='<span class="muted">링크를 불러오지 못했습니다.</span>';return}
-  const a=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`:'';
-  const doc=x=>`${a(x.local,x.title)}${x.devops?' · '+a(x.devops,'Azure DevOps'):''}`;
+  // 링크도 화면 가로 전체 × 위쪽 절반 창으로 연다(openTop). 팝업이 막히면 새 탭으로 연다.
+  const a=(u,t,name)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" onclick="return !openTop(this.href,'${name}')">${esc(t)}</a>`:'';
+  const doc=x=>`${a(x.local,x.title,'wiki-viewer')}${x.devops?' · '+a(x.devops,'Azure DevOps','devops'):''}`;
   const sp=d.status_page;
   const up=(d.vms||[]).filter(v=>v.state==='운영').length,n=(d.vms||[]).length;
-  box.innerHTML=`<div class="head">${sp?'<span>Wiki: '+doc(sp)+'</span>':''}<span>Azure: ${a(d.portal_vms,'Proxy VM 목록')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 실행 중`:'Proxy VM 없음'}</span></span>`
+  box.innerHTML=`<div class="head">${sp?'<span>Wiki: '+doc(sp)+'</span>':''}<span>Azure: ${a(d.portal_vms,'Proxy VM 목록','azure-portal')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 실행 중`:'Proxy VM 없음'}</span></span>`
     +`<button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`}
 // ---------------------------------------------------------------- 시나리오 실행
 let jobs={}, slogKey=null, approvalShown=null;
