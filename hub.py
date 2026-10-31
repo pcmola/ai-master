@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common.paths import DATA_DIR, PROJECT_ROOT  # noqa: E402
 from common.server import favicon, local_server, open_chrome, site_url  # noqa: E402
 
-HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "AI Master 서버 허브"
+HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "AI Master: Azure DevOps 기반 AI 운영 자동화 허브"
 LOG_DIR = DATA_DIR / "logs"
 LOG_ROTATE_BYTES = 2 * 1024 * 1024
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -704,7 +704,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <option value="bad-dns">잘못된 DNS 서버</option></select>
 <button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포하고 시험 접속을 보내 차단 로그를 남김 (proxy_fault_inject.py apply)">장애 재현</button></div>
 <div class="row"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
-<b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애를 되돌리는 커밋을 push 하고 wjy-proxy01 에 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌려 배포·확인 (또는 수정 PR 병합 후 배포) (proxy_fault_inject.py restore)">원상 복구</button>
+<b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button>
 <button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">허용 IP 맞추기</button>
 <button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')" style="margin-left:auto">로그</button></div>
 <div class="jobstate" id="s3fault-state"></div>
@@ -810,7 +810,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   ['s3run','s3inject','s3restore','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
   const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
-    :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 현재 심어진 장애: ${esc(f.active.join(', '))} → 시험이 끝나면 원상 복구</span>`:'<span class="jobstate ok">현재 심어진 장애: 없음 (정상)</span>');
+    :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 저장소에 심어진 장애: ${esc(f.active.join(', '))} → 시험이 끝나면 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted">(VM 은 배포해야 반영 · 병합 후에는 원상 복구로 배포)</span>');
   const last=s3.map(k=>jobs[k]).filter(j=>j&&j.state!=='idle').sort((a,b)=>b.started.localeCompare(a.started))[0];
   // 정상(심어진 장애 없음)이고 성공으로 끝난 지 10분이 지나면 '마지막 실행' 줄을 숨긴다. 실행 중·실패·장애 남음이면 계속 보인다.
   const quiet=last&&last.state==='finished'&&last.code===0&&!(f.active&&f.active.length)&&(Date.now()-new Date(last.finished||last.started))>10*60*1000;

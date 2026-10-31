@@ -137,7 +137,11 @@ def restore(push: bool, deploy: str | None):
     sync_main()
     found = active()
     if not found:
-        print("심어진 장애 없음 (정상 상태). 되돌릴 것이 없습니다.")
+        # 저장소는 정상이어도 VM 은 장애 설정 그대로일 수 있다(수정 PR 을 병합만 하고 배포하지 않은 경우, 2026-10-31).
+        # 그래서 배포 대상이 있으면 지금 main 을 다시 배포해 VM 을 저장소와 맞춘다.
+        print("저장소에 심어진 장애 없음 (정상 상태)." + (" VM 에 지금 main 을 다시 배포해 맞춥니다." if deploy else ""))
+        if deploy:
+            deploy_and_check(deploy, expect_fail=False)
         return
     for name in found:
         s = SCENARIOS[name]
