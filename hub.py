@@ -1,10 +1,11 @@
 """Local hub: one page to start, stop and watch the ai-master local web servers.
 
     python hub.py                # http://ai-master.local (hosts 등록 시), 없으면 http://127.0.0.1:8764
-                                 # 이미 떠 있는 허브가 있으면 그 허브만 끄고 새로 띄운다(서버들은 그대로)
+                                 # 이미 떠 있는 허브가 있으면 그 허브만 끄고 새로 띄우고, 서버는 모두 다시 시작한다
+                                 # (코드를 고친 뒤 허브만 다시 켜면 서버에도 반영되게)
     python hub.py --keep         # 이미 떠 있는 허브가 있으면 끄지 않고 종료
-    python hub.py --start-all    # 허브를 켜면서 꺼져 있는 서버를 모두 시작
-    python hub.py --restart-all  # 허브를 켜면서 모든 서버를 다시 시작(중복 실행도 정리)
+    python hub.py --start-all    # 서버를 다시 시작하지 않고, 꺼져 있는 서버만 시작
+    python hub.py --no-restart   # 서버를 건드리지 않음(떠 있는 그대로)
     python hub.py --no-browser
 
 - 서버는 창 없이 띄우고 출력은 data/logs/<key>.log 에 남긴다. 허브를 꺼도 서버는 계속 돈다.
@@ -872,12 +873,12 @@ def main():
         log(f"  [{s['key']}] {BY_KEY[s['key']]['dir'] / s['script']}")
         log(f"  [{s['key']}]   {describe(s)}")
     threading.Thread(target=watch, daemon=True).start()
-    if "--restart-all" in flags:
-        log("모든 서버를 다시 시작합니다 (--restart-all)")
-        dispatch("all", "restart")
-    elif "--start-all" in flags:
+    if "--start-all" in flags:
         log("꺼져 있는 서버를 시작합니다 (--start-all)")
         dispatch("all", "start")
+    elif "--no-restart" not in flags:  # 기본: 모두 다시 시작(--restart-all 은 예전 옵션, 같은 동작)
+        log("모든 서버를 다시 시작합니다 (기본 동작, 건드리지 않으려면 --no-restart)")
+        dispatch("all", "restart")
     if "--no-browser" not in flags:
         open_chrome(
             server.url + "/#servers",

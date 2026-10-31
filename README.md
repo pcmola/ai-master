@@ -747,15 +747,15 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
 
-가상환경(`.\.venv\Scripts\Activate.ps1`)을 켠 뒤 실행합니다. `start.bat`은 가상환경 활성화와 `python hub.py`를 한 번에 하며 아래 옵션도 그대로 받습니다(예: `start.bat --start-all`).
+가상환경(`.\.venv\Scripts\Activate.ps1`)을 켠 뒤 실행합니다. `start.bat`은 가상환경 활성화와 `python hub.py`를 한 번에 하며 아래 옵션도 그대로 받습니다(예: `start.bat --no-restart`).
 
 허브는 전용 크롬 프로필(`data/hub-chrome-profile`, 개발자 도구 포트 127.0.0.1:9222)로 열립니다. 다시 실행하면 그 포트로 예전 허브 탭(`ai-master.local`)을 닫고 새로 열어 탭이 쌓이지 않습니다. 평소 쓰는 크롬과 다른 창이라 로그인·확장 프로그램이 없으므로, Azure DevOps 링크를 처음 열 때는 다시 로그인합니다.
 
 ```powershell
-python hub.py                # 허브를 켜고 크롬으로 연다 (이미 떠 있는 허브는 끄고 새로 띄움)
+python hub.py                # 허브를 켜고 서버를 모두 다시 시작한 뒤 크롬으로 연다 (이미 떠 있는 허브는 끄고 새로 띄움)
 python hub.py --keep         # 이미 떠 있는 허브가 있으면 끄지 않고 종료
-python hub.py --start-all    # 꺼져 있는 서버를 모두 시작
-python hub.py --restart-all  # 모두 다시 시작 (중복 실행·예전 주소로 뜬 서버 정리)
+python hub.py --start-all    # 서버를 다시 시작하지 않고, 꺼져 있는 서버만 시작
+python hub.py --no-restart   # 서버를 건드리지 않음 (떠 있는 그대로)
 python hub.py --no-browser   # 크롬을 열지 않음 (다른 옵션과 함께 사용)
 ```
 
@@ -788,7 +788,7 @@ flowchart LR
 - 실행 여부는 프로세스 명령줄의 스크립트 이름으로 찾으므로 직접 띄운 서버도 허브에 보이고 끌 수 있습니다(로그는 허브에서 시작한 서버만 남음).
 - 허브 콘솔에는 시각과 함께 시작 설정, 시작·중지 요청, 생성·종료한 PID, 상태 변화(직접 끄거나 서버가 죽은 경우 포함), 거부된 요청, 오류가 찍힙니다. 서버가 시작하자마자 죽으면 그 서버 출력의 마지막 줄도 함께 찍힙니다.
 
-허브가 이미 떠 있으면 `python hub.py`가 그 허브 프로세스만 끄고 새로 띄웁니다(허브가 띄운 서버들은 그대로 돕니다). 끄지 않으려면 `--keep`을 붙이며, 이때는 "이미 사용 중"과 함께 PID가 나오고 종료합니다. 허브만 끄려면 다음을 실행합니다.
+허브를 켜면 Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어를 모두 다시 시작합니다. 코드를 고친 뒤 허브만 다시 켜면 서버에도 반영됩니다. 허브가 이미 떠 있으면 `python hub.py`가 그 허브 프로세스를 끄고 새로 띄웁니다. 끄지 않으려면 `--keep`을 붙이며, 이때는 "이미 사용 중"과 함께 PID가 나오고 종료합니다. 허브만 끄려면 다음을 실행합니다.
 
 ```powershell
 Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | ForEach-Object { taskkill /PID $_.OwningProcess /F }
@@ -1229,7 +1229,7 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 
 | 도구 | 옵션 | 나머지는 `.env` |
 |---|---|---|
-| `hub.py` | `--start-all`, `--restart-all`, `--no-browser`, `--keep` | - |
+| `hub.py` | `--start-all`, `--no-restart`, `--no-browser`, `--keep` | - |
 | `proxy_status_sync.py` (시나리오 2) | `--dry-run` | `SCENARIO2_*` (push, 승인 대기, 비교 문서 등) |
 | `test\scenario2\setup_env.py` | `--check` | 옵션 없이 실행하면 VM 켜기 + 표·정답 재생성 + 문서 초기화 |
 | `wiki_register.py` (시나리오 1 명령줄 등록) | `--query`, `--model` | `WIKI_REGISTER_PUSH` |
