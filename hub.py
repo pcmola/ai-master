@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
 import sys
@@ -278,6 +279,38 @@ RUNNING: dict[str, dict] = {}  # 작업 → {proc, pid, started, args, finished,
 _job_lock = threading.Lock()
 
 
+# 작업 출력에 섞여 오는 다른 시각 표기: Squid(VM 의 UTC, '2026/10/31 02:36:35| '), traffic.sh('11:36:47 ')
+FOREIGN_STAMP = re.compile(r"^(?:\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\| ?|\d{2}:\d{2}:\d{2} +)")
+JOB_QUIET_SEC = 10  # 이만큼 출력이 없으면 '진행 중' 줄을 남긴다
+
+
+def pump_job_log(proc: subprocess.Popen, path: Path):
+    """자체 로그가 없는 작업의 출력을 줄마다 'YYYY-MM-DD HH:MM:SS ' 를 붙여 로그 파일에 쓴다.
+    출력이 JOB_QUIET_SEC 넘게 없으면 진행 줄을 남겨 멈춘 것처럼 보이지 않게 하고, 끝나면 종료 코드·소요 시간을 남긴다."""
+    lock, started = threading.Lock(), time.time()
+    last = [started]
+
+    def write(text: str):
+        with lock, open(path, "ab") as f:
+            f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {text}\n".encode("utf-8"))
+        last[0] = time.time()
+
+    def beat():
+        while proc.poll() is None:
+            time.sleep(1)
+            quiet = time.time() - last[0]
+            if quiet >= JOB_QUIET_SEC and proc.poll() is None:
+                write(f"… 진행 중 (마지막 출력 후 {quiet:.0f}초, 시작 후 {time.time() - started:.0f}초)")
+
+    threading.Thread(target=beat, daemon=True).start()
+    for raw in proc.stdout:
+        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        if line.strip():
+            write(FOREIGN_STAMP.sub("", line))
+    code = proc.wait()
+    write(f"===== 종료: 코드 {code}, 소요 {time.time() - started:.0f}초 =====")
+
+
 def run_job(job: str, options: dict) -> dict:
     """작업을 창 없이 실행한다. 같은 로그를 쓰는 작업(예: 시나리오 2 실행과 테스트 환경 준비)은 동시에 돌리지 않는다."""
     spec = JOBS[job]
@@ -298,11 +331,12 @@ def run_job(job: str, options: dict) -> dict:
             proc = subprocess.Popen(cmd, cwd=PROJECT_ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                     stdin=subprocess.DEVNULL, env=env, creationflags=NO_WINDOW)
         else:
-            with open(LOG_DIR / f"{spec['log']}.log", "ab") as f:
+            path = LOG_DIR / f"{spec['log']}.log"
+            with open(path, "ab") as f:
                 f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 시작: {spec['script']} {' '.join(args)} =====\n".encode("utf-8"))
-                f.flush()
-                proc = subprocess.Popen(cmd, cwd=PROJECT_ROOT, stdout=f, stderr=subprocess.STDOUT,
-                                        stdin=subprocess.DEVNULL, env=env, creationflags=NO_WINDOW)
+            proc = subprocess.Popen(cmd, cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    stdin=subprocess.DEVNULL, env=env, creationflags=NO_WINDOW)
+            threading.Thread(target=pump_job_log, args=(proc, path), daemon=True).start()
         RUNNING[job] = {"proc": proc, "pid": proc.pid, "started": datetime.now().isoformat(timespec="seconds"),
                         "args": args, "finished": None, "code": None}
     log(f"[{job}] 작업 실행 PID {proc.pid}: {' '.join(cmd)}")

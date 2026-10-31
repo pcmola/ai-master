@@ -111,6 +111,7 @@ def sync_main():
     """작업 전 main 을 원격 최신으로 맞춘다(허브 버튼으로 여러 번 실행해도 어긋나지 않게)."""
     if git("status", "--porcelain"):
         raise RuntimeError(f"{REPO} 에 커밋하지 않은 변경이 있습니다. 정리한 뒤 다시 실행하세요.")
+    print("원격 main 최신화 (git fetch)…")
     git("fetch", "-q", "origin")
     if git("rev-parse", "--abbrev-ref", "HEAD") != "main":
         git("switch", "-q", "main")
@@ -118,9 +119,11 @@ def sync_main():
 
 
 def deploy_and_check(target: str, expect_fail: bool):
+    print(f"VM 주소 확인: {target}…")
     ip = vm_ip(target)
-    print(f"배포: {target}")
+    print(f"배포: {target} (설정 검증 → 업로드 → Squid 재시작)…")
     bash("scripts/deploy.sh", ip, "--restart")
+    print("시험 접속 보내는 중 (도메인 4개 × 5회)…")
     try:
         bash("scripts/traffic.sh", ip)
         print("테스트 트래픽 정상" + (" (장애가 나타나지 않았습니다. 네트워크에서 프록시 포트(8080)가 막혔는지 확인하세요)" if expect_fail else ""))
@@ -144,6 +147,7 @@ def restore(push: bool, deploy: str | None):
     git("commit", "-q", "-m", f"장애 재현 되돌림: {', '.join(found)}")
     print(f"커밋: {git('log', '-1', '--format=%h %s')}")
     if push:
+        print("push 중…")
         git("push", "-q", "origin", "HEAD")
         print("push 완료")
     if deploy:
@@ -172,6 +176,7 @@ def apply(name: str, push: bool, deploy: str | None):
     print(f"커밋: {git('log', '-1', '--format=%h %s')}")
     print(f"기대 증상: {s['symptom']}")
     if push:
+        print("push 중…")
         git("push", "-q", "origin", "HEAD")
         print("push 완료")
     if deploy:
