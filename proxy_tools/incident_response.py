@@ -460,17 +460,26 @@ def config_drift(at: str) -> list[str]:
     from proxy_policy_monitor import proxy_targets
     norm = lambda t: "\n".join(line.rstrip() for line in t.replace("\r\n", "\n").strip().split("\n"))
     with span("config_drift", at=at) as s:
+        # git fetch·Azure VM 조회가 가끔 20초 넘게 걸려(2026-10-31 26.7초) 5초마다 지금 단계를 남긴다
+        now_at = {"stage": "proxy-config 원격 최신화 (git fetch)"}
+        stop = heartbeat(s, lambda: now_at["stage"])
         try:
+            t0 = time.monotonic()
             git(CONFIG_REPO, "fetch", "-q", "origin")
             paths = git(CONFIG_REPO, "ls-tree", "-r", "--name-only", "origin/main", "--", "squid").splitlines()
             want = {p.removeprefix("squid/"): norm(git(CONFIG_REPO, "show", f"origin/main:{p}")) for p in paths}
+            t1 = time.monotonic()
+            now_at["stage"] = "Azure 에서 운영 중인 프록시 VM 조회 (az vm list)"
             vms = [v for v in proxy_targets() if v["kind"] == "squid" and v["state"] == "운영"]
+            s.set(git_sec=round(t1 - t0, 1), az_sec=round(time.monotonic() - t1, 1))
         except (RuntimeError, OSError) as exc:
+            stop()
             s.fail(str(exc)[:160])
             print(f"VM 설정 비교 못 함 ({at}): {exc}")
             return []
         drifted = []
         for vm in vms:
+            now_at["stage"] = f"{vm['name']} 배포된 설정 읽기 (ssh)"
             text, err = ssh(vm["ip"], 'cd /etc/proxy && for f in proxy.conf lists/*; do echo "@@@FILE $f"; cat "$f"; done',
                             "deployed config")
             if err:
@@ -484,6 +493,7 @@ def config_drift(at: str) -> list[str]:
                                     "→ 병합한 수정이 배포되지 않았거나 VM 을 직접 고친 상태. 허브 '원상 복구'로 main 을 배포해 맞추세요")
             else:
                 think("Observation", f"{vm['name']}: 배포된 설정 = 저장소 main ({at})")
+        stop()
         s.set(vms=len(vms), drifted=drifted)
         return drifted
 
