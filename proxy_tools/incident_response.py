@@ -452,6 +452,42 @@ def preflight(args) -> None:
                         + ("" if args.dry_run else " · 승인 No/시간 초과 → 기록만 하고 종료"))
 
 
+def config_drift(at: str) -> list[str]:
+    """운영 중인 squid VM 의 설정(/etc/proxy/proxy.conf, lists/*)이 저장소 origin/main 의 squid/ 와 같은지 본다.
+    다르면 경고 줄을 남기고 다른 VM 이름 목록을 돌려준다. 확인 자체가 실패해도 시나리오는 계속한다.
+    2026-10-31: 수정 PR 을 병합만 하고 배포하지 않아 저장소는 정상, VM 은 장애 설정 그대로인 것을 놓쳤다."""
+    from proxy_log_viewer import ssh
+    from proxy_policy_monitor import proxy_targets
+    norm = lambda t: "\n".join(line.rstrip() for line in t.replace("\r\n", "\n").strip().split("\n"))
+    with span("config_drift", at=at) as s:
+        try:
+            git(CONFIG_REPO, "fetch", "-q", "origin")
+            paths = git(CONFIG_REPO, "ls-tree", "-r", "--name-only", "origin/main", "--", "squid").splitlines()
+            want = {p.removeprefix("squid/"): norm(git(CONFIG_REPO, "show", f"origin/main:{p}")) for p in paths}
+            vms = [v for v in proxy_targets() if v["kind"] == "squid" and v["state"] == "운영"]
+        except (RuntimeError, OSError) as exc:
+            s.fail(str(exc)[:160])
+            print(f"VM 설정 비교 못 함 ({at}): {exc}")
+            return []
+        drifted = []
+        for vm in vms:
+            text, err = ssh(vm["ip"], 'cd /etc/proxy && for f in proxy.conf lists/*; do echo "@@@FILE $f"; cat "$f"; done',
+                            "deployed config")
+            if err:
+                print(f"VM 설정 비교 못 함 ({at}): {vm['name']} — {err}")
+                continue
+            have = {m.group(1): norm(m.group(2)) for m in re.finditer(r"^@@@FILE (\S+)\n(.*?)(?=^@@@FILE |\Z)", text, re.M | re.S)}
+            diff = sorted(f for f in set(want) | set(have) if want.get(f) != have.get(f))
+            if diff:
+                drifted.append(vm["name"])
+                think("Reflection", f"⚠ 경고 ({at}): {vm['name']} 의 배포된 설정이 저장소 main 과 다름 ({', '.join(diff)}) "
+                                    "→ 병합한 수정이 배포되지 않았거나 VM 을 직접 고친 상태. 허브 '원상 복구'로 main 을 배포해 맞추세요")
+            else:
+                think("Observation", f"{vm['name']}: 배포된 설정 = 저장소 main ({at})")
+        s.set(vms=len(vms), drifted=drifted)
+        return drifted
+
+
 def run(args) -> int:
     when = now()
     with span("trigger", mode="dry-run" if args.dry_run else "teams", window_min=WINDOW_MIN):
@@ -632,8 +668,13 @@ def main() -> int:
         args = p.parse_args()
         try:
             with trace("scenario3", "incident_response", dry_run=args.dry_run, window_min=WINDOW_MIN) as t:
-                code = run(args)
-                t.set(exit=code)
+                # 시작할 때: 지난 수정이 배포됐는지(병합 후 배포 누락). 끝날 때: 이번 실행 뒤 VM 과 저장소 상태.
+                config_drift("시작")
+                try:
+                    code = run(args)
+                finally:
+                    drifted = config_drift("종료")
+                t.set(exit=code, drifted=drifted)
                 return code
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
