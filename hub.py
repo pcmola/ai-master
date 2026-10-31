@@ -281,7 +281,7 @@ _job_lock = threading.Lock()
 
 # 작업 출력에 섞여 오는 다른 시각 표기: Squid(VM 의 UTC, '2026/10/31 02:36:35| '), traffic.sh('11:36:47 ')
 FOREIGN_STAMP = re.compile(r"^(?:\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\| ?|\d{2}:\d{2}:\d{2} +)")
-JOB_QUIET_SEC = 10  # 이만큼 출력이 없으면 '진행 중' 줄을 남긴다
+JOB_QUIET_SEC = 5  # 이만큼 출력이 없으면 '진행 중' 줄을 남긴다
 
 
 def pump_job_log(proc: subprocess.Popen, path: Path):
