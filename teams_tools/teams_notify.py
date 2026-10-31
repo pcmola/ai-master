@@ -64,6 +64,25 @@ def linkify(text: str) -> str:
     return "`".join(parts)
 
 
+def paragraphs(text: str) -> list[str]:
+    """본문을 문단과 글머리 항목 단위로 나눈다. 한 TextBlock 안의 목록은 줄 간격이 빽빽해서
+    항목마다 TextBlock 을 따로 만들어 사이에 간격을 준다. 항목에 이어진 줄은 그 항목에 붙인다."""
+    parts: list[str] = []
+    for para in re.split(r"\n\s*\n", text.strip()):
+        cur: list[str] = []
+        for line in para.splitlines():
+            if re.match(r"\s*[-*] ", line) and cur:
+                parts.append("\n".join(cur))
+                cur = []
+            elif cur and re.match(r"\s*[-*] ", cur[0]) and not line.startswith(" "):
+                parts.append("\n".join(cur))  # 목록 뒤에 이어진 일반 줄(예: **처리 단계**)은 새 문단
+                cur = []
+            cur.append(line)
+        if cur:
+            parts.append("\n".join(cur))
+    return [p for p in parts if p.strip()]
+
+
 def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]] | None = None,
                buttons: list[tuple[str, str]] | None = None) -> dict:
     """facts: (이름, 값) 표. buttons: (글자, URL) — 누르면 그 URL 을 브라우저로 연다(Action.OpenUrl)."""
@@ -73,7 +92,11 @@ def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]]
         body.append({"type": "TextBlock", "text": mention["text"], "wrap": True})
     if title:
         body.append({"type": "TextBlock", "text": title, "weight": "Bolder", "size": "Medium", "wrap": True})
-    body.append({"type": "TextBlock", "text": linkify(text), "wrap": True})
+    for i, part in enumerate(paragraphs(text)):
+        block = {"type": "TextBlock", "text": linkify(part), "wrap": True}
+        if i:
+            block["spacing"] = "Medium"
+        body.append(block)
     if facts:
         body.append({"type": "FactSet", "facts": [{"title": k, "value": str(v).replace("~", "\u223c")} for k, v in facts]})
     content = {
