@@ -37,6 +37,9 @@ except ImportError:
 CLIENT = os.environ.get("PROXY_ALLOWED_CLIENTS", "203.0.113.10/32").split(",")[0].strip().split("/")[0]
 
 REPO = Path(os.environ.get("PROXY_CONFIG_DIR") or PROJECT_ROOT.parent / "proxy-config")
+# 시험 접속 횟수(도메인 4개 × N회). 가상 시나리오라 3회면 충분하다: 허용 도메인 차단은 1건부터,
+# DNS 장애(upstream_error)는 도메인당 3회부터 잡힌다. denied_burst(60초 10회)는 client-acl-typo(12회 차단)에서만 난다.
+TRAFFIC_ROUNDS = int(os.environ.get("FAULT_TRAFFIC_ROUNDS", "3"))
 GIT_BASH = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
 
 # file 안에서 before 가 정확히 한 번 나와야 한다. symptom 은 시험하는 사람만 보는 기대 증상이다.
@@ -46,7 +49,7 @@ SCENARIOS = {
         "before": ".data.go.kr\n",
         "after": ".date.go.kr\n",
         "message": "Normalize whitelist entries",
-        "symptom": "허용 클라이언트의 *.data.go.kr CONNECT 가 TCP_DENIED/403 → whitelisted_denied, denied_burst",
+        "symptom": "허용 클라이언트의 *.data.go.kr CONNECT 가 TCP_DENIED/403 → whitelisted_denied",
     },
     "client-acl-typo": {
         "file": "squid/proxy.conf",
@@ -123,9 +126,9 @@ def deploy_and_check(target: str, expect_fail: bool):
     ip = vm_ip(target)
     print(f"배포: {target} (설정 검증 → 업로드 → Squid 재시작)…")
     bash("scripts/deploy.sh", ip, "--restart")
-    print("시험 접속 보내는 중 (도메인 4개 × 5회)…")
+    print(f"시험 접속 보내는 중 (도메인 4개 × {TRAFFIC_ROUNDS}회)…")
     try:
-        bash("scripts/traffic.sh", ip)
+        bash("scripts/traffic.sh", ip, str(TRAFFIC_ROUNDS))
         print("테스트 트래픽 정상" + (" (장애가 나타나지 않았습니다. 네트워크에서 프록시 포트(8080)가 막혔는지 확인하세요)" if expect_fail else ""))
     except RuntimeError:
         print("테스트 트래픽에서 실패가 나왔습니다" + ("(예상한 결과). 이제 시나리오 3 을 실행하세요." if expect_fail
