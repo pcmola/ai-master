@@ -254,6 +254,97 @@ def watch(interval: float = 5):
         time.sleep(interval)
 
 
+# ---------------------------------------------------------------- VM 배포 파이프라인(Azure DevOps) 지켜보기
+
+DEPLOY_PIPELINE = os.environ.get("SCENARIO3_DEPLOY_PIPELINE", "proxy-config VM 배포")
+PIPELINE_POLL_SEC = 10
+PIPELINE_STATE: dict = {}  # 화면용 최근 실행 {name, state, result, started, finished, url}
+LOG_STAMP = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.\d+Z ?")
+
+
+def pipeline_watch():
+    """VM 배포 파이프라인은 Azure DevOps 에서 사람이 Run 한다. 허브에서도 진행을 보도록 10초마다 최근 실행을 읽어
+    배포 단계 로그를 data/logs/scenario3.log 에 이어 붙인다(시나리오 3 로그 창에 보임). 허브를 켜기 전 끝난 실행은 건너뛴다."""
+    sys.path.insert(0, str(PROJECT_ROOT / "proxy_tools"))
+    try:
+        from proxy_policy_publish import DevOps
+        dv = DevOps()
+        found = [x for x in dv.request("GET", "/_apis/pipelines?api-version=7.1", None).get("value", [])
+                 if x.get("name") == DEPLOY_PIPELINE]
+    except Exception as exc:
+        log(f"VM 배포 파이프라인 지켜보기 끔: {exc}")
+        return
+    if not found:
+        log(f"VM 배포 파이프라인 '{DEPLOY_PIPELINE}' 이 없어 지켜보지 않습니다")
+        return
+    pid, seen, sent = found[0]["id"], set(), {}  # seen: 끝까지 남긴 실행, sent: 실행별 이미 남긴 로그 줄 수
+    log(f"VM 배포 파이프라인 '{DEPLOY_PIPELINE}' (id {pid}) 실행을 {PIPELINE_POLL_SEC}초마다 확인해 scenario3.log 에 남깁니다")
+    first = True
+    while True:
+        try:
+            runs = dv.request("GET", f"/_apis/pipelines/{pid}/runs?api-version=7.1", None).get("value", [])[:3]
+            for run in reversed(runs):
+                rid = run["id"]
+                if rid in seen:
+                    continue
+                if first and run.get("state") == "completed":
+                    seen.add(rid)  # 허브를 켜기 전에 끝난 실행
+                    continue
+                PIPELINE_STATE.update(name=run.get("name"), state=run.get("state"), result=run.get("result"),
+                                      started=run.get("createdDate"), finished=run.get("finishedDate"),
+                                      url=run.get("_links", {}).get("web", {}).get("href"))
+                path = LOG_DIR / "scenario3.log"
+                with open(path, "a", encoding="utf-8") as f:
+                    if rid not in sent:
+                        sent[rid] = 0
+                        f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 파이프라인 '{DEPLOY_PIPELINE}' #{run.get('name')} "
+                                f"실행 확인 (Azure DevOps, 10초마다 읽음) =====\n")
+                    lines, step = pipeline_log_lines(dv, rid)
+                    for line in lines[sent[rid]:]:
+                        f.write(line + "\n")
+                    if len(lines) == sent[rid] and run.get("state") != "completed":
+                        # 실행 중인 단계의 로그는 그 단계가 끝나야 받을 수 있어, 그동안 지금 단계를 남긴다
+                        f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} … 파이프라인 진행 중: {step or '대기'}\n")
+                    sent[rid] = len(lines)
+                    if run.get("state") == "completed":
+                        f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} ===== 파이프라인 #{run.get('name')} 종료: "
+                                f"{run.get('result')} =====\n")
+                        seen.add(rid)
+            first = False
+        except Exception as exc:
+            log(f"VM 배포 파이프라인 확인 실패: {type(exc).__name__}: {str(exc)[:160]}")
+        time.sleep(PIPELINE_POLL_SEC)
+
+
+def pipeline_log_lines(dv, run_id: int) -> tuple[list[str], str | None]:
+    """(배포 단계 로그 줄, 지금 실행 중인 단계 이름). 로그는 배포 스크립트가 시작된 뒤 줄만, 한국 시각을 붙인다.
+    그 앞의 az 로그인 출력(구독 JSON)은 뺀다."""
+    from datetime import timezone
+    tl = dv.request("GET", f"/_apis/build/builds/{run_id}/timeline?api-version=7.1", None)
+    records = tl.get("records") or []
+    step = next((r.get("name") for r in records if r.get("type") == "Task" and r.get("state") == "inProgress"), None)
+    rec = next((r for r in records if r.get("type") == "Task" and "배포" in (r.get("name") or "")
+                and r.get("log")), None)
+    if not rec:
+        return [], step
+    from urllib.request import Request, urlopen
+    with urlopen(Request(rec["log"]["url"], headers={"Authorization": dv.auth}), timeout=30) as res:
+        raw = res.read().decode("utf-8", errors="replace").splitlines()
+    out, started = [], False
+    for line in raw:
+        m = LOG_STAMP.match(line)
+        text = line[m.end():] if m else line
+        if "pipeline_deploy.sh" in text:
+            started = True
+            continue
+        if not started or not text.strip() or text.startswith("##[") or "az account clear" in text:
+            continue
+        when = (datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).astimezone()
+                if m else datetime.now())
+        out.append(f"{when:%Y-%m-%d %H:%M:%S} [pipeline] {text}")
+    return out, step
+
+
 # 서버가 아니라 실행하고 끝나는 작업(시나리오 실행 탭). log 는 data/logs/<log>.log.
 # self_log=True 인 작업은 스스로 그 파일에 출력을 남기므로 허브는 출력을 버린다(중복 방지).
 JOBS = {
@@ -601,7 +692,8 @@ class Handler(BaseHTTPRequestHandler):
             jobs = job_status()
             # 시나리오 3 이 승인을 기다리는 동안 승인 서버 주소를 알려 화면이 승인 창을 띄우게 한다
             waiting = jobs.get("scenario3", {}).get("state") == "running" and approval_up()
-            self.send_json({**jobs, "_fault": fault_state(), "_approval": APPROVAL_URL + "/" if waiting else None})
+            self.send_json({**jobs, "_fault": fault_state(), "_approval": APPROVAL_URL + "/" if waiting else None,
+                            "_pipeline": PIPELINE_STATE or None})
         else:
             self.send_error(404)
 
@@ -729,7 +821,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">허용 IP 맞추기</button>
 <button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그 뷰어</button>
 <button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')" style="margin-left:auto">로그</button></div>
-<div class="jobstate" id="s3fault-state"></div>
+<div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
 <div class="jobstate" id="s3state"></div></div>
 </div>
 <div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
@@ -833,6 +925,9 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
   const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
     :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 저장소에 심어진 장애: ${esc(f.active.join(', '))} → 시험이 끝나면 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted">(VM 은 배포해야 반영 · 병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구)</span>');
+  const pl=jobs._pipeline;document.getElementById('s3pipe').innerHTML=!pl?'':pl.state!=='completed'
+    ?`<span class="jobstate running">● VM 배포 파이프라인 #${esc(pl.name)} 실행 중</span> <a href="${esc(pl.url||'#')}" onclick="return !openTop(this.href,'pipeline')">Azure DevOps 에서 보기</a> <span class="muted">(로그는 아래 시나리오 3 로그에 [pipeline] 으로)</span>`
+    :`<span class="jobstate ${pl.result==='succeeded'?'ok':'fail'}">${pl.result==='succeeded'?'✓':'✗'} VM 배포 파이프라인 #${esc(pl.name)} ${esc(pl.result||'')} (${pl.finished?new Date(pl.finished).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):''} 종료)</span>`;
   const last=s3.map(k=>jobs[k]).filter(j=>j&&j.state!=='idle').sort((a,b)=>b.started.localeCompare(a.started))[0];
   // 정상(심어진 장애 없음)이고 성공으로 끝난 지 10분이 지나면 '마지막 실행' 줄을 숨긴다. 실행 중·실패·장애 남음이면 계속 보인다.
   const quiet=last&&last.state==='finished'&&last.code===0&&!(f.active&&f.active.length)&&(Date.now()-new Date(last.finished||last.started))>10*60*1000;
@@ -895,6 +990,7 @@ def main():
         log(f"  [{s['key']}] {BY_KEY[s['key']]['dir'] / s['script']}")
         log(f"  [{s['key']}]   {describe(s)}")
     threading.Thread(target=watch, daemon=True).start()
+    threading.Thread(target=pipeline_watch, daemon=True).start()
     if "--start-all" in flags:
         log("꺼져 있는 서버를 시작합니다 (--start-all)")
         dispatch("all", "start")
