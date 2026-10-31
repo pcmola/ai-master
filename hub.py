@@ -31,8 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common.paths import DATA_DIR, PROJECT_ROOT  # noqa: E402
 from common.server import favicon, local_server, open_chrome, site_url  # noqa: E402
 
-HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "AI Master: Azure DevOps 기반 AI 운영 자동화 허브"
 LOG_DIR = DATA_DIR / "logs"
+HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "AI Master: Azure DevOps 기반 AI 운영 자동화 허브"
 LOG_ROTATE_BYTES = 2 * 1024 * 1024
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 DETACH = NO_WINDOW | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -41,16 +41,11 @@ SERVERS = [s for s in [
     {"key": "wiki-viewer", "title": "Wiki 뷰어", "dir": PROJECT_ROOT, "script": "wiki_tools/wiki_viewer.py",
      "port": 8765, "site": "wiki.local"},
     {"key": "wiki-search", "title": "Wiki 검색", "dir": PROJECT_ROOT, "script": "wiki_tools/wiki_search.py",
-     "port": 8766, "site": "wiki-search.local", "log": "scenario1", "old_log": "wiki-search"},
+     "port": 8766, "site": "wiki-search.local"},
     {"key": "proxy-log", "title": "프록시 로그 뷰어", "dir": PROJECT_ROOT, "script": "proxy_tools/proxy_log_viewer.py",
      "port": 8768, "site": "proxy-log.local"},
 ] if (s["dir"] / s["script"]).is_file()]
 BY_KEY = {s["key"]: s for s in SERVERS}
-
-
-def log_file(key: str) -> Path:
-    """서버·작업 키의 로그 파일. 서버는 "log" 로 이름을 따로 줄 수 있다(Wiki 검색 → scenario1.log)."""
-    return LOG_DIR / f"{BY_KEY[key].get('log', key) if key in BY_KEY else key}.log"
 
 # 서버를 띄운 셸(powershell -Command "python x.py")까지 한 묶음으로 보고 끄기 위해 셸 프로세스도 함께 읽는다.
 PS_LIST = (
@@ -155,13 +150,7 @@ def server_status(force: bool = False) -> list[dict]:
 
 def start(s: dict):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    out_file = log_file(s["key"])
-    old = LOG_DIR / f"{s.get('old_log', '')}.log"
-    if s.get("old_log") and old.is_file() and not out_file.exists():
-        try:
-            old.replace(out_file)  # 예전 이름(wiki-search.log)의 이력을 이어 쓴다
-        except OSError:
-            pass
+    out_file = LOG_DIR / f"{s['key']}.log"
     if out_file.is_file() and out_file.stat().st_size > LOG_ROTATE_BYTES:
         try:
             out_file.replace(out_file.with_suffix(".old.log"))
@@ -514,7 +503,7 @@ def job_status() -> dict:
 def log_tail(key: str, lines: int = 300, start: int = 0) -> tuple[str, int]:
     """(마지막 lines 줄, 파일 크기). start 를 주면 그 바이트 위치 뒤만 본다(화면의 '지우기' 이후).
     파일이 2MB 를 넘겨 새로 시작했으면(크기 < start) 처음부터 본다."""
-    log = log_file(key)
+    log = LOG_DIR / f"{key}.log"
     if not log.is_file():
         return ("(로그 없음: 작업을 실행하면 남습니다)" if key in JOB_LOGS
                 else "(로그 없음: 허브에서 시작한 서버만 로그가 남습니다)"), 0
