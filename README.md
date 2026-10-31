@@ -1181,7 +1181,9 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
 **전 과정 시험 절차**:
   1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
   2. 60분 안에 **② 실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
-  3. 끝나면 PR을 병합하고 **원상 복구**를 누릅니다(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`). 심어진 장애가 있으면 되돌리는 커밋을 push하고, 없어도 지금 main을 배포한 뒤 시험 트래픽으로 확인합니다. PR 병합만으로는 VM에 반영되지 않습니다.
+  3. 끝나면 PR을 병합하고 VM에 배포합니다. PR 병합만으로는 VM에 반영되지 않습니다(소스 병합과 VM 배포를 따로 함).
+     - Azure DevOps **Pipelines** › **proxy-config VM 배포** › **Run pipeline**: 실행 중인 squid VM 모두에 main을 배포합니다(proxy-config `azure-pipelines.yml`, `az vm run-command`라 SSH 키·NSG 변경 없음, 서비스 연결 `proxy-vm-deploy`). 실행할 때 "문법 확인만"을 켜면 설치하지 않습니다.
+     - 또는 허브 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`): 심어진 장애가 있으면 되돌리는 커밋을 push하고, 없어도 지금 main을 wjy-proxy01에 배포한 뒤 시험 트래픽으로 확인합니다.
   - **② 실행**은 시작할 때와 끝날 때 운영 중인 squid VM의 배포된 설정(`/etc/proxy/proxy.conf`, `lists/*`)을 저장소 `origin/main`의 `squid/`와 비교합니다(`config_drift`). 다르면 로그에 `⚠ 경고`와 다른 파일 이름을 남깁니다. 병합한 수정이 배포되지 않은 경우를 잡으려고 넣었습니다(2026-10-31).
   - 장애 커밋·push는 됐는데 배포(SSH)가 실패했다면 같은 종류로 **장애 재현**을 다시 누릅니다. 같은 장애가 이미 심어져 있으면 커밋 없이 배포·시험 트래픽만 다시 합니다(다른 종류가 심어져 있으면 거절).
   - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
