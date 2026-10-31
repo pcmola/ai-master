@@ -525,7 +525,10 @@ class Handler(BaseHTTPRequestHandler):
                 log(f"시나리오 2 링크 조회 실패: {type(exc).__name__}: {exc}")
                 self.send_json({"error": str(exc)}, 500)
         elif url.path == "/api/jobs":
-            self.send_json({**job_status(), "_fault": fault_state()})
+            jobs = job_status()
+            # 시나리오 3 이 승인을 기다리는 동안 승인 서버 주소를 알려 화면이 승인 창을 띄우게 한다
+            waiting = jobs.get("scenario3", {}).get("state") == "running" and approval_up()
+            self.send_json({**jobs, "_fault": fault_state(), "_approval": APPROVAL_URL + "/" if waiting else None})
         else:
             self.send_error(404)
 
@@ -719,15 +722,17 @@ async function loadS2Links(refresh){const box=document.getElementById('s2links')
   box.innerHTML=`<div class="head">${sp?'<span>Wiki: '+doc(sp)+'</span>':''}<span>Azure: ${a(d.portal_vms,'Proxy VM 목록')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 실행 중`:'Proxy VM 없음'}</span></span>`
     +`<button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`}
 // ---------------------------------------------------------------- 시나리오 실행
-let jobs={}, slogKey=null;
+let jobs={}, slogKey=null, approvalShown=null;
 function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
 function openServer(key){const s=servers.find(x=>x.key===key);
   if(!s||s.state!=='running'){alert((s?s.title:key)+' 서버가 꺼져 있습니다. 서버 탭에서 먼저 시작하세요.');return}
-  // 화면 가로 전체 × 위쪽 절반 크기의 새 창으로 연다(허브 아래쪽이 보이도록)
-  const w=screen.availWidth,h=Math.round(screen.availHeight/2),l=screen.availLeft||0,t=screen.availTop||0;
-  window.open(s.url+'/',key,`popup,noopener,width=${w},height=${h},left=${l},top=${t}`)}
+  openTop(s.url+'/',key)}
+// 화면 가로 전체 × 위쪽 절반 크기의 새 창으로 연다(허브 아래쪽이 보이도록). 같은 name 이면 그 창을 다시 쓴다.
+// 팝업이 막히면 null 을 돌려준다(noopener 를 주면 늘 null 이라 대신 opener 를 끊는다).
+function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHeight/2),l=screen.availLeft||0,t=screen.availTop||0;
+  const win=window.open(url,name,`popup,width=${w},height=${h},left=${l},top=${t}`);if(win)win.opener=null;return win}
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
-  window.open(s.url+'/','_blank','noopener');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
+  openTop(s.url+'/','wiki-search');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
 async function runJob(job,options={}){
   const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
   const d=await r.json();if(d.error){alert(d.error);return}const lk=JOBS_LOG[job];showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');setTimeout(refreshJobs,300)}
@@ -745,7 +750,11 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   const last=s3.map(k=>jobs[k]).filter(j=>j&&j.state!=='idle').sort((a,b)=>b.started.localeCompare(a.started))[0];
   // 정상(심어진 장애 없음)이고 성공으로 끝난 지 10분이 지나면 '마지막 실행' 줄을 숨긴다. 실행 중·실패·장애 남음이면 계속 보인다.
   const quiet=last&&last.state==='finished'&&last.code===0&&!(f.active&&f.active.length)&&(Date.now()-new Date(last.finished||last.started))>10*60*1000;
-  document.getElementById('s3state').innerHTML=!last||quiet?'':`<span class="muted">마지막 실행 (${since(last.started)} 전):</span> `+jobLine(last);
+  document.getElementById('s3state').innerHTML=(!last||quiet?'':`<span class="muted">마지막 실행 (${since(last.started)} 전):</span> `+jobLine(last))
+    +(jobs._approval?` <button onclick="openTop('${esc(jobs._approval)}','approval')">승인 화면 열기</button>`:'');
+  // 승인을 기다리기 시작하면 한 번만 자동으로 띄운다(팝업이 막혀 있으면 위 버튼으로 연다)
+  const s3job=jobs.scenario3&&jobs.scenario3.started;
+  if(jobs._approval&&s3job&&approvalShown!==s3job){approvalShown=s3job;openTop(jobs._approval,'approval')}
   document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
