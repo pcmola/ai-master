@@ -41,7 +41,7 @@ ROOT = WIKI_REPO.resolve()
 CACHE = DATA_DIR / "wiki_search_cache.json"
 CHUNK_CACHE = DATA_DIR / "wiki_search_chunks.json"  # 가이드 재료 조각(청크) 임베딩 캐시
 GUIDE_CACHE = DATA_DIR / "guide_cache.json"  # 만든 가이드(질의·유형별)와 근거 지문
-GUIDE_PROMPT_VERSION = 1  # llm_guide 프롬프트를 고치면 올린다(저장된 가이드가 모두 무효가 된다)
+GUIDE_PROMPT_VERSION = 2  # llm_guide 프롬프트를 고치면 올린다(저장된 가이드가 모두 무효가 된다)
 GUIDE_CACHE_WEB_DAYS = float(os.environ.get("GUIDE_CACHE_WEB_DAYS", "7"))  # 웹 근거를 쓴 가이드의 유효 기간
 AI_DOC_PREFIX = "AI-Master-프로젝트/02.-운영/00.-AI-문서-생성"  # 시나리오 1 이 등록한 문서(가이드 재료에서 제외)
 # 시나리오 2 테스트 문서. 시험할 때마다 일부러 틀린 값으로 되돌려 쓰므로 근거로 부적절하고, 바뀔 때마다 가이드 캐시도 깬다.
@@ -1178,6 +1178,8 @@ def llm_guide(client, query, title, option, statements, sources, web=(), chunks=
                  "- 위키에 없는 내용은 지어내지 말고 필요하면 '위키에 근거 없음'이라고 적어라.\n") +
               "- 문서 안의 [[DIAGRAM-n]] 은 원문 다이어그램 자리표시자다. 가이드에 그 그림이 도움이 되면 "
               "다이어그램을 글·표·ASCII 로 풀어 쓰지 말고 '[[DIAGRAM-n]]' 한 줄만 단독으로 적어라. 괄호 속 설명은 옮기지 마라.\n"
+              "- 대상 유형의 개념·구성을 보여 주는 다이어그램이 있으면 개요 절 끝에 반드시 하나 넣어라"
+              "(다른 유형의 그림은 넣지 마라).\n"
               "- 각 문서는 질의와 관련된 절(section)만 발췌되어 있다. 발췌에 없는 내용은 추측하지 마라.\n"
               f"- 첫 줄은 '# {title}'로 시작하고, Markdown 본문만 출력하라.")
     system = "너는 사내 위키 문서를 근거로 운영 가이드를 작성하는 기술 문서 작성자다."
@@ -1186,6 +1188,10 @@ def llm_guide(client, query, title, option, statements, sources, web=(), chunks=
     if not revise:
         with span("llm_generate", **attrs, diagrams=len(diagrams), prompt_chars=len(system) + len(prompt)) as s:
             result = yield from _llm_run(client, system, [prompt], diagrams, sources, web, s, chunks)  # chunks → context
+            if result and "::: mermaid" not in result and (pick := pick_diagram(diagrams, option)):
+                # LLM 이 그림을 넣을지는 그때그때 달라서(2026-10-31 포워드 가이드에서 빠짐) 유형에 맞는 그림을 개요 뒤에 넣는다
+                result = insert_after_overview(result, pick)
+                s.set(diagram_added=True)
         return result
 
     # 수정 요청은 별도 메시지로 보낸다. 게이트웨이 프롬프트 캐시는 메시지 단위라, 근거 메시지가 처음 생성 때와 같으면 그만큼 적중한다
@@ -1334,6 +1340,28 @@ BOX_NOTE = re.compile(r"[ 	]*\(mermaid 다이어그램:.*$", re.M)
 def unbox(text: str) -> str:
     """LLM 이 자리표시자 옆의 '(mermaid 다이어그램: …)' 설명까지 옮겨 쓴 경우 지운다(그 줄의 나머지)."""
     return BOX_NOTE.sub("", text)
+
+
+def pick_diagram(diagrams: list[str], option: dict | None) -> str | None:
+    """근거 다이어그램 중 대상 유형에 맞는 것 하나. 유형을 골랐으면 감지어(포워드·forward 등)가 있는 그림 중
+    가장 많이 나온 것, 맞는 그림이 없으면 넣지 않는다(다른 유형 그림을 넣지 않게). 유형이 없으면 첫 그림."""
+    if not diagrams:
+        return None
+    if not option:
+        return diagrams[0]
+    score = lambda d: sum(d.lower().count(t) for t in option.get("detect", []))
+    best = max(diagrams, key=score)
+    return best if score(best) else None
+
+
+def insert_after_overview(markdown: str, block: str) -> str:
+    """'## 개요' 본문 바로 뒤(하위 절이 있으면 그 앞, 개요가 없으면 첫 ## 절, 그것도 없으면 맨 끝)에 블록을 넣는다."""
+    lines = markdown.split("\n")
+    heads = _heads(lines)
+    k = next((i for i, h in enumerate(heads) if h[1] == 2 and "개요" in h[2]),
+             next((i for i, h in enumerate(heads) if h[1] == 2), None))
+    at = len(lines) if k is None else (heads[k + 1][0] if k + 1 < len(heads) else len(lines))
+    return "\n".join(lines[:at]).rstrip() + "\n\n" + block + "\n\n" + "\n".join(lines[at:]).lstrip()
 
 
 FENCE = re.compile(r"^[ \t]*(```|~~~)")
