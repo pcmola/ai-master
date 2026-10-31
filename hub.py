@@ -381,6 +381,24 @@ def s2_links(refresh: bool = False) -> dict:
 APPROVAL_URL = site_url("approval.local", 8771)[2]  # teams_tools/approval_local.py 의 승인 서버
 
 
+GUIDE_CACHE = DATA_DIR / "guide_cache.json"  # wiki_search.py 의 가이드 캐시(요청마다 파일을 읽으므로 지우면 바로 반영)
+
+
+def clear_guide_cache() -> dict:
+    """시나리오 1 가이드 캐시를 비운다. 실수에 대비해 직전 내용은 guide_cache.json.bak 으로 남긴다."""
+    if not GUIDE_CACHE.is_file():
+        return {"removed": 0}
+    try:
+        count = len(json.loads(GUIDE_CACHE.read_text(encoding="utf-8")))
+    except ValueError:
+        count = 0
+    try:
+        GUIDE_CACHE.replace(GUIDE_CACHE.with_name(GUIDE_CACHE.name + ".bak"))
+    except OSError as exc:
+        return {"error": str(exc)}
+    return {"removed": count}
+
+
 def approval_up() -> bool:
     import socket
     ip = APPROVAL_URL.split("//", 1)[1].split(":")[0]
@@ -534,7 +552,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/action", "/api/job"):
+        if path not in ("/api/action", "/api/job", "/api/guide-cache/clear"):
             self.send_error(404)
             return
         client = self.client_address[0]
@@ -556,6 +574,11 @@ class Handler(BaseHTTPRequestHandler):
             result = run_job(job, body.get("options") or {})
             log(f"요청 {client}: 작업 {job} {body.get('options') or {}} → {result}")
             self.send_json(result, 409 if "error" in result else 200)
+            return
+        if path == "/api/guide-cache/clear":
+            result = clear_guide_cache()
+            log(f"요청 {client}: 가이드 캐시 초기화 → {result}")
+            self.send_json(result, 500 if "error" in result else 200)
             return
         key, action = body.get("key"), body.get("action")
         if action not in ("start", "stop", "restart") or (key != "all" and key not in BY_KEY):
@@ -629,8 +652,9 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="scgrid">
 <div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
 <p>Wiki 검색 화면을 새 창으로 엽니다. 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 그 화면에서 합니다.</p>
-<div class="row"><button class="main" id="s1run" onclick="runS1()">실행 (Wiki 검색 화면 열기)</button><button class="slog" data-key="wiki-search" onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button>
-<span class="jobstate" id="s1state"></span></div></div>
+<div class="row"><button class="main" id="s1run" onclick="runS1()">실행 (Wiki 검색 화면 열기)</button><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button>
+<button class="slog" data-key="wiki-search" onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button>
+<span class="jobstate" id="s1state"></span></div><div class="jobstate" id="s1cache"></div></div>
 <div class="card sc"><h2>시나리오 2 · 프록시 현황 Wiki 현행화</h2>
 <p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
@@ -725,6 +749,11 @@ async function loadS2Links(refresh){const box=document.getElementById('s2links')
 // ---------------------------------------------------------------- 시나리오 실행
 let jobs={}, slogKey=null, approvalShown=null;
 function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
+async function clearGuideCache(){if(!confirm('저장된 가이드 캐시를 모두 지웁니다. 같은 질의도 다음부터 LLM이 새로 만듭니다(약 40초). 계속할까요?'))return;
+  const el=document.getElementById('s1cache');  // s1state 는 2초마다 서버 주소로 다시 그려져서 따로 둔다
+  try{const r=await fetch('/api/guide-cache/clear',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:'{}'});const d=await r.json();
+    el.innerHTML=d.error?`<span class="jobstate fail">캐시 초기화 실패: ${esc(d.error)}</span>`:`<span class="jobstate ok">캐시 초기화: 저장된 가이드 ${d.removed}건 삭제</span>`}
+  catch(e){el.innerHTML=`<span class="jobstate fail">캐시 초기화 실패: ${esc(String(e))}</span>`}}
 function openServer(key){const s=servers.find(x=>x.key===key);
   if(!s||s.state!=='running'){alert((s?s.title:key)+' 서버가 꺼져 있습니다. 서버 탭에서 먼저 시작하세요.');return}
   openTop(s.url+'/',key)}
