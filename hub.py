@@ -723,7 +723,9 @@ let jobs={}, slogKey=null;
 function wikiSearch(){return servers.find(s=>s.key==='wiki-search')}
 function openServer(key){const s=servers.find(x=>x.key===key);
   if(!s||s.state!=='running'){alert((s?s.title:key)+' 서버가 꺼져 있습니다. 서버 탭에서 먼저 시작하세요.');return}
-  window.open(s.url+'/','_blank','noopener')}
+  // 화면 가로 전체 × 위쪽 절반 크기의 새 창으로 연다(허브 아래쪽이 보이도록)
+  const w=screen.availWidth,h=Math.round(screen.availHeight/2),l=screen.availLeft||0,t=screen.availTop||0;
+  window.open(s.url+'/',key,`popup,noopener,width=${w},height=${h},left=${l},top=${t}`)}
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
   window.open(s.url+'/','_blank','noopener');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
 async function runJob(job,options={}){
