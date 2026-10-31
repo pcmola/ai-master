@@ -743,7 +743,7 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 | 탭 | 내용 |
 |---|---|
 | 로컬 서버 | 서버 표(상태·주소·PID·가동 시간, 시작·중지·재시작·로그)와 로그 창(**지우기**: 지금까지의 로그를 화면에서만 숨김, 파일은 그대로. **전체 보기**로 되돌림. 시나리오 실행 탭 로그 창도 같음). 주소를 누르면 서버 화면이 새 창으로 열림 |
-| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창(화면 가로 전체 × 위쪽 절반)으로 엶(질의 입력부터 그 화면에서), 로그는 `wiki-search.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", "로그 뷰어"는 프록시 로그 뷰어(`proxy-log.local`)를 새 창(화면 가로 전체 × 위쪽 절반)으로 엶, 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`3대 중 N대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "허용 IP 맞추기"(`sync_nsg_ip.py`), "로그". 설명은 버튼 툴팁. 실행 중 승인 서버가 뜨면 승인 화면을 같은 크기의 새 창으로 한 번 자동으로 띄우고, "승인 화면 열기" 버튼도 보여 줌(크롬이 팝업을 막으면 버튼으로 열거나 주소창에서 `ai-master.local` 팝업 허용). "현재 심어진 장애"와 최근 실행 1건 표시, `scenario3.log` 실시간 표시 |
+| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창(화면 가로 전체 × 위쪽 절반)으로 엶(질의 입력부터 그 화면에서), 로그는 `scenario1.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", "로그 뷰어"는 프록시 로그 뷰어(`proxy-log.local`)를 새 창(화면 가로 전체 × 위쪽 절반)으로 엶, 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`3대 중 N대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "허용 IP 맞추기"(`sync_nsg_ip.py`), "로그". 설명은 버튼 툴팁. 실행 중 승인 서버가 뜨면 승인 화면을 같은 크기의 새 창으로 한 번 자동으로 띄우고, "승인 화면 열기" 버튼도 보여 줌(크롬이 팝업을 막으면 버튼으로 열거나 주소창에서 `ai-master.local` 팝업 허용). "현재 심어진 장애"와 최근 실행 1건 표시, `scenario3.log` 실시간 표시 |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
 
@@ -913,7 +913,7 @@ flowchart TD
 
 #### 트레이스
 
-요청마다 노드별 소요 시간과 결과가 허브 로그(`data/logs/wiki-search.log`)와 `data/traces/`에 남습니다(`common/trace.py`).
+요청마다 노드별 소요 시간과 결과가 허브 로그(`data/logs/scenario1.log`)와 `data/traces/`에 남습니다(`common/trace.py`).
 
 ```text
 2026-10-23 01:38:57 [07902dac] ▶ guide/stream  q=프록시 설정 가이드 알려줘 key=proxy variant=forward
@@ -1100,7 +1100,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 | 수정 요청 | 가이드 생성 후 "3단계를 표로 정리해 주세요" | 요청한 부분만 바뀐 새 판 |
 | Wiki 등록 | "Wiki에 등록" | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목` 문서. 시험만 할 때는 `.env`의 `WIKI_REGISTER_PUSH=0`(로컬 커밋만) |
 
-- 단계별 소요 시간과 결과는 허브의 Wiki 검색 로그(`data/logs/wiki-search.log`)와 `data/traces/wiki-search-*.jsonl`에 남습니다([트레이스](#트레이스)).
+- 단계별 소요 시간과 결과는 허브의 Wiki 검색 로그(`data/logs/scenario1.log`)와 `data/traces/wiki-search-*.jsonl`에 남습니다([트레이스](#트레이스)).
 - LLM 게이트웨이·임베딩 연결만 따로 확인하려면 `python test\openai_test.py`, `python test\embedding_test.py`, `python test\streaming_test.py`를 실행합니다.
 - 시험으로 등록한 문서는 Wiki의 `00. AI 문서 생성` 아래에서 지우고 `.order`에서도 뺍니다([`rules/WIKI_DOCUMENT_RULES.md`](rules/WIKI_DOCUMENT_RULES.md)).
 
