@@ -82,8 +82,10 @@ def build_card(text: str, title: str | None = None, facts: list[tuple[str, str]]
         "version": "1.4",
         "body": body,
     }
+    # 기본 카드는 폭이 좁아(약 450px) 긴 분석 문장이 여러 줄로 접힌다. Full 이면 대화 영역 가로 전체를 쓴다.
+    content["msteams"] = {"width": "Full"}
     if mention:
-        content["msteams"] = {"entities": [mention]}
+        content["msteams"]["entities"] = [mention]
     if buttons:
         content["actions"] = [{"type": "Action.OpenUrl", "title": label, "url": url} for label, url in buttons]
     return {
