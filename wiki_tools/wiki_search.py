@@ -1500,7 +1500,10 @@ for(const raw of src.replace(/\r/g,'').split('\n')){const line=raw.trimEnd();let
 if(m=line.match(/^(#{1,4})\s+(.*)$/)){fl();out+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`}else if(m=line.match(/^\s{2,}(\S.*)$/)){out=out.replace(/<\/li>$/,'<br><span class="muted">'+inline(m[1])+'</span></li>')}else if(m=line.match(/^[-*]\s+(.*)$/)){if(!list){out+='<ul>';list=true}out+='<li>'+inline(m[1])+'</li>'}else if(m=line.match(/^>\s?(.*)$/)){fl();out+='<blockquote>'+inline(m[1])+'</blockquote>'}else if(line.trim()){fl();out+='<p>'+inline(line)+'</p>'}else if(!list)fl()}if(code)out+=`<pre><code>${esc(code.lines.join('\n'))}</code></pre>`;fl();return out}
 // 완성된 가이드의 코드 블록 구문 강조(highlight.js, cdnjs). 언어가 없으면 자동 판별, 못 불러오면 그대로 둔다.
 function highlightCode(){if(!window.hljs){setTimeout(()=>window.hljs&&highlightCode(),500);return}document.querySelectorAll('#guide pre code:not(.hljs)').forEach(el=>{try{hljs.highlightElement(el)}catch(e){}})}
-let mermaidLib;async function diagrams(){const els=[...document.querySelectorAll('#guide .mermaid')];if(!els.length)return;try{mermaidLib=mermaidLib||(await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs')).default;mermaidLib.initialize({startOnLoad:false,securityLevel:'strict'});els.forEach(el=>{el.textContent=el.textContent.replace(/https?:\/\//g,'')});await mermaidLib.run({nodes:els,suppressErrors:true})}catch(e){console.warn('mermaid',e)}els.filter(el=>!el.querySelector('svg')).forEach(el=>{el.outerHTML='<pre><code>'+esc(el.textContent)+'</code></pre><p class="muted" style="font-size:11px">다이어그램을 그리지 못해 원문을 표시합니다.</p>'})}
+let mermaidLib;// a.top 링크는 화면 가로 전체 × 위쪽 절반 새 창으로 연다(허브와 같은 방식). Ctrl/Shift 클릭은 보통 새 탭.
+function openTop(u,n){const w=window.open(u,n,`popup,width=${screen.availWidth},height=${Math.round(screen.availHeight/2)},left=${screen.availLeft||0},top=${screen.availTop||0}`);if(w)w.opener=null;return !!w}
+document.addEventListener('click',e=>{const a=e.target.closest('a.top');if(!a||e.ctrlKey||e.shiftKey||e.metaKey)return;if(openTop(a.href,'top-'+a.textContent.trim()))e.preventDefault()});
+async function diagrams(){const els=[...document.querySelectorAll('#guide .mermaid')];if(!els.length)return;try{mermaidLib=mermaidLib||(await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs')).default;mermaidLib.initialize({startOnLoad:false,securityLevel:'strict'});els.forEach(el=>{el.textContent=el.textContent.replace(/https?:\/\//g,'')});await mermaidLib.run({nodes:els,suppressErrors:true})}catch(e){console.warn('mermaid',e)}els.filter(el=>!el.querySelector('svg')).forEach(el=>{el.outerHTML='<pre><code>'+esc(el.textContent)+'</code></pre><p class="muted" style="font-size:11px">다이어그램을 그리지 못해 원문을 표시합니다.</p>'})}
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()}
 function showResults(d,label){const a=d.analysis;$('#analysis').innerHTML='<div class="chips">해석: '+a.concepts.map(c=>`<span class="chip" title="${esc(c.words.join(', '))}">${esc(c.words[0])} ≈ ${esc(c.words.slice(1).join(' · '))}</span>`).join('')+a.terms.map(t=>`<span class="chip">${esc(t)}</span>`).join('')+(a.fixes||[]).map(f=>`<span class="chip" style="background:#fef3c7;color:#92400e" title="오타로 보고 고쳐서 검색">오타 교정: ${esc(f.from)} → ${esc(f.to)}</span>`).join('')+(label?`<span class="chip" style="background:#d9f5e6;color:#11643c">${esc(label)}</span>`:'')+((d.web||[]).length?`<span class="chip" style="background:#fef3c7;color:#92400e" title="${esc(d.web_reason||'')}">웹 검색 ${d.web.length}건</span>`:'')+` <span>· ${d.results.length}건</span></div>`;
 const web=(d.web||[]).length?`<h2 style="margin-top:18px">웹 검색 결과 <span class="muted" style="font-size:12px;font-weight:400">${esc(d.web_reason||'')}</span></h2>`+d.web.map(w=>`<div class="res"><a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a><div class="p">${esc(w.url)}</div></div>`).join(''):'';
@@ -1538,7 +1541,7 @@ $('#reg').onclick=async()=>{if(!state.done)return;if(!confirm(`'${state.title}'�
 const b=$('#reg'),r=$('#regResult');b.disabled=true;b.textContent='등록 중…';r.innerHTML='';
 try{const d=await post('/api/register',{q:state.q,title:state.title,markdown:state.md,model:state.done.model,mode:state.done.mode,sources:(state.meta||{}).sources||0,web:(state.meta||{}).web||0});
 if(d.error)throw new Error(d.error);
-r.innerHTML=`<div class="regok">${d.updated?'갱신':'등록'}했습니다: <b>${esc(d.title)}</b> (커밋 ${esc(d.commit)}${d.pushed?', Azure DevOps Wiki 반영':''}) · <a href="${esc(d.url)}" target="_blank" rel="noopener">Wiki에서 열기</a> · <a href="${esc(d.local)}" target="_blank" rel="noopener">로컬 뷰어</a>${d.warnings.length?'<br>확인: '+esc(d.warnings.join(', ')):''}</div>`;b.textContent='등록됨'}
+r.innerHTML=`<div class="regok">${d.updated?'갱신':'등록'}했습니다: <b>${esc(d.title)}</b> (커밋 ${esc(d.commit)}${d.pushed?', Azure DevOps Wiki 반영':''}) · <a class="top" href="${esc(d.url)}" target="_blank" rel="noopener">Wiki에서 열기</a> · <a class="top" href="${esc(d.local)}" target="_blank" rel="noopener">로컬 뷰어</a>${d.warnings.length?'<br>확인: '+esc(d.warnings.join(', ')):''}</div>`;b.textContent='등록됨'}
 catch(err){r.innerHTML='<div class="regerr">등록 실패: '+esc(err.message)+'</div>';b.disabled=false;b.textContent='Wiki에 등록'}};
 </script></body></html>'''
 
@@ -1632,13 +1635,17 @@ def do_register(q: str, body: dict) -> dict:
     if not title or not markdown.strip():
         return {"error": "등록할 가이드가 없습니다. 먼저 가이드를 생성하세요."}
     with trace("wiki-search", "register", q=q, title=title) as t, span("wiki_register", chars=len(markdown)) as s:
+        now = {"stage": "준비"}  # 등록은 fetch·push 로 수십 초 걸릴 수 있어 5초마다 지금 단계를 로그에 남긴다
+        stop_beat = heartbeat(s, lambda: now["stage"])
         try:
             r = register(title, markdown, q, body.get("model") or ("템플릿" if body.get("mode") == "template" else None),
                          int(body.get("sources") or 0), int(body.get("web") or 0),
-                         push=os.environ.get("WIKI_REGISTER_PUSH", "1") != "0")
+                         push=os.environ.get("WIKI_REGISTER_PUSH", "1") != "0", stage=lambda x: now.update(stage=x))
         except Exception as exc:
             s.fail(f"{type(exc).__name__}: {exc}")
             return {"error": str(exc)}
+        finally:
+            stop_beat()
         r["local"] = view_link(r["path"].removesuffix(".md"))
         s.set(number=r["number"], updated=r["updated"], commit=r["commit"], pushed=r["pushed"])
         t.set(path=r["path"])

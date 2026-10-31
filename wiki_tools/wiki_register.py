@@ -137,7 +137,7 @@ def write_commit(root: Path, title: str, markdown: str, query: str, model: str |
 
 
 def register(title: str, markdown: str, query: str = "", model: str | None = None, sources: int = 0, web: int = 0,
-             push: bool = True) -> dict:
+             push: bool = True, stage=lambda _: None) -> dict:
     """가이드를 등록하고 {number, path, updated, commit, pushed, url, warnings} 를 돌려준다.
 
     push 하면 로컬 브랜치가 아니라 원격 최신(upstream) 위의 임시 작업 트리에서 이 문서 커밋 하나만 만들어 올린다.
@@ -146,16 +146,21 @@ def register(title: str, markdown: str, query: str = "", model: str | None = Non
     if not (WIKI_REPO / ".git").exists():
         raise RuntimeError(f"wiki-repo 가 git 저장소가 아닙니다: {WIKI_REPO}")
     if not push:
+        stage("로컬 커밋")
         r = write_commit(WIKI_REPO, title, markdown, query, model, sources, web)
         return {**r, "pushed": False, "url": page_url(WIKI_REPO / r["path"])}
 
     upstream = git("rev-parse", "--abbrev-ref", "@{u}")  # 예: origin/wikiMaster
     remote, branch = upstream.split("/", 1)
+    stage(f"원격 최신화 (git fetch {remote})")
     git("fetch", "-q", remote)  # 다른 사람이 먼저 올린 변경까지 보고 번호를 매긴다
     tmp = Path(tempfile.mkdtemp(prefix="wiki-register-"))
     try:
+        stage("임시 작업 트리 만들기")
         git("worktree", "add", "-q", "--detach", str(tmp), upstream)
+        stage("문서·.order 쓰고 커밋")
         r = write_commit(tmp, title, markdown, query, model, sources, web)
+        stage(f"push ({upstream})")
         git("push", "-q", remote, f"HEAD:{branch}", repo=tmp)
     finally:
         try:
@@ -163,6 +168,7 @@ def register(title: str, markdown: str, query: str = "", model: str | None = Non
         except RuntimeError:
             shutil.rmtree(tmp, ignore_errors=True)
             git("worktree", "prune")
+    stage("로컬 wiki-repo 를 원격 위로 맞추기 (fetch·rebase)")
     git("fetch", "-q", remote)
     try:  # 로컬 전용 커밋을 원격 위로 옮겨 로컬에서도 새 문서가 보이게 한다
         git("rebase", "-q", "--autostash", upstream)
