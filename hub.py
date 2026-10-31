@@ -701,7 +701,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="jobstate" id="s2state"></div>
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div>
 <div class="card sc"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
-<p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 남깁니다. 시험: wjy-proxy01 (실제 저장소·VM을 바꿈)</p>
+<p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 남깁니다. VM 반영은 PR 병합 뒤 Pipelines 의 <b>proxy-config VM 배포</b>를 실행해야 합니다. 시험: wjy-proxy01 (실제 저장소·VM을 바꿈)</p>
 <div class="row" style="flex-wrap:nowrap"><b>①</b><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:1;min-width:0">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
 <option value="bad-dns">잘못된 DNS 서버</option></select>
