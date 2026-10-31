@@ -64,17 +64,21 @@ def linkify(text: str) -> str:
     return "`".join(parts)
 
 
+FINDING = re.compile(r"\s*[-*] \[(?:high|medium|low|info)\]", re.I)  # 탐지 항목: 연속되면 한 묶음으로 붙인다
+
+
 def paragraphs(text: str) -> list[str]:
     """본문을 문단과 글머리 항목 단위로 나눈다. 한 TextBlock 안의 목록은 줄 간격이 빽빽해서
-    항목마다 TextBlock 을 따로 만들어 사이에 간격을 준다. 항목에 이어진 줄은 그 항목에 붙인다."""
+    항목마다 TextBlock 을 따로 만들어 사이에 간격을 준다. 항목에 이어진 줄은 그 항목에 붙인다.
+    단 '- [medium] …' 같은 탐지 항목이 이어지면 한 TextBlock 에 둬서 붙여 보인다."""
     parts: list[str] = []
     for para in re.split(r"\n\s*\n", text.strip()):
         cur: list[str] = []
         for line in para.splitlines():
-            if re.match(r"\s*[-*] ", line) and cur:
+            if re.match(r"\s*[-*] ", line) and cur and not (FINDING.match(line) and FINDING.match(cur[0])):
                 parts.append("\n".join(cur))
                 cur = []
-            elif cur and re.match(r"\s*[-*] ", cur[0]) and not line.startswith(" "):
+            elif cur and re.match(r"\s*[-*] ", cur[0]) and not re.match(r"\s", line) and not re.match(r"[-*] ", line):
                 parts.append("\n".join(cur))  # 목록 뒤에 이어진 일반 줄(예: **처리 단계**)은 새 문단
                 cur = []
             cur.append(line)
