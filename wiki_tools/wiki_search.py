@@ -41,7 +41,7 @@ ROOT = WIKI_REPO.resolve()
 CACHE = DATA_DIR / "wiki_search_cache.json"
 CHUNK_CACHE = DATA_DIR / "wiki_search_chunks.json"  # 가이드 재료 조각(청크) 임베딩 캐시
 GUIDE_CACHE = DATA_DIR / "guide_cache.json"  # 만든 가이드(질의·유형별)와 근거 지문
-GUIDE_PROMPT_VERSION = 2  # llm_guide 프롬프트를 고치면 올린다(저장된 가이드가 모두 무효가 된다)
+GUIDE_PROMPT_VERSION = 3 # llm_guide 프롬프트를 고치면 올린다(저장된 가이드가 모두 무효가 된다)
 GUIDE_CACHE_WEB_DAYS = float(os.environ.get("GUIDE_CACHE_WEB_DAYS", "7"))  # 웹 근거를 쓴 가이드의 유효 기간
 AI_DOC_PREFIX = "AI-Master-프로젝트/02.-운영/00.-AI-문서-생성"  # 시나리오 1 이 등록한 문서(가이드 재료에서 제외)
 # 시나리오 2 테스트 문서. 시험할 때마다 일부러 틀린 값으로 되돌려 쓰므로 근거로 부적절하고, 바뀔 때마다 가이드 캐시도 깬다.
@@ -1190,7 +1190,7 @@ def llm_guide(client, query, title, option, statements, sources, web=(), chunks=
             result = yield from _llm_run(client, system, [prompt], diagrams, sources, web, s, chunks)  # chunks → context
             if result and "::: mermaid" not in result and (pick := pick_diagram(diagrams, option)):
                 # LLM 이 그림을 넣을지는 그때그때 달라서(2026-10-31 포워드 가이드에서 빠짐) 유형에 맞는 그림을 개요 뒤에 넣는다
-                result = insert_after_overview(result, pick)
+                result = insert_after_overview(result, mermaid_safe(pick))
                 s.set(diagram_added=True)
         return result
 
@@ -1455,9 +1455,18 @@ def merge_sections(current: str, edits: str) -> tuple[str, int]:
     return "\n".join(doc).strip(), len(pieces)
 
 
+MERMAID_URL = re.compile(r"\bhttps?://")
+
+
+def mermaid_safe(block: str) -> str:
+    """mermaid 는 글자 안의 https://… 를 마크다운 링크로 읽고, 다이어그램 안에서는 링크를 못 그려
+    'Unsupported markdown: link' 로 표시한다(Azure DevOps Wiki 도 같음). 그래서 주소의 https:// 만 뺀다."""
+    return MERMAID_URL.sub("", block)
+
+
 def restore(diagrams: list[str], m: re.Match) -> str:
     n = int(m.group(1) or m.group(2))
-    return f"\n{diagrams[n - 1]}\n" if 0 < n <= len(diagrams) else ""
+    return f"\n{mermaid_safe(diagrams[n - 1])}\n" if 0 < n <= len(diagrams) else ""
 
 
 HTML_PAGE = r'''<!doctype html>
