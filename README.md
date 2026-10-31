@@ -628,6 +628,7 @@ Copy-Item .env.sample .env
 | `TEAMS_CARD_ARCHIVE` | `1` | 보낸 Teams 카드를 `data/teams_cards/`에 JSON으로 남김(README 카드 화면용). `0`이면 끔 |
 | `TEAMS_WINDOW_ARRANGE` | `1` | 카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 절반으로 옮기고 앞으로 가져옴. `0`이면 끔 |
 | `WINDOW_ARRANGE` | `1` | 창 옮기기 전체 스위치(`common/winlayout.py`). 처리 결과 브라우저 창(제목 `처리 결과`·`승인 접수`)도 같은 크기로 옮김. `0`이면 모두 끔 |
+| `FAULT_TRAFFIC_ROUNDS` | `3` | 장애 재현·원상 복구 뒤 보내는 시험 접속 횟수(도메인 4개 × N회, `proxy_fault_inject.py`). 허용 도메인 차단은 1건, DNS 장애는 도메인당 3회부터 잡힘 |
 
 임베딩 모델을 바꾸면 처음 실행할 때 문서 전체 임베딩을 다시 계산합니다(약 2분). 결과는 `data/wiki_search_cache.json`에 캐시됩니다.
 
