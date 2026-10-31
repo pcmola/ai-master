@@ -41,7 +41,10 @@ NUMBERED = re.compile(r"^(\d{2})\.-(.+)$")
 
 
 def git(*args: str, repo: Path | None = None) -> str:
-    res = subprocess.run(["git", "-C", str(repo or WIKI_REPO), *args], capture_output=True)
+    # 임시 작업 트리(%TEMP%)는 폴더 소유자가 달라 git 이 'dubious ownership' 으로 거부할 수 있어(2026-10-31),
+    # 그 폴더만 이 명령에서 안전한 폴더로 지정한다(전역 git 설정은 바꾸지 않음).
+    safe = ["-c", f"safe.directory={Path(repo).as_posix()}"] if repo else []
+    res = subprocess.run(["git", *safe, "-C", str(repo or WIKI_REPO), *args], capture_output=True)
     out = (res.stdout + res.stderr).decode("utf-8", errors="replace").strip()
     if res.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} 실패: {out}")
