@@ -697,7 +697,6 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
 <button id="s2restore" onclick="runJob('scenario2-restore')" title="test/scenario2/setup_env.py --restore: 테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌린다(VM 시작 없음, wiki-repo 로컬 커밋만). 다시 시험하려면 '테스트 환경 준비'">원상 복구</button>
-<button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">로그 뷰어</button>
 <button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div>
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div>
@@ -710,6 +709,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="row"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
 <b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button>
 <button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">허용 IP 맞추기</button>
+<button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그 뷰어</button>
 <button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')" style="margin-left:auto">로그</button></div>
 <div class="jobstate" id="s3fault-state"></div>
 <div class="jobstate" id="s3state"></div></div>
