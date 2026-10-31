@@ -1180,34 +1180,68 @@ def llm_guide(client, query, title, option, statements, sources, web=(), chunks=
               "다이어그램을 글·표·ASCII 로 풀어 쓰지 말고 '[[DIAGRAM-n]]' 한 줄만 단독으로 적어라. 괄호 속 설명은 옮기지 마라.\n"
               "- 각 문서는 질의와 관련된 절(section)만 발췌되어 있다. 발췌에 없는 내용은 추측하지 마라.\n"
               f"- 첫 줄은 '# {title}'로 시작하고, Markdown 본문만 출력하라.")
-    prompts = [prompt]
-    if revise:  # 수정 요청: 지금 가이드를 요청대로 고쳐 전체를 다시 쓴다
-        # 별도 메시지로 보낸다. 게이트웨이 프롬프트 캐시는 메시지 단위라, 근거 메시지가 처음 생성 때와 같으면 그만큼 적중한다
-        # (2026-10-31 실험: 같은 메시지 뒤에 덧붙이면 적중 0, 메시지를 나누면 근거 5,281토큰 적중).
-        current = re.split(r"\n## (?:원문 링크|웹 참고 링크)\n", revise.get("markdown", ""))[0].strip()
-        bare = lambda m: (diagrams.append(m.group(0)), f"[[DIAGRAM-{len(diagrams)}]]")[1]  # 지금 가이드의 그림은 설명 없이
-        prompts.append((f"<extra_documents>\n{render(extra)}\n</extra_documents>\n"
-                        "<extra_documents> 는 수정 요청과 관련해 더 찾은 발췌다. 앞의 <documents> 와 같은 근거로 쓴다.\n\n" if extra else "")
-                   + "<current_guide>\n" + MERMAID.sub(bare, current) + "\n</current_guide>\n\n"
-                   f"<request>\n{revise.get('request', '').strip()}\n</request>\n\n"
-                   "위 <current_guide> 를 <request> 대로 고친 가이드 전체를 다시 출력하라. 요청과 관계없는 부분은 "
-                   "문장·순서·코드를 바꾸지 말고 그대로 두라.\n"
-                   "- 요청에 사용자가 직접 적어 준 문구·규칙·절차(따옴표 안 문장 등)는 근거 문서와 상관없이 그대로 넣어라. "
-                   "사용자가 정한 운영 방침이므로 '근거 없음'으로 바꾸지 마라.\n"
-                   "- 네가 스스로 보태는 사실(명령어·설정값·경로·절차)은 위 문서" + ("·웹 결과" if web else "")
-                   + " 근거 범위 안에서만 쓰고, "
-                   "근거가 없으면 그 자리에 '근거 없음'이라고 적어라.\n"
-                   "- '원문 링크'·'웹 참고 링크' 절은 쓰지 마라(자동으로 붙는다).")
     system = "너는 사내 위키 문서를 근거로 운영 가이드를 작성하는 기술 문서 작성자다."
-    with span("llm_generate", model=llm_model(client), docs=len(by_doc), context_chunks=len(chunks or []), extra_chunks=len(extra), web=len(web),
-              diagrams=len(diagrams), revise=bool(revise), prompt_chars=len(system) + sum(map(len, prompts))) as s:
-        result = yield from _llm_run(client, system, prompts, diagrams, sources, web, s, chunks)  # chunks → context
+    attrs = dict(model=llm_model(client), docs=len(by_doc), context_chunks=len(chunks or []), extra_chunks=len(extra),
+                 web=len(web), revise=bool(revise))
+    if not revise:
+        with span("llm_generate", **attrs, diagrams=len(diagrams), prompt_chars=len(system) + len(prompt)) as s:
+            result = yield from _llm_run(client, system, [prompt], diagrams, sources, web, s, chunks)  # chunks → context
+        return result
+
+    # 수정 요청은 별도 메시지로 보낸다. 게이트웨이 프롬프트 캐시는 메시지 단위라, 근거 메시지가 처음 생성 때와 같으면 그만큼 적중한다
+    # (2026-10-31 실험: 같은 메시지 뒤에 덧붙이면 적중 0, 메시지를 나누면 근거 5,281토큰 적중).
+    current = re.split(r"\n## (?:원문 링크|웹 참고 링크)\n", revise.get("markdown", ""))[0].strip()
+    bare = lambda m: (diagrams.append(m.group(0)), f"[[DIAGRAM-{len(diagrams)}]]")[1]  # 지금 가이드의 그림은 설명 없이
+    current = MERMAID.sub(bare, current)
+    head = ((f"<extra_documents>\n{render(extra)}\n</extra_documents>\n"
+             "<extra_documents> 는 수정 요청과 관련해 더 찾은 발췌다. 앞의 <documents> 와 같은 근거로 쓴다.\n\n" if extra else "")
+            + f"<current_guide>\n{current}\n</current_guide>\n\n<request>\n{revise.get('request', '').strip()}\n</request>\n\n")
+    rules = ("- 요청에 사용자가 직접 적어 준 문구·규칙·절차(따옴표 안 문장 등)는 근거 문서와 상관없이 그대로 넣어라. "
+             "사용자가 정한 운영 방침이므로 '근거 없음'으로 바꾸지 마라.\n"
+             "- 네가 스스로 보태는 사실(명령어·설정값·경로·절차)은 위 문서" + ("·웹 결과" if web else "")
+             + " 근거 범위 안에서만 쓰고, 근거가 없으면 그 자리에 '근거 없음'이라고 적어라.\n"
+             "- '원문 링크'·'웹 참고 링크' 절은 쓰지 마라(자동으로 붙는다).")
+    # 1차: 바뀐 절만 출력하게 해서 출력(=시간·비용)을 줄인다. 코드가 지금 가이드에 끼워 넣는다(merge_sections).
+    sections = ("위 <current_guide> 를 <request> 대로 고쳐라. 가이드 전체를 다시 쓰지 말고 바뀐 절만 출력하라.\n"
+                "- 절은 <current_guide> 의 제목 줄(##·###)을 글자 그대로 쓰고, 그 아래 고친 뒤의 내용 전체(하위 절 포함)를 쓴다. "
+                "고칠 곳이 작으면 ### 절 하나만 내도 된다. 바뀌지 않은 절은 출력하지 마라.\n"
+                "- 새 절은 바로 윗줄에 '<!-- after: 앞에 올 기존 제목 -->' 을 적어 위치를 밝혀라.\n"
+                "- 절을 지우려면 제목 줄 다음 줄에 '(삭제)' 만 적어라.\n"
+                "- 가이드 제목(# 줄)·첫 절 앞 도입부를 바꾸거나 여러 절의 구성·순서를 크게 바꿔야 하면, "
+                "첫 줄에 FULL 만 적고 그 아래 고친 가이드 전체를 출력하라.\n"
+                "- 요청과 관계없는 문장·순서·코드는 바꾸지 마라.\n")
+    state: dict = {}
+
+    def merge(text: str) -> str | None:
+        try:
+            merged, n = merge_sections(current, text)
+        except ValueError as exc:
+            state["failed"] = str(exc)
+            s.fail(f"절 단위 수정 병합 실패 → 전체 다시 쓰기: {exc}")
+            return None
+        s.set(edit="full" if n < 0 else "sections", edit_sections=max(n, 0))
+        return merged
+
+    with span("llm_generate", **attrs, diagrams=len(diagrams), edit_mode="sections",
+              prompt_chars=len(system) + len(prompt) + len(head) + len(sections) + len(rules)) as s:
+        result = yield from _llm_run(client, system, [prompt, head + sections + rules], diagrams, sources, web, s, chunks,
+                                     merge=merge)
+    if result is not None or not state.get("failed"):
+        return result
+    # 2차: 형식이 맞지 않으면 예전처럼 전체를 다시 쓴다.
+    think("Self-Correction", f"절 단위 수정 병합 실패({state['failed']}) → 가이드 전체 다시 쓰기")
+    full = ("위 <current_guide> 를 <request> 대로 고친 가이드 전체를 다시 출력하라. 요청과 관계없는 부분은 "
+            "문장·순서·코드를 바꾸지 말고 그대로 두라.\n")
+    with span("llm_generate", **attrs, diagrams=len(diagrams), edit_mode="full",
+              prompt_chars=len(system) + len(prompt) + len(head) + len(full) + len(rules)) as s:
+        result = yield from _llm_run(client, system, [prompt, head + full + rules], diagrams, sources, web, s, chunks)
     return result
 
 
-def _llm_run(client, system, prompts, diagrams, sources, web, s, context=None):
+def _llm_run(client, system, prompts, diagrams, sources, web, s, context=None, merge=None):
     """llm_guide 의 호출부. s(llm_generate 노드)에 첫 응답 시각, 줄 수, 토큰 사용량, 실패 이유를 남긴다.
-    prompts 는 user 메시지 목록이다. 첫 메시지(근거)는 프롬프트 캐시 대상이다."""
+    prompts 는 user 메시지 목록이다. 첫 메시지(근거)는 프롬프트 캐시 대상이다.
+    merge 가 있으면(절 단위 수정) 응답은 가이드 조각이라 화면에 흘려보내지 않고, merge(응답)로 만든 전체 가이드를 쓴다."""
     text, pending = "", ""
     started, first, n_lines = time.perf_counter(), None, 0
 
@@ -1221,7 +1255,8 @@ def _llm_run(client, system, prompts, diagrams, sources, web, s, context=None):
             if first is None:
                 first = (time.perf_counter() - started) * 1000
             n_lines += done.count("\n")
-            yield unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), done))
+            if not merge:
+                yield unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), done))
 
     # 게이트웨이가 응답을 모아 한 번에 보내므로 그동안 로그가 멈춰 보인다 → 5초마다 진행 줄을 남긴다
     stop_beat = heartbeat(s, lambda: f"받은 글자 {len(text):,}" if text else "LLM 응답 기다리는 중")
@@ -1267,7 +1302,11 @@ def _llm_run(client, system, prompts, diagrams, sources, web, s, context=None):
                 return None
             text = "".join(b.text for b in res.content if b.type == "text").strip()
             yield from lines(text + "\n")
-        text = linkify_sources(unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text)), web)
+        if merge and text:
+            text = merge(text)
+            if text is None:
+                return None
+        text = linkify_sources(squeeze_blank(unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), text))).strip(), web)
         s.set(first_line_ms=round(first) if first is not None else None, lines=n_lines, out_chars=len(text))
         if not text:
             s.fail("빈 응답 → 템플릿 사용")
@@ -1295,6 +1334,97 @@ BOX_NOTE = re.compile(r"[ 	]*\(mermaid 다이어그램:.*$", re.M)
 def unbox(text: str) -> str:
     """LLM 이 자리표시자 옆의 '(mermaid 다이어그램: …)' 설명까지 옮겨 쓴 경우 지운다(그 줄의 나머지)."""
     return BOX_NOTE.sub("", text)
+
+
+FENCE = re.compile(r"^[ \t]*(```|~~~)")
+SECTION_HEAD = re.compile(r"^(#{2,4})[ \t]+(.+?)[ \t#]*$")
+AFTER_MARK = re.compile(r"^[ \t]*<!--\s*after:\s*(.+?)\s*-->[ \t]*$")
+
+
+def squeeze_blank(text: str) -> str:
+    """코드 블록 밖의 연속 빈 줄을 하나로 줄인다. 다이어그램 복원(restore)이 앞뒤에 빈 줄을 보태서,
+    절 단위 수정을 거듭하면 그림 주변 빈 줄이 계속 늘어난다."""
+    out, fence = [], False
+    for line in text.split("\n"):
+        if FENCE.match(line):
+            fence = not fence
+        if fence or line.strip() or (out and out[-1].strip()):
+            out.append(line)
+    return "\n".join(out)
+
+
+def _heads(lines: list[str]) -> list[tuple[int, int, str]]:
+    """코드 블록 밖의 ##~#### 제목 줄: (줄 번호, 단계, 공백 정리한 제목)."""
+    out, fence = [], False
+    for i, line in enumerate(lines):
+        if FENCE.match(line):
+            fence = not fence
+        elif not fence and (m := SECTION_HEAD.match(line)):
+            out.append((i, len(m.group(1)), " ".join(m.group(2).split())))
+    return out
+
+
+def _section_end(heads, k: int, total: int) -> int:
+    """k 번째 제목의 절이 끝나는 줄(다음 같은 단계 이상 제목, 없으면 문서 끝). 하위 절은 포함한다."""
+    return next((h[0] for h in heads[k + 1:] if h[1] <= heads[k][1]), total)
+
+
+def merge_sections(current: str, edits: str) -> tuple[str, int]:
+    """수정 요청 응답(바뀐 절만)을 지금 가이드에 끼워 넣어 (전체 가이드, 바꾼 절 수)를 돌려준다.
+    응답 첫 줄이 FULL 이면 그 아래 전체를 그대로 쓴다(절 수 -1). 형식이 맞지 않으면 ValueError(이유)."""
+    edits = edits.strip()
+    first, _, rest = edits.partition("\n")
+    if first.strip() == "FULL":
+        if not rest.strip():
+            raise ValueError("FULL 뒤에 가이드 없음")
+        return rest.strip(), -1
+    # <!-- after: 제목 --> 줄은 떼어 내고 바로 다음 제목에 위치 기준으로 붙인다
+    lines, anchors, pending, fence = [], {}, None, False
+    for line in edits.split("\n"):
+        if FENCE.match(line):
+            fence = not fence
+        elif not fence and (m := AFTER_MARK.match(line)):
+            pending = " ".join(re.sub(r"^#+[ \t]*", "", m.group(1)).split())
+            continue
+        elif not fence and SECTION_HEAD.match(line):
+            anchors[len(lines)], pending = pending, None
+        lines.append(line)
+    heads = _heads(lines)
+    if not heads:
+        raise ValueError("고친 절 없음")
+    if any(l.strip() for l in lines[:heads[0][0]]):
+        raise ValueError("첫 절 앞에 글이 있음")
+    pieces, k = [], 0
+    while k < len(heads):
+        end = _section_end(heads, k, len(lines))
+        body = lines[heads[k][0]:end]
+        while body and not body[-1].strip():
+            body.pop()
+        pieces.append((anchors.get(heads[k][0]), heads[k][2], body))
+        k = next((j for j in range(k + 1, len(heads)) if heads[j][0] >= end), len(heads))
+
+    doc = current.strip().split("\n")
+    for anchor, title, body in pieces:
+        ch = _heads(doc)
+        hits = [i for i, h in enumerate(ch) if h[2] == title]
+        if len(hits) > 1:
+            raise ValueError(f"같은 제목이 여러 개: {title}")
+        delete = [l.strip() for l in body[1:] if l.strip()] == ["(삭제)"]
+        if hits:
+            start, end = ch[hits[0]][0], _section_end(ch, hits[0], len(doc))
+            doc[start:end] = [] if delete else body + [""]
+            continue
+        if delete:
+            raise ValueError(f"지울 절이 없음: {title}")
+        at = [i for i, h in enumerate(ch) if h[2] == anchor] if anchor else []
+        if len(at) != 1:
+            raise ValueError(f"새 절 위치를 모름: {title}")
+        end = _section_end(ch, at[0], len(doc))
+        if end == len(doc):
+            doc += [""]
+            end += 1
+        doc[end:end] = body + [""]
+    return "\n".join(doc).strip(), len(pieces)
 
 
 def restore(diagrams: list[str], m: re.Match) -> str:
