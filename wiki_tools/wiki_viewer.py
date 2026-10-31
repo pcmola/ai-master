@@ -97,7 +97,8 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 function href(u,current){u=u.replace(/&amp;/g,'&');if(u.startsWith('#')||/^(https?:|mailto:)/.test(u))return u;let base=current.split('/').slice(0,-1).join('/');let p=u.startsWith('/')?u.slice(1):(base?base+'/':'')+u;try{p=decodeURIComponent(p)}catch(e){}return '?'+new URLSearchParams({path:p.replace(/\.md$/,'').replace(/^\/+/,'')})}
 function inline(s,current){let x=esc(s);const codes=[];x=x.replace(/`([^`]+)`/g,(m,c)=>{codes.push(c);return '\u0000'+(codes.length-1)+'\u0000'});
 x=x.replace(/!?\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g,(m,t,u)=>{const h=href(u,current);return `<a href="${esc(h)}"${/^https?:/.test(h)?' target="_blank" rel="noopener"':''}>${t}</a>`});
-x=x.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g,'$1<em>$2</em>').replace(/~~([^~]+)~~/g,'<del>$1</del>').replace(/&lt;br\s*\/?&gt;/gi,'<br>');
+x=x.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g,'$1<em>$2</em>').replace(/~~([^~]+)~~/g,'<del>$1</del>').replace(/&lt;br\s*\/?&gt;/gi,'<br>')
+.replace(/&lt;!--[\s\S]*?--&gt;/g,'').replace(/&lt;(\/?)(sub|sup|kbd|u|b|i|small)&gt;/gi,'<$1$2>');  // 주석은 숨기고 간단한 서식 태그만 통과(Azure DevOps 처럼)
 return x.replace(/\u0000(\d+)\u0000/g,(m,i)=>'<code>'+codes[i]+'</code>')}
 function list(items,ordered,path){const tag=ordered?'ol':'ul';let h='',st=[];for(const [lv,txt] of items){if(!st.length||lv>st[st.length-1]){h+=`<${tag}>`;st.push(lv)}else{h+='</li>';while(st.length>1&&lv<st[st.length-1]){h+=`</${tag}></li>`;st.pop()}}h+='<li>'+txt.split('\n').map(l=>inline(l,path)).join('<br>')}while(st.length){h+=`</li></${tag}>`;st.pop()}return h}
 // [[_TOSP_]]: Azure DevOps 의 하위 페이지 목록. 왼쪽 트리(.order 순서)를 그대로 쓴다.
@@ -111,6 +112,7 @@ const row=s=>s.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.tr
 while(i<lines.length){const line=lines[i],t=line.trim();let m;
 if(/^```/.test(t)){flush();const lang=t.slice(3).trim(),buf=[];i++;while(i<lines.length&&!/^```/.test(lines[i].trim()))buf.push(lines[i++]);i++;out+=lang==='mermaid'?`<div class="mermaid">${esc(buf.join('\n'))}</div>`:`<pre><code${lang?` class="language-${esc(lang.split(/\s/)[0])}"`:''}>${esc(buf.join('\n'))}</code></pre>`;continue}
 if(/^:::\s*mermaid\s*$/i.test(t)){flush();const buf=[];i++;while(i<lines.length&&lines[i].trim()!==':::')buf.push(lines[i++]);i++;out+=`<div class="mermaid">${esc(buf.join('\n'))}</div>`;continue}
+if(t.startsWith('<!--')&&!/-->\s*\S/.test(t)){flush();while(i<lines.length&&!lines[i].includes('-->'))i++;i++;continue}
 if(/^\[\[_TOC_\]\]$/i.test(t)){flush();out+='\u0001TOC\u0001';i++;continue}
 if(/^\[\[_TOSP_\]\]$/i.test(t)){flush();out+=tosp(path);i++;continue}
 if(m=t.match(/^(#{1,6})\s+(.+)$/)){flush();const n=m[1].length,id='h-'+heads.length;heads.push([n,m[2],id]);out+=`<h${n} id="${id}">${inline(m[2],path)}</h${n}>`;i++;continue}
