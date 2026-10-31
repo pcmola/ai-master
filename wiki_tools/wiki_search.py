@@ -41,7 +41,7 @@ ROOT = WIKI_REPO.resolve()
 CACHE = DATA_DIR / "wiki_search_cache.json"
 CHUNK_CACHE = DATA_DIR / "wiki_search_chunks.json"  # 가이드 재료 조각(청크) 임베딩 캐시
 GUIDE_CACHE = DATA_DIR / "guide_cache.json"  # 만든 가이드(질의·유형별)와 근거 지문
-GUIDE_PROMPT_VERSION = 3 # llm_guide 프롬프트를 고치면 올린다(저장된 가이드가 모두 무효가 된다)
+GUIDE_PROMPT_VERSION = 4 # llm_guide 프롬프트를 고치면 올린다(저장된 가이드가 모두 무효가 된다)
 GUIDE_CACHE_WEB_DAYS = float(os.environ.get("GUIDE_CACHE_WEB_DAYS", "7"))  # 웹 근거를 쓴 가이드의 유효 기간
 AI_DOC_PREFIX = "AI-Master-프로젝트/02.-운영/00.-AI-문서-생성"  # 시나리오 1 이 등록한 문서(가이드 재료에서 제외)
 # 시나리오 2 테스트 문서. 시험할 때마다 일부러 틀린 값으로 되돌려 쓰므로 근거로 부적절하고, 바뀔 때마다 가이드 캐시도 깬다.
@@ -881,16 +881,23 @@ def web_search_reason(sources, query: str, option: dict | None = None) -> str | 
         if not sources:
             s.set(result="웹 검색", reason="관련 위키 문서 없음")
             return "관련 위키 문서 없음"
-        sims = INDEX.embeddings.similarity(query)
-        best = max(sims) if sims else None
+        # AI 가 등록한 문서는 빼고 본다. 2026-10-31 리버스 프록시 가이드를 등록하자 유형 유사도가 0.412 → 0.471 로 올라
+        # (그 문서 자신) 웹 검색을 건너뛰었다. 가이드 재료에서 빼는 문서(sources)와 같은 기준이다.
+        # 첫 페이지(AI-Master-프로젝트)도 뺀다: '최근 수정 문서' 표에 AI 문서 제목이 자동으로 들어가 점수가 오른다(0.436).
+        keep = [not d.path.startswith(AI_DOC_PREFIX) and d.path not in GUIDE_EXCLUDE and "/" in d.path for d in INDEX.docs]
+
+        def top(text: str):
+            vals = [v for v, k in zip(INDEX.embeddings.similarity(text), keep) if k]
+            return max(vals) if vals else None
+
+        best = top(query)
         s.set(best_sim=round(best, 3) if best is not None else None)
         if best is not None and best < limit:
             s.set(result="웹 검색")
             return f"위키 최고 유사도 {best:.2f} < {limit}"
         if option:
             v_limit = float(os.environ.get("WEB_SEARCH_MIN_VARIANT_SIM", "0.45"))
-            v_sims = INDEX.embeddings.similarity(option["label"])
-            v_best = max(v_sims) if v_sims else None
+            v_best = top(option["label"])
             s.set(variant=option["label"], variant_sim=round(v_best, 3) if v_best is not None else None,
                   variant_threshold=v_limit)
             if v_best is not None and v_best < v_limit:
