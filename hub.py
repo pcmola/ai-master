@@ -275,7 +275,7 @@ JOBS = {
     "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
                         "self_log": False, "options": {}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
     "scenario2-restore": {"title": "시나리오 2 · 원상 복구", "script": "test/scenario2/setup_env.py", "log": "scenario2",
-                          "self_log": False, "options": {}, "base": ["--restore"]},  # 저장된 표로 문서만 되돌림
+                          "self_log": False, "options": {}, "base": ["--restore"]},  # 문서를 실제 VM 과 같은 정상 표로
 }
 JOB_LOGS = {j["log"] for j in JOBS.values()}
 RUNNING: dict[str, dict] = {}  # 작업 → {proc, pid, started, args, finished, code}
@@ -696,7 +696,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
-<button id="s2restore" onclick="runJob('scenario2-restore')" title="test/scenario2/setup_env.py --restore: 실행으로 현행화된 테스트 문서를 저장된 '현행화 전' 표로 되돌린다(Azure 조회·VM 시작 없이 몇 초, wiki-repo 로컬 커밋만)">원상 복구</button>
+<button id="s2restore" onclick="runJob('scenario2-restore')" title="test/scenario2/setup_env.py --restore: 테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌린다(VM 시작 없음, wiki-repo 로컬 커밋만). 다시 시험하려면 '테스트 환경 준비'">원상 복구</button>
 <button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">로그 뷰어</button>
 <button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div>

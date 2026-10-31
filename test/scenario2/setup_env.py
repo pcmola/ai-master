@@ -21,7 +21,7 @@ data/scenario2/
 사용 예:
     python test/scenario2/setup_env.py            # 꺼진 VM 켜기 + 표·정답 재생성 + 문서 초기화(시나리오 실행 전마다)
     python test/scenario2/setup_env.py --check    # 점검만(아무것도 바꾸지 않음)
-    python test/scenario2/setup_env.py --restore  # 원상 복구: 저장된 '현행화 전' 표로 문서만 되돌림(Azure 조회·VM 시작 없음)
+    python test/scenario2/setup_env.py --restore  # 원상 복구: 문서를 실제 Azure VM 과 같은 정상 표로(VM 시작·정답 변경 없음)
 """
 
 from __future__ import annotations
@@ -144,10 +144,10 @@ def check_approval() -> bool:
     return False
 
 
-def reset_wiki(seed: list[dict]) -> bool:
+def reset_wiki(seed: list[dict], label: str = "현행화 전") -> bool:
     text = render_page(seed)
     if WIKI_PAGE.is_file() and WIKI_PAGE.read_text(encoding="utf-8-sig") == text:
-        print("  [유지] Wiki 테스트 문서가 이미 '현행화 전' 상태입니다.")
+        print(f"  [유지] Wiki 테스트 문서가 이미 '{label}' 상태입니다.")
         return True
     WIKI_PAGE.write_text(text, encoding="utf-8", newline="\n")
     back = WIKI_PAGE.read_text(encoding="utf-8")
@@ -158,9 +158,9 @@ def reset_wiki(seed: list[dict]) -> bool:
     git = ["git", "-C", str(WIKI_REPO)]
     subprocess.run(git + ["add", "--", rel], check=True)
     if subprocess.run(git + ["diff", "--cached", "--quiet", "--", rel]).returncode:
-        subprocess.run(git + ["commit", "-q", "-m", "시나리오 2 테스트: Proxy VM 현황 문서를 현행화 전 상태로 초기화", "--", rel],
+        subprocess.run(git + ["commit", "-q", "-m", f"시나리오 2 테스트: Proxy VM 현황 문서를 {label} 상태로 초기화", "--", rel],
                        check=True)
-        print("  [초기화] Wiki 테스트 문서를 '현행화 전' 상태로 다시 쓰고 wiki-repo 에 로컬 커밋했습니다 (push 안 함).")
+        print(f"  [초기화] Wiki 테스트 문서를 '{label}' 상태로 다시 쓰고 wiki-repo 에 로컬 커밋했습니다 (push 안 함).")
     return True
 
 
@@ -199,16 +199,22 @@ def main() -> int:
     p = argparse.ArgumentParser(description="시나리오 2 테스트 환경 점검·초기화")
     p.add_argument("--check", action="store_true", help="점검만 하고 문서·정답은 바꾸지 않음")
     p.add_argument("--restore", action="store_true",
-                   help="원상 복구: data/scenario2/seed.json 으로 Wiki 테스트 문서만 '현행화 전'으로 되돌림")
+                   help="원상 복구: Wiki 테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌림")
     args = p.parse_args()
 
-    if args.restore:  # 시나리오 2 를 한 번 돌린 뒤 같은 정답으로 다시 시험할 때. VM·정답은 그대로 둔다
-        print("시나리오 2 원상 복구: Wiki 테스트 문서를 '현행화 전' 표로 되돌립니다")
-        if not (OUT / "seed.json").is_file():
-            print("  [실패] data/scenario2/seed.json 이 없습니다. 먼저 '테스트 환경 준비'를 실행하세요.")
+    if args.restore:  # 시나리오 3 의 원상 복구처럼 '정상' 상태로. 차이를 심는 일은 '테스트 환경 준비'가 한다
+        print("시나리오 2 원상 복구: Wiki 테스트 문서를 실제 Azure VM 과 같은 표로 되돌립니다")
+        try:
+            vms = [{k: v for k, v in x.items() if k != "matched_by"} for x in proxy_vms()]
+            print(f"  [조회] Azure Proxy VM {len(vms)}대: {', '.join(v['name'] for v in vms)}")
+        except Exception as exc:
+            print(f"  [실패] Azure VM 조회: {exc}")
             return 1
-        ok = reset_wiki(json.loads((OUT / "seed.json").read_text(encoding="utf-8")))
-        print("결과:", "원상 복구 완료 (다시 '실행'하면 같은 차이를 찾아야 합니다)" if ok else "원상 복구 실패")
+        if not vms:
+            print("  [실패] Proxy VM 을 찾지 못했습니다.")
+            return 1
+        ok = reset_wiki(vms, "정상(Azure 와 같음)")
+        print("결과:", "원상 복구 완료 (다시 시험하려면 '테스트 환경 준비'로 차이를 심으세요)" if ok else "원상 복구 실패")
         return 0 if ok else 1
 
     print("시나리오 2 테스트 환경 점검")
