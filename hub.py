@@ -304,6 +304,8 @@ def pipeline_watch():
                         f.write(line + "\n")
                     if len(lines) == sent[rid] and run.get("state") != "completed":
                         # 실행 중인 단계의 로그는 그 단계가 끝나야 받을 수 있어, 그동안 지금 단계를 남긴다
+                        if step and "배포" in step:
+                            step += f" ({pipeline_target(run)})"
                         f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} … 파이프라인 진행 중: {step or '대기'}\n")
                     sent[rid] = len(lines)
                     if run.get("state") == "completed":
@@ -314,6 +316,16 @@ def pipeline_watch():
         except Exception as exc:
             log(f"VM 배포 파이프라인 확인 실패: {type(exc).__name__}: {str(exc)[:160]}")
         time.sleep(PIPELINE_POLL_SEC)
+
+
+def pipeline_target(run: dict) -> str:
+    """실행할 때 고른 배포 대상 VM(targetVMs, 비우면 실행 중인 squid VM 전부)과 문법 확인만 여부."""
+    params = run.get("templateParameters") or {}
+    vms = ", ".join(v.strip() for v in (params.get("targetVMs") or "").split(",") if v.strip())
+    label = vms or "실행 중인 squid VM 전부"
+    if str(params.get("checkOnly")).lower() == "true":
+        label += ", 문법 확인만"
+    return label
 
 
 def pipeline_log_lines(dv, run_id: int) -> tuple[list[str], str | None]:
