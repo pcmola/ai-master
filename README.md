@@ -57,7 +57,7 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 
 시나리오 1~3의 직접 실행 흐름을 구현했습니다(2026-10-25). 시나리오 2·3의 정기 스케줄러는 사용하지 않으며, 시나리오 3의 자동화 범위는 **수정 PR 생성까지**입니다. PR 병합·VM 배포·복구 확인은 사람이 수행합니다. 표의 (확장)은 자료에서 Nice-to-have로 둔 범위입니다.
 
-다이어그램 색: 초록 = 구현 · 노랑 = 일부 · 회색 점선 = 미구현 · 주황 = 사용자 판단
+다이어그램 색: 초록 = 구현 · 주황 = 사용자 판단 · 연보라 = 시작·결과 · 하늘색 = 외부 시스템(Wiki·웹 검색)
 
 ### 1.1 시나리오 1 · 프록시 설정 가이드 자동 생성
 
@@ -81,8 +81,6 @@ flowchart TD
     rv --> u
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
-    classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
-    classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
     classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
     classDef io fill:#EEF2FF,stroke:#6366F1,color:#312E81
     classDef ext fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
@@ -163,8 +161,6 @@ flowchart TD
     wu --> rep(["8. 완료 보고<br/>Task Done · Teams 결과"])
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
-    classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
-    classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
     classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
     classDef io fill:#EEF2FF,stroke:#6366F1,color:#312E81
     classDef ext fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
@@ -256,8 +252,6 @@ flowchart TD
     inj["장애 재현·원상 복구<br/>(허브 시험용 버튼)<br/>proxy_fault_inject.py"] -. "잘못된 설정 주입" .-> d
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
-    classDef part fill:#FEF3C7,stroke:#D97706,color:#78350F
-    classDef todo fill:#F1F5F9,stroke:#94A3B8,stroke-dasharray:4 3,color:#64748B
     classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
     class t,d,sim,src,inj,task,pr,hist done
     class ap,review user
