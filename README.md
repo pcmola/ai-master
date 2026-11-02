@@ -182,7 +182,21 @@ flowchart TD
 
 **실행 화면** (2026-10-30 17:41 실제 실행, 설명할 곳은 빨간 테두리)
 
-**① 허브에서 실행**
+**① 실행 전: Wiki와 실제 Azure가 다름** (2026-11-03 촬영)
+
+- Azure Portal **Virtual machines** 목록입니다. 빨간 테두리가 Wiki 현황 문서(⑦의 수정 전)와 다른 곳입니다.
+- Portal 기본 목록에 없는 사설 IP 차이는 ⑦에서 봅니다.
+
+| VM | Wiki (수정 전) | Azure 실제 |
+|---|---|---|
+| wjy-proxy03 | 없음 | 있음 (Running) |
+| wjy-prxy04 | 있음 | 없음 |
+| wjy-proxy01 | 중지 · Standard_B1s | Running · Standard_B2ats_v2 |
+| wjy-proxy02 | 사설 IP 10.10.0.17 | 사설 IP 10.10.0.5 |
+
+![시나리오 2 - Azure Portal VM 목록(Wiki와 다른 곳)](docs/images/azure-scenario2-vms.png)
+
+**② 허브에서 실행**
 
 - 카드 아래에 비교 대상 Wiki 문서와 Azure VM 목록 링크가 있습니다.
 - 아래 로그는 이 실행의 시작 부분입니다. 줄마다 의미는 다음과 같습니다.
@@ -196,37 +210,38 @@ flowchart TD
 
 ![시나리오 2 - 허브 시나리오 실행 탭과 실제 실행 로그](docs/images/hub-scenarios.png)
 
-**② Teams 승인 요청**
+**③ Teams 승인 요청**
 
 AI 요약과 규칙으로 찾은 변경 5건, Yes·No·자세히 보기 버튼이 있습니다.
 
 ![시나리오 2 - Teams 승인 요청 카드](docs/images/teams-scenario2-approval.png)
 
-**③ Yes 후 결과 알림**
+**④ Yes 후 결과 알림**
 
 Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니다.
 
 ![시나리오 2 - Teams 현행화 완료 카드](docs/images/teams-scenario2-result.png)
 
-**④ Azure DevOps PBI**
+**⑤ Azure DevOps PBI**
 
 그 달 PBI 아래에 실행할 때마다 Task가 하나씩 붙습니다.
 
 ![시나리오 2 - PBI와 하위 Task](docs/images/devops-scenario2-pbi.png)
 
-**⑤ Azure DevOps Task**
+**⑥ Azure DevOps Task**
 
 변경 5건, 문서 링크, AI 요약이 들어가고 Wiki를 고친 뒤 Done이 됩니다.
 
 ![시나리오 2 - Task 상세](docs/images/devops-scenario2-task.png)
 
-**⑥ Wiki 문서 수정 전/후** (빨간색 = 바뀐 곳)
+**⑦ Wiki 문서 수정 전/후** (2026-11-02 23:21 실행, 빨간색 = 바뀐 곳)
 
 - 바뀐 값(SIZE·상태·사설 IP), 지워진 VM(취소선), 새 VM, 변경 이력 한 줄이 표시됩니다.
+- 수정 후 표는 ①의 Azure 화면과 같아집니다. 사설 IP는 그대로 보이고 공인 IP만 가렸습니다.
 
 ![시나리오 2 - Wiki 현황 문서 수정 전/후](docs/images/wiki-scenario2-diff.png)
 
-**⑦ 로컬 승인 화면과 처리 결과**
+**⑧ 로컬 승인 화면과 처리 결과**
 
 - Teams 카드의 "자세히 보기"를 누르면 열리는 화면입니다.
 - 카드에서 바로 Yes를 누르면 "받았습니다"만 뜨고, 결과는 Teams 카드로 옵니다.

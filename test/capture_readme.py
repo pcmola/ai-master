@@ -1,6 +1,6 @@
 """README 화면 재촬영. 조회·가이드 생성만 실행하며 승인·배포·Wiki 등록은 하지 않는다.
 
-사용: python test/capture_readme.py [--inspect] [--only wiki|viewer|hub|proxy|approval|teams|wikidiff|devops]
+사용: python test/capture_readme.py [--inspect] [--only wiki|viewer|hub|proxy|approval|teams|wikidiff|devops|azure]
 필요: pip install playwright, 실행 중인 로컬 서버, 설치된 Google Chrome.
 승인/완료 화면은 실제 렌더러에 예시 데이터를 넣어 별도 읽기 전용 서버로 촬영한다.
 Teams 카드(--only teams)는 teams_notify 가 보낼 때 남긴 data/teams_cards/*.json 중 종류별 최신 카드를
@@ -9,6 +9,7 @@ Adaptive Cards 공식 렌더러로 그린다. Teams 에 새 메시지를 보내�
 --only devops: 허브가 띄운 Chrome(전용 프로필, 개발자 도구 포트 9222, Azure DevOps 로그인 필요)에 붙어 시나리오 2 의
   PBI·Task, 시나리오 3 의 Task·PR(개요·파일 비교)·VM 배포 파이프라인 로그 화면을 찍는다. 승인 기록(data/approvals/)의 처리 단계 링크를 쓴다.
   이름·이메일·IP 는 가린다.
+--only azure: 같은 Chrome(Azure Portal 로그인 필요)으로 시나리오 2 비교 대상인 Azure VM 목록을 찍는다. 구독 이름·계정·공인 IP 는 가린다.
 """
 
 from __future__ import annotations
@@ -507,6 +508,9 @@ def render_side(md: str, other: str, side: str) -> str:
     return "\n".join(html)
 
 
+PUBLIC_IP_REDACTOR = REDACTOR.replace(r"(?!127\.)", r"(?!127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)")
+
+
 def wikidiff(page):
     log = subprocess.run(["git", "-C", str(WIKI_REPO), "log", "-1", "--format=%h|%ad|%s", "--date=format:%Y-%m-%d %H:%M",
                           "--grep=Proxy 현황 현행화", "--", STATUS_DOC], capture_output=True).stdout.decode("utf-8").strip()
@@ -528,10 +532,77 @@ def wikidiff(page):
     src.write_text(doc, encoding="utf-8")
     page.set_viewport_size({"width": 1200, "height": 900})
     page.goto(src.as_uri(), wait_until="load")
-    page.evaluate(REDACTOR)
+    page.evaluate(PUBLIC_IP_REDACTOR)  # 사설 IP 변경(예: 10.10.0.17 → 10.10.0.5)이 보이도록 사설 IP 는 두고 공인 IP 만 가림
     page.screenshot(path=str(OUT / "wiki-scenario2-diff.png"), full_page=True, animations="disabled")
     (EVIDENCE / "wiki-scenario2-diff.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
     print(f"captured wiki-scenario2-diff.png ({prev} → {rev}, {when})", flush=True)
+
+
+# ---------------------------------------------------------------- 시나리오 2 Azure Portal VM 목록
+
+PORTAL_VMS = "https://portal.azure.com/#view/Microsoft_Azure_ComputeHub/ComputeHubMenuBlade/~/virtualMachinesBrowse"
+# 구독 이름·로그인 계정에서 온 낱말(디렉터리 이름 등)은 그 낱말이 든 단어째 가린다
+AZ_REDACTOR = r"""(tokens) => {
+  const res = tokens.filter(Boolean).map(t => new RegExp('[\\w.()-]*' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\w.()-]*', 'gi'));
+  const fix = s => res.reduce((a, r) => a.replace(r, '[숨김]'), s);
+  const sweep = () => { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const ns = []; while (w.nextNode()) ns.push(w.currentNode);
+    for (const n of ns) { const s = fix(n.nodeValue); if (s !== n.nodeValue) n.nodeValue = s; } };
+  const st = document.createElement('style');
+  st.textContent = '[class*="avatar"], [class*="Avatar"], .fxs-avatarmenu-tenant-image, img[alt*="account" i] { filter: blur(6px) !important; }';
+  document.head.appendChild(st);
+  sweep(); new MutationObserver(sweep).observe(document.body, {subtree: true, childList: true, characterData: true});
+}"""
+# Wiki(현행화 전)와 다른 칸: wjy-proxy03 행(Azure 에만 있음), wjy-proxy01 의 상태·SIZE
+# 머리글과 칸 수가 달라(체크박스·… 칸) 순서 대신 머리글과 같은 가로 위치의 칸을 고른다
+AZ_CELL = ("((name, header) => { const head = [...document.querySelectorAll('[role=columnheader]')].find(h => h.textContent.trim().startsWith(header || '\\u0000'));"
+           " const row = [...document.querySelectorAll('[role=row]')].find(r => [...r.querySelectorAll('[role=gridcell]')].some(c => c.textContent.trim() === name));"
+           " if (!row) return null; if (!header) return row; if (!head) return null;"
+           " const x = head.getBoundingClientRect().left + 4;"
+           " return [...row.querySelectorAll('[role=gridcell]')].find(c => { const r = c.getBoundingClientRect(); return r.left <= x && x < r.right; }); })")
+
+
+def azure_vms(own_page):
+    """시나리오 2 비교 대상인 Azure Portal 의 VM 목록. 허브 Chrome(포트 9222, Azure 로그인)에 붙어 찍는다."""
+    try:
+        account = json.loads(subprocess.run("az account show -o json", shell=True, capture_output=True).stdout or b"{}")
+    except ValueError:
+        account = {}
+    tokens = [account.get("name", ""), (account.get("user", {}).get("name", "").split("@")[0])]
+    try:
+        browser = own_page.context.browser.browser_type.connect_over_cdp("http://127.0.0.1:9222")
+    except Exception as exc:
+        print(f"skip azure: 허브 Chrome(포트 9222)에 붙지 못함 — 허브를 띄우고 그 창에서 Azure Portal 에 로그인하세요 ({exc})", flush=True)
+        return
+    page = browser.contexts[0].new_page()
+    try:
+        page.set_viewport_size({"width": 1900, "height": 560})
+        page.goto(PORTAL_VMS, wait_until="domcontentloaded", timeout=90000)
+        if "login" in page.url:
+            print("skip azure: Azure Portal 로그인 필요(허브 Chrome 창에서 로그인)", flush=True)
+            return
+        frame = None
+        for _ in range(60):
+            frame = next((f for f in page.frames if f.get_by_text("wjy-proxy01", exact=True).count()), None)
+            if frame:
+                break
+            page.wait_for_timeout(1000)
+        if not frame:
+            print("skip azure: VM 목록이 뜨지 않음", flush=True)
+            return
+        page.wait_for_timeout(3000)
+        for target in (page, frame):
+            target.evaluate(REDACTOR)
+            target.evaluate(AZ_REDACTOR, tokens)
+        frame.evaluate(MARK_JS, [f"{AZ_CELL}('wjy-proxy03')", f"{AZ_CELL}('wjy-proxy01', 'Status')",
+                                 f"{AZ_CELL}('wjy-proxy01', 'Size')"])
+        page.bring_to_front()
+        page.wait_for_timeout(800)
+        page.screenshot(path=str(OUT / "azure-scenario2-vms.png"), animations="disabled")
+        (EVIDENCE / "azure-scenario2-vms.txt").write_text(frame.locator("body").inner_text(), encoding="utf-8")
+        print("captured azure-scenario2-vms.png", flush=True)
+    finally:
+        page.close()
 
 
 # ---------------------------------------------------------------- 시나리오 2 Azure DevOps PBI·Task
@@ -678,7 +749,7 @@ def devops(own_page):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inspect", action="store_true", help="DOM 확인만; 검색·촬영 안 함")
-    parser.add_argument("--only", choices=["wiki", "viewer", "hub", "proxy", "approval", "teams", "wikidiff", "devops"])
+    parser.add_argument("--only", choices=["wiki", "viewer", "hub", "proxy", "approval", "teams", "wikidiff", "devops", "azure"])
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     EVIDENCE.mkdir(parents=True, exist_ok=True)
@@ -696,7 +767,7 @@ def main():
                 ), flush=True)
         else:
             for name, capture in [("wiki", wiki), ("viewer", viewer), ("hub", hub), ("proxy", proxy), ("approval", approval),
-                                  ("teams", teams), ("wikidiff", wikidiff), ("devops", devops)]:
+                                  ("teams", teams), ("wikidiff", wikidiff), ("devops", devops), ("azure", azure_vms)]:
                 if not args.only or args.only == name:
                     capture(page)
             print("Finished:", datetime.now().astimezone().isoformat(timespec="seconds"), flush=True)
