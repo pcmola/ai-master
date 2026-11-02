@@ -7,7 +7,7 @@ Teams 카드(--only teams)는 teams_notify 가 보낼 때 남긴 data/teams_card
 Adaptive Cards 공식 렌더러로 그린다. Teams 에 새 메시지를 보내지 않는다.
 --only wikidiff: 시나리오 2 가 마지막으로 고친 현황 문서의 수정 전/후를 wiki-repo 커밋에서 꺼내 나란히 그리고 바뀐 곳을 빨갛게 표시.
 --only devops: 허브가 띄운 Chrome(전용 프로필, 개발자 도구 포트 9222, Azure DevOps 로그인 필요)에 붙어 시나리오 2 의
-  PBI·Task, 시나리오 3 의 Task·PR(개요·파일 비교) 화면을 찍는다. 승인 기록(data/approvals/)의 처리 단계 링크를 쓴다.
+  PBI·Task, 시나리오 3 의 Task·PR(개요·파일 비교)·VM 배포 파이프라인 로그 화면을 찍는다. 승인 기록(data/approvals/)의 처리 단계 링크를 쓴다.
   이름·이메일·IP 는 가린다.
 """
 
@@ -587,11 +587,48 @@ def devops_shots() -> list[tuple]:
                 pr = link.split("?")[0]
                 shots.append((f"devops-scenario{number}-pr.png", pr, "Description", [PR_DESCRIPTION, PR_WORKITEMS]))
                 shots.append((f"devops-scenario{number}-pr-files.png", pr + "?_a=files", "View", [PR_DIFF]))
+    shots += pipeline_shots()
     seen, out = set(), []
     for shot in shots:  # 같은 파일 이름은 처음 것만
         if shot[0] not in seen:
             seen.add(shot[0]); out.append(shot)
     return out
+
+
+# 파이프라인 로그는 보이는 줄만 그리는 목록이라, 배포 스크립트 시작 줄이 위쪽에 오도록 내린다(위의 az 로그인 출력은 화면 밖)
+PIPE_SCROLL = r"""() => {
+  const rows = () => [...document.querySelectorAll('.bolt-fixed-height-list-row')];
+  const start = rows().find(r => r.textContent.includes('pipeline_deploy.sh')); if (!start) return;
+  let box = start.parentElement; while (box && !(box.scrollHeight > box.clientHeight + 10 && getComputedStyle(box).overflowY !== 'visible')) box = box.parentElement;
+  if (box) box.scrollTop += start.getBoundingClientRect().top - box.getBoundingClientRect().top - 2 * start.offsetHeight;
+  // az login 출력의 구독 이름("name": "…")은 사람 이름에서 온 값이라 가린다
+  for (const r of rows()) for (const s of r.querySelectorAll('span')) if (!s.children.length)
+    s.textContent = s.textContent.replace(/("name": )"(?!\*\*\*)[^"]+"/, '$1"[이름 숨김]"');
+}"""
+PIPE_LINES = ("(() => { const rows = [...document.querySelectorAll('.bolt-fixed-height-list-row')]"
+              ".sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);"
+              " const i = rows.findIndex(r => r.textContent.includes('pipeline_deploy.sh'));"
+              " const j = rows.findIndex(r => r.textContent.trim().endsWith('DEPLOY_RESULT_OK'));"
+              " return i < 0 || j < i ? [] : rows.slice(i, j + 1); })()")
+
+
+def pipeline_shots() -> list[tuple]:
+    """시나리오 3 병합 뒤 사람이 돌리는 VM 배포 파이프라인('proxy-config VM 배포')의 최근 성공 실행 배포 로그."""
+    sys.path.insert(0, str(ROOT / "proxy_tools"))
+    try:
+        from proxy_policy_publish import DevOps
+        dv = DevOps()
+        name = os.environ.get("SCENARIO3_DEPLOY_PIPELINE", "proxy-config VM 배포")
+        pid = next(x["id"] for x in dv.request("GET", "/_apis/pipelines?api-version=7.1", None)["value"] if x["name"] == name)
+        run = next(r for r in dv.request("GET", f"/_apis/pipelines/{pid}/runs?api-version=7.1", None)["value"]
+                   if r.get("result") == "succeeded" and str((r.get("templateParameters") or {}).get("checkOnly")).lower() != "true")
+        records = dv.request("GET", f"/_apis/build/builds/{run['id']}/timeline?api-version=7.1", None)["records"]
+        task = next(r for r in records if r["type"] == "Task" and "배포" in r["name"])
+    except Exception as exc:
+        print(f"skip pipeline: 배포 파이프라인 성공 실행을 찾지 못함 ({type(exc).__name__}: {exc})", flush=True)
+        return []
+    url = f"{dv.base}/_build/results?buildId={run['id']}&view=logs&j={task['parentId']}&t={task['id']}"
+    return [("devops-scenario3-pipeline.png", url, "validate: OK", [PIPE_LINES], PIPE_SCROLL)]
 
 
 def devops(own_page):
@@ -608,7 +645,7 @@ def devops(own_page):
     page = browser.contexts[0].new_page()
     try:
         page.set_viewport_size({"width": 1600, "height": 1150})
-        for name, url, wait_text, marks in shots:
+        for name, url, wait_text, marks, *prep in shots:
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
             if "login" in page.url or "signin" in page.url:
                 print("skip devops: Azure DevOps 로그인 필요(허브 Chrome 창에서 로그인)", flush=True)
@@ -617,6 +654,9 @@ def devops(own_page):
             page.wait_for_timeout(3000)  # 링크 목록·설명·비교 화면이 늦게 그려짐
             page.evaluate(REDACTOR)
             page.evaluate(NAME_REDACTOR, names)
+            for js in prep:
+                page.evaluate(js)
+                page.wait_for_timeout(1000)
             mark(page, *marks)
             # 허브 Chrome 은 사람이 쓰는 창이라, 다른 탭을 보고 있으면 이 탭이 그려지지 않아 흰 화면이 찍힌다
             # (2026-10-30 PBI 화면이 전부 흰색) → 앞으로 가져와 찍고, 거의 빈 그림이면 한 번 더 찍는다

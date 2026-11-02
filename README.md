@@ -336,9 +336,17 @@ PR 설명에 원인 커밋, 수정 내용, 확인 방법이 들어가고 Task가
 
 ![시나리오 3 - 완료된 Task](docs/images/devops-scenario3-task-done.png)
 
-**⑩ 배포와 복구 확인**
+**⑩ VM 배포 파이프라인** (2026-11-02 실행)
 
-wjy-proxy01에 배포한 뒤 시험 접속을 보냈습니다. 장애 중 `ok=10 fail=10`이던 결과가 `ok=20 fail=0`으로 돌아왔습니다.
+- 병합만으로는 VM이 바뀌지 않습니다. **Pipelines › proxy-config VM 배포 › Run pipeline**으로 배포합니다.
+- 문법 검사 → 백업 → 설치 → Squid 재시작을 거쳐 `DEPLOY_RESULT_OK`가 찍히면 성공입니다(빨간 테두리).
+- 테스트 중이라 기본 배포 대상은 wjy-proxy01입니다. 허브의 시나리오 3 로그에도 같은 줄이 `[pipeline]`으로 들어옵니다.
+
+![시나리오 3 - VM 배포 파이프라인 실행 로그](docs/images/devops-scenario3-pipeline.png)
+
+**⑪ 복구 확인**
+
+배포 뒤 시험 접속을 보내면, 장애 중 `ok=10 fail=10`이던 결과가 `ok=20 fail=0`으로 돌아옵니다(2026-10-30 시험).
 
 모든 캡처에서 IP·이메일·구독 ID 등 식별값은 가렸습니다. 재촬영 방법과 외부 반영 범위는 [8.5 README 화면 재촬영](#85-readme-화면-재촬영)에 있습니다.
 
