@@ -1012,7 +1012,7 @@ def tavily_search(query: str, limit: int) -> list[dict]:
 def gpt_search(query: str, limit: int) -> list[dict]:
     """GPT 내장 web_search 도구(Responses API). 답 글의 url_citation 을 출처별 결과로 바꾸고, 인용 앞 문장을 본문으로 쓴다.
     Azure 게이트웨이의 Responses API 는 api-version 2025-03-01-preview 이상에서만 열려(2026-10-29 확인)
-    가이드 생성용 OPENAI_API_VERSION 과 따로 WEB_SEARCH_API_VERSION 을 쓴다. 한 번에 15초 안팎 걸린다."""
+    가이드 생성용 OPENAI_API_VERSION 과 따로 WEB_SEARCH_API_VERSION 을 쓴다. 한 번에 20초 안팎 걸린다(Tavily 는 2초 안팎, 2026-11-03)."""
     if os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY"):
         from openai import AzureOpenAI
         client = AzureOpenAI(api_version=os.environ.get("WEB_SEARCH_API_VERSION", "2025-04-01-preview"),

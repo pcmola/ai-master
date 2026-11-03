@@ -556,7 +556,19 @@ flowchart LR
 | `off` | 웹 검색 안 함 |
 
 - Tavily: <https://tavily.com> 에 가입해 API 키를 발급받아 `TAVILY_API_KEY`에 넣습니다(무료 플랜으로 시험 가능).
-- GPT: Azure 게이트웨이의 Responses API는 api-version `2025-03-01-preview` 이상에서만 열립니다. 가이드 생성용 `OPENAI_API_VERSION`과 따로 `WEB_SEARCH_API_VERSION`(기본 `2025-04-01-preview`)을 씁니다. 검색어와 열어 볼 페이지는 GPT가 정하고, 답 글의 인용(`url_citation`)을 출처별 결과로 바꿔 Tavily 결과와 같은 방식으로 거릅니다. 한 번에 20초에서 40초 걸려 Tavily(1초에서 2초)보다 느립니다.
+- GPT: Azure 게이트웨이의 Responses API는 api-version `2025-03-01-preview` 이상에서만 열립니다. 가이드 생성용 `OPENAI_API_VERSION`과 따로 `WEB_SEARCH_API_VERSION`(기본 `2025-04-01-preview`)을 씁니다. 검색어와 열어 볼 페이지는 GPT가 정하고, 답 글의 인용(`url_citation`)을 출처별 결과로 바꿔 Tavily 결과와 같은 방식으로 거릅니다. 모델은 가이드 작성과 같은 `OPENAI_MODEL`(gpt-6.1-sol)입니다.
+
+지금은 **Tavily를 씁니다**(`auto`이고 Tavily 키가 있음). 같은 검색어로 비교한 결과입니다(2026-11-03 측정, 검색어 2개 평균).
+
+| | Tavily | GPT (gpt-6.1-sol) |
+|---|---|---|
+| 걸린 시간 | 1.7초 | 19.9초 |
+| 결과 수 | 5건 | 3건 |
+| 결과 하나의 본문 | 약 1,350자 (페이지 발췌) | 약 125자 (인용 앞 한 문장) |
+
+- 가이드 생성이 이미 30초에서 50초 걸리므로, 웹 검색에 20초가 더 붙으면 기다리는 시간이 크게 늘어납니다.
+- 가이드 LLM에 넘길 근거로는 발췌가 긴 Tavily 쪽이 쓸 내용이 많습니다. GPT 결과는 GPT가 한 번 요약한 문장이라 원문 확인이 어렵습니다.
+- GPT는 별도 키가 필요 없어서, Tavily 키가 없을 때의 대안으로 남겨 둡니다.
 
 어느 공급자든 위키 근거가 약할 때만 웹을 검색합니다(기준: `WEB_SEARCH_MIN_SIM`, `WEB_SEARCH_MIN_VARIANT_SIM`).
 
