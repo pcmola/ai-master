@@ -51,8 +51,9 @@ GUIDE_CHUNK_CHARS = int(os.environ.get("GUIDE_CHUNK_CHARS", "1500"))  # 조각 �
 GUIDE_CONTEXT_CHARS = int(os.environ.get("GUIDE_CONTEXT_CHARS", "16000"))  # 넘길 조각 전체 글자 수 상한
 REVISE_EXTRA_CHUNKS = 6  # 수정 요청으로 새로 걸린 조각을 기존 근거 뒤에 덧붙이는 상한
 EMBED_WEIGHT = float(os.environ.get("EMBED_WEIGHT", "8"))  # 혼합 검색에서 임베딩 유사도 가중치
-# 가이드 작성 호출만 더 길게 기다린다. 게이트웨이가 응답을 모아 한 번에 보내서, 긴 가이드(수정 요청은 지금 가이드 전체를
-# 다시 씀, 3만 자)는 첫 바이트까지 120초를 넘겼다(2026-10-30 ReadTimeout).
+# 가이드 작성 호출만 더 길게 기다린다. 게이트웨이가 응답을 모아 한 번에 보내던 때(2026-10-30 14:20 전까지) 긴 가이드
+# (그때 수정 요청은 지금 가이드 전체를 다시 씀, 3만 자)는 첫 바이트까지 120초를 넘겼다(2026-10-30 ReadTimeout).
+# 그 뒤로는 조각이 바로 흘러와 첫 줄이 4-10초에 오지만, 게이트웨이가 다시 모아 보낼 때를 대비해 그대로 둔다.
 GUIDE_LLM_TIMEOUT = float(os.environ.get("GUIDE_LLM_TIMEOUT", "300"))
 OPENAI_TIMEOUT = 120  # 초. 게이트웨이가 응답하지 않으면 오래 매달리지 않고 오프라인 검색으로 넘어간다.
 # 검색 결과의 문서 링크. 비우면 wiki_viewer.py 가 뜨는 주소(hosts 의 wiki.local 기준)를 쓴다.
@@ -1271,7 +1272,7 @@ def _llm_run(client, system, prompts, diagrams, sources, web, s, context=None, m
             if not merge:
                 yield unbox(DIAGRAM_TOKEN.sub(lambda m: restore(diagrams, m), done))
 
-    # 게이트웨이가 응답을 모아 한 번에 보내므로 그동안 로그가 멈춰 보인다 → 5초마다 진행 줄을 남긴다
+    # 첫 조각이 오기 전(보통 4-10초, 게이트웨이가 응답을 모아 보내면 끝날 때까지)에도 로그가 멈춰 보이지 않게 5초마다 진행 줄을 남긴다
     stop_beat = heartbeat(s, lambda: f"받은 글자 {len(text):,}" if text else "LLM 응답 기다리는 중")
     try:
         if hasattr(client, "chat"):  # OpenAI / Azure OpenAI 게이트웨이
