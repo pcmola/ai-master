@@ -62,7 +62,7 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 - 로컬 PC의 허브(hub.py)에서 세 시나리오를 실행하고, LLM·Azure DevOps·Teams·Azure 구독과 주고받는 흐름을 한 장에 담았습니다.
 - 점선은 조건부로 쓰거나 사람이 수행하는 연결입니다. Wiki·Task·PR·VM 태그 같은 외부 변경은 모두 사람 승인 뒤에 반영합니다.
 
-![전체 아키텍처](docs/images/architecture.png)
+![전체 아키텍처](docs/images/architecture.svg)
 
 다이어그램 색: 초록 = 구현 · 주황 = 사용자 판단 · 연보라 = 시작·결과 · 하늘색 = 외부 시스템(Wiki·웹 검색)
 

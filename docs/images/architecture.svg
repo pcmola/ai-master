@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 800" width="1600" height="800" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif">
+  <title>AI Master 전체 아키텍처</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+    <style>
+      .t { font-size: 14px; font-weight: 700; text-anchor: middle; }
+      .s { font-size: 14px; fill: #374151; text-anchor: middle; }
+      .grp { font-size: 13px; font-weight: 700; }
+      .lbl { font-size: 12px; fill: #374151; text-anchor: middle; }
+      .ln { stroke: #6b7280; stroke-width: 1.4; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 6 4; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="800" fill="#ffffff"/>
+
+  <!-- 운영 담당자 (왼쪽) -->
+  <rect x="30" y="370" width="130" height="64" rx="8" fill="#eef0ff" stroke="#5b5bd6" stroke-width="1.6"/>
+  <text x="95" y="407" class="s" fill="#1f2937">운영 담당자</text>
+  <line x1="160" y1="402" x2="208" y2="402" class="ln"/>
+
+  <!-- 로컬 PC -->
+  <rect x="210" y="60" width="470" height="700" rx="10" fill="#f6f8fb" stroke="#c5cbd6" stroke-width="1.4"/>
+  <text x="224" y="82" class="grp" fill="#374151">로컬 PC · hub.py (ai-master.local)</text>
+
+  <rect x="235" y="95" width="420" height="74" rx="6" fill="#dbeafe" stroke="#60a5fa" stroke-width="1.4"/>
+  <text x="445" y="126" class="t" fill="#1e3a8a">SC-001 프록시 설정 가이드 자동 생성</text>
+  <text x="445" y="146" class="s">wiki_search.py · wiki_register.py (wiki-search.local)</text>
+
+  <rect x="235" y="184" width="420" height="74" rx="6" fill="#fdebd3" stroke="#f59e42" stroke-width="1.4"/>
+  <text x="445" y="215" class="t" fill="#9a3412">SC-002 Proxy 현황 Wiki 현행화</text>
+  <text x="445" y="235" class="s">proxy_status_sync.py</text>
+
+  <rect x="235" y="273" width="420" height="74" rx="6" fill="#fdebd3" stroke="#f59e42" stroke-width="1.4"/>
+  <text x="445" y="304" class="t" fill="#9a3412">SC-003 장애 감지 및 자동 조치</text>
+  <text x="445" y="324" class="s">incident_response.py</text>
+
+  <rect x="235" y="372" width="420" height="104" rx="6" fill="#dcfce7" stroke="#4ade80" stroke-width="1.4"/>
+  <text x="445" y="397" class="t" fill="#14532d">공통 계층</text>
+  <text x="445" y="418" class="s">규칙 비교·탐지·검증 (정확해야 하는 일)</text>
+  <text x="445" y="438" class="s">계획·재계획·Self-Correction · 노드별 트레이스</text>
+  <text x="445" y="458" class="s">common/trace.py</text>
+
+  <rect x="235" y="496" width="420" height="64" rx="6" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.4"/>
+  <text x="445" y="522" class="t" fill="#134e4a">로컬 승인 서버</text>
+  <text x="445" y="542" class="s">approval_local.py (127.0.0.1, 요청마다 1회용 token)</text>
+
+  <!-- wiki-repo · data (원통) -->
+  <path d="M235,596 L235,719 A210,13 0 0 0 655,719 L655,596" fill="#f1f3f7" stroke="#8a93a3" stroke-width="1.4"/>
+  <ellipse cx="445" cy="596" rx="210" ry="13" fill="#e5e8ee" stroke="#8a93a3" stroke-width="1.4"/>
+  <text x="445" y="653" class="t" fill="#111827">wiki-repo · data/</text>
+  <text x="445" y="673" class="s">Azure DevOps Wiki 로컬 clone (더미 문서 약 1,000건)</text>
+  <text x="445" y="693" class="s">임베딩·가이드 캐시 · 트레이스·로그</text>
+
+  <!-- LLM · 검색 -->
+  <rect x="950" y="60" width="380" height="190" rx="10" fill="#faf5ff" stroke="#a855f7" stroke-width="1.6" stroke-dasharray="6 4"/>
+  <text x="964" y="82" class="grp" fill="#6b21a8">LLM · 검색</text>
+
+  <rect x="970" y="90" width="340" height="62" rx="6" fill="#f3e8ff" stroke="#c084fc" stroke-width="1.4"/>
+  <text x="1140" y="116" class="t" fill="#6b21a8">사내 Azure OpenAI 게이트웨이</text>
+  <text x="1140" y="136" class="s">gpt-6.1-sol · text-embedding-3-large</text>
+
+  <rect x="970" y="170" width="340" height="62" rx="6" fill="#fef9c3" stroke="#eab308" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="1140" y="196" class="t" fill="#854d0e">웹 검색 (보조)</text>
+  <text x="1140" y="216" class="s">Tavily, 키가 없으면 GPT 내장 웹 검색</text>
+
+  <!-- Azure DevOps -->
+  <rect x="950" y="272" width="380" height="262" rx="10" fill="#f0f9ff" stroke="#38bdf8" stroke-width="1.6"/>
+  <text x="964" y="294" class="grp" fill="#0c4a6e">Azure DevOps</text>
+
+  <rect x="970" y="302" width="340" height="46" rx="6" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1.4"/>
+  <text x="1140" y="330" class="t" fill="#0c4a6e">Wiki · 가이드 등록 · 현황 표 · 장애 이력</text>
+
+  <rect x="970" y="358" width="340" height="46" rx="6" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1.4"/>
+  <text x="1140" y="386" class="t" fill="#0c4a6e">Work Items · Task 생성 · 완료</text>
+
+  <rect x="970" y="414" width="340" height="46" rx="6" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1.4"/>
+  <text x="1140" y="442" class="t" fill="#0c4a6e">Repos (proxy-config) · 원인 커밋 분석 · 수정 PR</text>
+
+  <rect x="970" y="470" width="340" height="46" rx="6" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1.4"/>
+  <text x="1140" y="498" class="t" fill="#0c4a6e">Pipelines · proxy-config VM 배포</text>
+
+  <line x1="1140" y1="460" x2="1140" y2="469" class="ln"/>
+
+  <!-- Microsoft Teams -->
+  <rect x="950" y="556" width="380" height="62" rx="6" fill="#fef9c3" stroke="#eab308" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="1140" y="582" class="t" fill="#854d0e">Microsoft Teams</text>
+  <text x="1140" y="602" class="s">승인 카드 (Yes / No) · 결과 카드</text>
+
+  <!-- Azure 구독 -->
+  <rect x="950" y="640" width="380" height="120" rx="10" fill="#f0f9ff" stroke="#38bdf8" stroke-width="1.6"/>
+  <text x="964" y="662" class="grp" fill="#0c4a6e">Azure 구독</text>
+  <rect x="970" y="668" width="340" height="72" rx="6" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1.4"/>
+  <text x="1140" y="699" class="t" fill="#0c4a6e">Proxy VM 3대</text>
+  <text x="1140" y="719" class="s">Squid 2 · NGINX 1 (podman)</text>
+
+  <!-- 운영 담당자 (사람, 오른쪽) -->
+  <rect x="1440" y="395" width="130" height="64" rx="8" fill="#fdebd3" stroke="#f97316" stroke-width="1.6"/>
+  <text x="1505" y="422" class="s" fill="#9a3412">운영 담당자</text>
+  <text x="1505" y="441" class="s" fill="#9a3412">(사람)</text>
+  <text x="1505" y="473" class="lbl">PR 검토·병합</text>
+  <text x="1505" y="489" class="lbl">배포 실행</text>
+  <line x1="1440" y1="421" x2="1312" y2="437" class="ln dash"/>
+  <line x1="1440" y1="440" x2="1312" y2="490" class="ln dash"/>
+
+  <!-- Pipelines → Proxy VM -->
+  <polyline points="1310,493 1360,493 1360,704 1312,704" class="ln"/>
+  <text x="1395" y="602" class="lbl">설정 배포</text>
+
+  <!-- 로컬 PC → 외부 -->
+  <line x1="680" y1="121" x2="968" y2="121" class="ln"/>
+  <text x="815" y="107" class="lbl">가이드 작성 · 요약 · 원인 분석</text>
+
+  <line x1="680" y1="201" x2="968" y2="201" class="ln dash"/>
+  <text x="815" y="187" class="lbl">Wiki 근거가 약할 때만 (SC-001)</text>
+
+  <line x1="680" y1="325" x2="968" y2="325" class="ln"/>
+  <text x="815" y="311" class="lbl">가이드 등록 · 현황 갱신 · 장애 이력 (git push)</text>
+
+  <line x1="680" y1="381" x2="968" y2="381" class="ln"/>
+  <text x="815" y="367" class="lbl">Task (SC-002·003)</text>
+
+  <line x1="680" y1="437" x2="968" y2="437" class="ln"/>
+  <text x="815" y="423" class="lbl">최근 커밋·diff → 수정 PR (SC-003)</text>
+
+  <line x1="680" y1="572" x2="948" y2="572" class="ln"/>
+  <text x="815" y="558" class="lbl">승인 요청 (SC-002·003)</text>
+
+  <line x1="950" y1="602" x2="682" y2="602" class="ln"/>
+  <text x="815" y="622" class="lbl">Yes / No 버튼 → 로컬 승인 서버</text>
+
+  <line x1="680" y1="690" x2="968" y2="690" class="ln"/>
+  <text x="815" y="654" class="lbl">az VM 조회·태그 (SC-002)</text>
+  <text x="815" y="671" class="lbl">SSH 접속 로그 (SC-003)</text>
+
+  <!-- 범례 -->
+  <text x="30" y="782" font-size="12" fill="#4b5563">점선 = 조건부 또는 사람이 수행 · 외부 변경(Wiki·Task·PR·VM 태그)은 모두 사람 승인 후 반영</text>
+</svg>
