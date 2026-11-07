@@ -624,6 +624,103 @@ def job_status() -> dict:
     return out
 
 
+_TRACE_LINE = re.compile(r"(?:(\d{4}-\d{2}-\d{2}) )?(\d{2}:\d{2}:\d{2}) \[([0-9a-f]{6,})\] (.*)")
+_THINK = re.compile(r"◆ (\S+(?: \S+)?)\s{2,}(.*)")
+
+
+def run_plan(key: str, start: int = 0) -> dict | None:
+    """로그에서 가장 최근 실행의 계획·사전 점검·단계 진행을 읽어 돌려준다(허브 '실행 계획' 패널).
+    common/trace.py 의 plan()·simulate()·step()·replan() 이 남기는 ◆ 줄과 끝 줄(■)을 그대로 해석한다.
+    로그 화면은 마지막 300줄만 받으므로, 계획 줄이 밀려나도 보이게 여기서 따로 읽는다."""
+    log = LOG_DIR / f"{key}.log"
+    if not log.is_file():
+        return None
+    size = log.stat().st_size
+    start = start if 0 < start <= size else 0
+    with open(log, "rb") as f:
+        f.seek(max(start, size - 512 * 1024))
+        rows = f.read().decode("utf-8", errors="replace").splitlines()
+    parsed = [m.groups() for m in map(_TRACE_LINE.match, rows) if m]
+    head = next((i for i in range(len(parsed) - 1, -1, -1)
+                 if parsed[i][3].startswith("◆ Planning") and "-step plan generated" in parsed[i][3]), None)
+    if head is None:
+        return None
+    tid = parsed[head][2]
+    lines = [(d, t, text) for d, t, i, text in parsed if i == tid]
+    plan = {"id": tid, "goal": "", "started": "", "steps": [], "checks": [], "sim": "", "status": "running",
+            "ended": "", "summary": ""}
+    steps = plan["steps"]
+    cur = None
+
+    def at(d, t):
+        return f"{d} {t}" if d else t
+
+    for d, t, text in lines:
+        if text.startswith("▶ "):
+            plan["started"] = at(d, t)
+            continue
+        if text.startswith("■ "):
+            parts = text[2:].split()
+            plan["status"] = parts[1] if len(parts) > 1 else "ok"
+            plan["ended"] = at(d, t)
+            plan["summary"] = text.split(" | ")[0][2:]
+            for s in steps:
+                if s["status"] == "running":
+                    s["status"] = "done" if plan["status"] == "ok" else "error"
+                    s["ended"] = at(d, t)
+            continue
+        if text.startswith("✗ ") and cur is not None:
+            m = re.match(r"✗\s+\d+\s+(\S+)", text)
+            if m and m.group(1) == cur["name"]:
+                cur["status"], cur["ended"] = "error", at(d, t)
+            continue
+        m = _THINK.match(text)
+        if not m:
+            continue
+        kind, body = m.group(1), m.group(2)
+        if kind == "Planning":
+            g = re.match(r"\d+-step plan generated · 목표: (.*)", body)
+            if g:
+                plan["goal"] = g.group(1)
+            else:
+                s = re.match(r"\s*(\d+)\.\s+(\S+)\s+(.*)", body)
+                if s:
+                    steps.append({"name": s.group(2), "desc": s.group(3).strip(), "status": "planned",
+                                  "started": "", "ended": "", "note": ""})
+        elif kind == "Simulation":
+            c = re.match(r"\s*([✓△])\s+(.+?)\s{2,}(.*)", body)
+            if c:
+                plan["checks"].append({"ok": c.group(1) == "✓", "name": c.group(2).strip(), "note": c.group(3).strip()})
+            elif body.startswith("시뮬레이션 결과:"):
+                plan["sim"] = body.split(":", 1)[1].strip()
+        elif kind.startswith("Step"):
+            s = re.match(r"\+?\s*(\S+) — (.*)", body)
+            if not s:
+                continue
+            name = s.group(1)
+            for p in steps:
+                if p["status"] == "running":
+                    p["status"], p["ended"] = "done", at(d, t)
+            cur = next((p for p in steps if p["name"] == name), None)
+            if cur is None:  # 재계획으로 끼어든 단계
+                cur = {"name": name, "desc": s.group(2), "status": "planned", "started": "", "ended": "", "note": ""}
+                steps.append(cur)
+            cur["status"], cur["started"] = "running", at(d, t)
+        elif kind == "Replan":
+            rest = body.split("남은 단계", 1)[-1]
+            names = rest.split(":", 1)[1].split(" → ") if ":" in rest else []
+            names = [n.strip() for n in names]
+            for p in steps:
+                if p["status"] == "planned" and p["name"] not in names:
+                    p["status"] = "skipped"
+            for n in names:
+                if not any(p["name"] == n for p in steps):
+                    steps.append({"name": n, "desc": "", "status": "planned", "started": "", "ended": "", "note": ""})
+        elif kind in ("Observation", "Decision") and cur is not None:
+            cur["note"] = body
+    return plan
+
+
 def log_tail(key: str, lines: int = 300, start: int = 0) -> tuple[str, int]:
     """(마지막 lines 줄, 파일 크기). start 를 주면 그 바이트 위치 뒤만 본다(화면의 '지우기' 이후).
     파일이 2MB 를 넘겨 새로 시작했으면(크기 < start) 처음부터 본다."""
@@ -682,6 +779,15 @@ class Handler(BaseHTTPRequestHandler):
             start = qs.get("from", ["0"])[0]
             text, size = log_tail(key, start=int(start) if start.isdigit() else 0)
             self.send_body(text.encode("utf-8"), "text/plain; charset=utf-8", headers={"X-Log-Size": str(size)})
+        elif url.path == "/api/plan":
+            qs = parse_qs(url.query)
+            key = qs.get("key", [""])[0]
+            if key not in JOB_LOGS:
+                self.send_error(404)
+                return
+            start = qs.get("from", ["0"])[0]
+            body = json.dumps(run_plan(key, start=int(start) if start.isdigit() else 0), ensure_ascii=False)
+            self.send_body(body.encode("utf-8"), "application/json; charset=utf-8")
         elif url.path in ("/approval/decide", "/approval/open"):
             # Teams 카드 버튼. 승인 서버가 떠 있으면 그리로 넘기고, 닫혔으면(이미 끝난 요청) 기록으로 안내한다.
             qs = parse_qs(url.query)
@@ -786,12 +892,23 @@ nav.maintabs button{background:none;border:0;border-bottom:3px solid transparent
 nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 .scgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
+.sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:6px}.sc.s3 .row button{white-space:nowrap;padding:4px 8px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
 .sc .opts{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}.sc .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sc button.main{background:var(--blue);border-color:var(--blue);color:#fff}.jobstate{font-size:13px}
 .s2links{font-size:13px;border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px}.s2links a{color:var(--blue);text-decoration:none}
 .s2links .head{display:flex;gap:16px;align-items:center}.s2links a,.s2links button{white-space:nowrap}
 .jobstate.running{color:var(--warn)}.jobstate.ok{color:var(--ok)}.jobstate.fail{color:var(--bad)}
+#splan{border-bottom:1px solid var(--line);padding:8px 14px;font-size:13px;display:grid;gap:5px}
+#splan .ph{display:flex;gap:10px;align-items:center;flex-wrap:wrap}#splan .ph b{font-size:13px}
+#splan .ph button{margin-left:auto;padding:1px 8px;font-size:12px}
+#splan .chk{display:flex;gap:6px;flex-wrap:wrap}#splan .chip{border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px;background:var(--soft)}
+#splan .chip.no{color:var(--warn);border-color:var(--warn)}
+#splan ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:auto auto auto 1fr auto;column-gap:10px;row-gap:1px}
+#splan li{display:contents}#splan li>span{padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#splan .nm{font-family:Consolas,monospace;font-size:12px}#splan .nt{color:var(--muted);font-size:12px;text-align:right;max-width:46vw}
+#splan li.planned>span{color:var(--muted)}#splan li.skipped>span{color:var(--off);text-decoration:line-through}
+#splan li.running>span{color:var(--warn);font-weight:700}#splan li.done .ic{color:var(--ok)}#splan li.error>span{color:var(--bad)}
 @media(max-width:820px){.hide-sm{display:none}main{padding:12px}}
 </style></head><body>
 <header><h1>__TITLE__</h1><span class="time" id="time"></span>
@@ -822,16 +939,16 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div>
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div>
-<div class="card sc"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
-<p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 남깁니다. VM 반영은 PR 병합 뒤 Pipelines 의 <b>proxy-config VM 배포</b>를 실행해야 합니다. 시험: wjy-proxy01 (실제 저장소·VM을 바꿈)</p>
+<div class="card sc s3"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
+<p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·이력 Wiki를 남깁니다. VM 반영은 PR 병합 뒤 Pipelines <b>proxy-config VM 배포</b>. 시험: wjy-proxy01</p>
 <div class="row" style="flex-wrap:nowrap"><b>①</b><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:1;min-width:0">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
 <option value="bad-dns">잘못된 DNS 서버</option></select>
 <button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포하고 시험 접속을 보내 차단 로그를 남김 (proxy_fault_inject.py apply)">장애 재현</button></div>
-<div class="row"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
+<div class="row" style="flex-wrap:nowrap"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
 <b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button>
-<button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">허용 IP 맞추기</button>
-<button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그 뷰어</button>
+<button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">IP 맞추기</button>
+<button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">로그 뷰어</button>
 <button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')" style="margin-left:auto">로그</button></div>
 <div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
 <div class="jobstate" id="s3state"></div></div>
@@ -839,6 +956,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(slogKey,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
 <button id="sall" onclick="unclearLog(slogKey,loadSLog)" hidden>전체 보기</button></div>
+<div id="splan" hidden></div>
 <pre id="slog"></pre></div>
 </main>
 <script>
@@ -936,7 +1054,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   ['s3run','s3inject','s3restore','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
   const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
-    :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 저장소에 심어진 장애: ${esc(f.active.join(', '))} → 시험이 끝나면 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted">(VM 은 배포해야 반영 · 병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구)</span>');
+    :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 저장소에 심어진 장애: ${esc(f.active.join(', '))} → 시험이 끝나면 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted" title="병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구">(VM 은 배포해야 반영)</span>');
   const pl=jobs._pipeline;document.getElementById('s3pipe').innerHTML=!pl?'':pl.state!=='completed'
     ?`<span class="jobstate running">● VM 배포 파이프라인 #${esc(pl.name)} 실행 중</span> <a href="${esc(pl.url||'#')}" onclick="return !openTop(this.href,'pipeline')">Azure DevOps 에서 보기</a> <span class="muted">(로그는 아래 시나리오 3 로그에 [pipeline] 으로)</span>`
     :`<span class="jobstate ${pl.result==='succeeded'?'ok':'fail'}">${pl.result==='succeeded'?'✓':'✗'} VM 배포 파이프라인 #${esc(pl.name)} ${esc(pl.result||'')} (${pl.finished?new Date(pl.finished).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):''} 종료)</span>`;
@@ -955,7 +1073,34 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   if(slogKey)loadSLog()}
 function showLog(key,title){slogKey=key;document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
 async function loadSLog(){const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
-  pre.textContent=await fetchLog(slogKey);document.getElementById('sall').hidden=!cleared[slogKey];if(atEnd)pre.scrollTop=pre.scrollHeight}
+  pre.textContent=await fetchLog(slogKey);document.getElementById('sall').hidden=!cleared[slogKey];if(atEnd)pre.scrollTop=pre.scrollHeight;loadPlan()}
+// 실행 계획 패널: 로그가 빨리 흘러가도 계획·사전 점검·진행 단계를 로그 위에 고정해 보여 준다(/api/plan 이 로그를 해석).
+let planFold=localStorage.getItem('hub-plan-fold')==='1';
+function foldPlan(){planFold=!planFold;localStorage.setItem('hub-plan-fold',planFold?'1':'0');loadPlan()}
+const toDate=s=>s&&s.length>8?new Date(s.replace(' ','T')):null;
+function dur(a,b){const x=toDate(a),y=b?toDate(b):new Date();if(!x||!y)return'';const s=Math.max(0,Math.round((y-x)/1000));
+  return s<60?s+'초':Math.floor(s/60)+'분 '+(s%60)+'초'}
+async function loadPlan(){const box=document.getElementById('splan');const key=slogKey;if(!key){box.hidden=true;return}
+  let p=null;try{p=await (await fetch('/api/plan?key='+encodeURIComponent(key)+'&from='+(cleared[key]||0))).json()}catch(e){}
+  if(key!==slogKey)return;if(!p){box.hidden=true;fit();return}
+  // 끝 줄(■) 없이 작업이 끝났으면(강제 종료 등) 진행 중이 아니라 중단으로 본다.
+  const live=Object.entries(JOBS_LOG).some(([j,k])=>k===key&&jobs[j]&&jobs[j].state==='running');
+  const st=p.status==='running'&&!live?'stopped':p.status;
+  const ST={running:['● 실행 중','running'],ok:['✓ 완료','ok'],error:['✗ 오류','fail'],cancelled:['… 취소','fail'],stopped:['■ 중단(끝 기록 없음)','fail']}[st]||[st,''];
+  const icon={planned:'○',running:'●',done:'✓',error:'✗',skipped:'–'};
+  const total=dur(p.started,st==='running'?'':p.ended);
+  let h=`<div class="ph"><b>실행 계획</b><span class="jobstate ${ST[1]}">${ST[0]}</span>`
+    +`<span class="muted">${esc(p.started)} 시작${total?' · '+total+(st==='running'?'째':''):''} · trace ${esc(p.id)}</span>`
+    +`<button onclick="foldPlan()">${planFold?'펼치기':'접기'}</button></div>`;
+  if(planFold){const cur=p.steps.findIndex(s=>s.status==='running');
+    h+=`<div class="muted">${cur>=0?`지금 ${cur+1}/${p.steps.length} 단계: ${esc(p.steps[cur].name)} — ${esc(p.steps[cur].desc)}`:esc(p.goal)}</div>`}
+  else{if(p.goal)h+=`<div>목표: ${esc(p.goal)}</div>`;
+    if(p.checks.length)h+=`<div class="chk"><span class="muted">사전 점검</span>`+p.checks.map(c=>`<span class="chip${c.ok?'':' no'}" title="${esc(c.note)}">${c.ok?'✓':'△'} ${esc(c.name)}${c.ok?'':' · '+esc(c.note)}</span>`).join('')+`</div>`;
+    h+='<ol>'+p.steps.map((s,i)=>{const t=s.status==='running'?dur(s.started)+'째':(s.started&&s.ended?dur(s.started,s.ended):'');
+      const note=s.note||(s.status==='skipped'?'건너뜀(재계획)':'');
+      return`<li class="${s.status}"><span class="ic">${icon[s.status]||''}</span><span>${i+1}</span><span class="nm">${esc(s.name)}</span>`
+        +`<span title="${esc(s.desc)}">${esc(s.desc)}</span><span class="nt" title="${esc(note)}">${esc(note)}${note&&t?' · ':''}${t}</span></li>`}).join('')+'</ol>'}
+  box.innerHTML=h;box.hidden=false;fit()}
 // 로그 창은 화면 아래 끝까지만 늘려 페이지 전체 스크롤이 생기지 않게 한다.
 function fit(){for(const id of ['log','slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
   if(top>0)pre.style.height=Math.max(160,innerHeight-top-22)+'px'}}
