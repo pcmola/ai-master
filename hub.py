@@ -900,7 +900,8 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 .sc .opts{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}.sc .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sc button.main{background:var(--blue);border-color:var(--blue);color:#fff}.jobstate{font-size:13px}
 .s2links{font-size:13px;border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px}.s2links a{color:var(--blue);text-decoration:none}
-.s2links .head{display:flex;gap:16px;align-items:center}.s2links a,.s2links button{white-space:nowrap}
+.s2links .head{display:flex;gap:12px;align-items:center;flex-wrap:nowrap}.s2links .head>span{white-space:nowrap}.s2links .head>span.az{min-width:0;overflow:hidden;text-overflow:ellipsis}.s2links .head button{padding:2px 8px;flex:none}.sc>*,.s2links>*{min-width:0}
+@media(max-width:1250px){.s2links .head{flex-wrap:wrap}}@media(max-width:1400px){.sc.s3 .row{flex-wrap:wrap!important}}.s2links a,.s2links button{white-space:nowrap}
 .jobstate.running{color:var(--warn)}.jobstate.ok{color:var(--ok)}.jobstate.fail{color:var(--bad)}
 #splan{border-bottom:1px solid var(--line);padding:8px 14px;font-size:13px;display:grid;gap:5px}
 #splan .ph{display:flex;gap:10px;align-items:center;flex-wrap:wrap}#splan .ph b{font-size:13px}
@@ -1025,7 +1026,7 @@ async function loadS2Links(refresh){const box=document.getElementById('s2links')
   const doc=x=>`${a(x.local,x.title,'wiki-viewer')}${x.devops?' · '+a(x.devops,'Azure DevOps','devops'):''}`;
   const sp=d.status_page;
   const up=(d.vms||[]).filter(v=>v.state==='운영').length,n=(d.vms||[]).length;
-  box.innerHTML=`<div class="head">${sp?'<span>Wiki: '+doc(sp)+'</span>':''}<span>Azure: ${a(d.portal_vms,'Proxy VM 목록','azure-portal')} <span class="muted">${d.error?esc(d.error):n?`${n}대 중 ${up}대 실행 중`:'Proxy VM 없음'}</span></span>`
+  box.innerHTML=`<div class="head">${sp?'<span>Wiki: '+doc(sp)+'</span>':''}<span class="az" title="${esc(d.error||"")}">Azure: ${a(d.portal_vms,'Proxy VM 목록','azure-portal')} <span class="muted">${d.error?esc(d.error):n?`${up}/${n}대 실행 중`:'Proxy VM 없음'}</span></span>`
     +`<button class="slog" style="margin-left:auto" onclick="loadS2Links(true)">새로 읽기</button></div>`}
 // ---------------------------------------------------------------- 시나리오 실행
 let jobs={}, slogKey=null, approvalShown=null;
