@@ -640,12 +640,15 @@ def run_plan(key: str, start: int = 0) -> dict | None:
     with open(log, "rb") as f:
         f.seek(max(start, size - 512 * 1024))
         rows = f.read().decode("utf-8", errors="replace").splitlines()
-    parsed = [m.groups() for m in map(_TRACE_LINE.match, rows) if m]
-    head = next((i for i in range(len(parsed) - 1, -1, -1)
-                 if parsed[i][3].startswith("◆ Planning") and "-step plan generated" in parsed[i][3]), None)
+    head = next((i for i in range(len(rows) - 1, -1, -1)
+                 if "◆ Planning" in rows[i] and "-step plan generated" in rows[i]), None)
     if head is None:
         return None
-    tid = parsed[head][2]
+    # 계획이 있는 실행 뒤에 다른 작업(테스트 환경 준비·원상 복구 등)을 돌렸으면 그 계획은 지금 화면과 맞지 않는다.
+    if any(r.startswith("===== ") and " 시작: " in r for r in rows[head:]):
+        return None
+    parsed = [m.groups() for m in map(_TRACE_LINE.match, rows) if m]
+    tid = _TRACE_LINE.match(rows[head]).group(3)
     lines = [(d, t, text) for d, t, i, text in parsed if i == tid]
     plan = {"id": tid, "goal": "", "started": "", "steps": [], "checks": [], "sim": "", "status": "running",
             "ended": "", "summary": ""}
@@ -1076,7 +1079,8 @@ async function loadSLog(){const pre=document.getElementById('slog');const atEnd=
   pre.textContent=await fetchLog(slogKey);document.getElementById('sall').hidden=!cleared[slogKey];if(atEnd)pre.scrollTop=pre.scrollHeight;loadPlan()}
 // 실행 계획 패널: 로그가 빨리 흘러가도 계획·사전 점검·진행 단계를 로그 위에 고정해 보여 준다(/api/plan 이 로그를 해석).
 let planFold=localStorage.getItem('hub-plan-fold')==='1';
-function foldPlan(){planFold=!planFold;localStorage.setItem('hub-plan-fold',planFold?'1':'0');loadPlan()}
+let oldOpen='';  // 지난 실행 기록을 펼쳐 본 trace id (이 화면에서만)
+function foldPlan(old,id){if(old)oldOpen=oldOpen===id?'':id;else{planFold=!planFold;localStorage.setItem('hub-plan-fold',planFold?'1':'0')}loadPlan()}
 const toDate=s=>s&&s.length>8?new Date(s.replace(' ','T')):null;
 function dur(a,b){const x=toDate(a),y=b?toDate(b):new Date();if(!x||!y)return'';const s=Math.max(0,Math.round((y-x)/1000));
   return s<60?s+'초':Math.floor(s/60)+'분 '+(s%60)+'초'}
@@ -1086,13 +1090,18 @@ async function loadPlan(){const box=document.getElementById('splan');const key=s
   // 끝 줄(■) 없이 작업이 끝났으면(강제 종료 등) 진행 중이 아니라 중단으로 본다.
   const live=Object.entries(JOBS_LOG).some(([j,k])=>k===key&&jobs[j]&&jobs[j].state==='running');
   const st=p.status==='running'&&!live?'stopped':p.status;
+  // 이번 허브에서 실행한 작업이 아니면(허브를 켜기 전 실행 등) 지난 기록으로 보고 한 줄로 접어 둔다.
+  const ps=toDate(p.started),mine=live||Object.entries(JOBS_LOG).some(([j,k])=>{const x=jobs[j];
+    return k===key&&x&&x.started&&ps&&Math.abs(ps-new Date(x.started))<60000});
+  const old=!mine,fold=old?oldOpen!==p.id:planFold;
   const ST={running:['● 실행 중','running'],ok:['✓ 완료','ok'],error:['✗ 오류','fail'],cancelled:['… 취소','fail'],stopped:['■ 중단(끝 기록 없음)','fail']}[st]||[st,''];
   const icon={planned:'○',running:'●',done:'✓',error:'✗',skipped:'–'};
   const total=dur(p.started,st==='running'?'':p.ended);
-  let h=`<div class="ph"><b>실행 계획</b><span class="jobstate ${ST[1]}">${ST[0]}</span>`
-    +`<span class="muted">${esc(p.started)} 시작${total?' · '+total+(st==='running'?'째':''):''} · trace ${esc(p.id)}</span>`
-    +`<button onclick="foldPlan()">${planFold?'펼치기':'접기'}</button></div>`;
-  if(planFold){const cur=p.steps.findIndex(s=>s.status==='running');
+  let h=`<div class="ph"><b>${old?'지난 실행 기록':'실행 계획'}</b><span class="${old?'muted':'jobstate '+ST[1]}">${ST[0]}</span>`
+    +`<span class="muted">${esc(p.started)} 시작${old&&ps?' ('+since(p.started.replace(' ','T'))+' 전)':''}${total?' · '+total+(st==='running'?'째':''):''} · trace ${esc(p.id)}</span>`
+    +`<button onclick="foldPlan(${old},'${esc(p.id)}')">${fold?'펼치기':'접기'}</button></div>`;
+  if(fold&&old){}
+  else if(fold){const cur=p.steps.findIndex(s=>s.status==='running');
     h+=`<div class="muted">${cur>=0?`지금 ${cur+1}/${p.steps.length} 단계: ${esc(p.steps[cur].name)} — ${esc(p.steps[cur].desc)}`:esc(p.goal)}</div>`}
   else{if(p.goal)h+=`<div>목표: ${esc(p.goal)}</div>`;
     if(p.checks.length)h+=`<div class="chk"><span class="muted">사전 점검</span>`+p.checks.map(c=>`<span class="chip${c.ok?'':' no'}" title="${esc(c.note)}">${c.ok?'✓':'△'} ${esc(c.name)}${c.ok?'':' · '+esc(c.note)}</span>`).join('')+`</div>`;
