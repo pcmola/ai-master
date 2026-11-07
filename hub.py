@@ -1111,8 +1111,10 @@ async function loadPlan(){const box=document.getElementById('splan');const key=s
         +`<span title="${esc(s.desc)}">${esc(s.desc)}</span><span class="nt" title="${esc(note)}">${esc(note)}${note&&t?' · ':''}${t}</span></li>`}).join('')+'</ol>'}
   box.innerHTML=h;box.hidden=false;fit()}
 // 로그 창은 화면 아래 끝까지만 늘려 페이지 전체 스크롤이 생기지 않게 한다.
+// 높이를 바꾸기 전에 맨 아래를 보고 있었으면 바꾼 뒤에도 맨 아래에 붙인다(위 실행 계획 패널이 커지면 마지막 줄이 가려지던 문제).
 function fit(){for(const id of ['log','slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
-  if(top>0)pre.style.height=Math.max(160,innerHeight-top-22)+'px'}}
+  if(top<=0)continue;const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
+  pre.style.height=Math.max(160,innerHeight-top-22)+'px';if(atEnd)pre.scrollTop=pre.scrollHeight}}
 addEventListener('resize',fit);setInterval(fit,500);
 refresh();setInterval(refresh,3000);setInterval(staleCheck,1000);setInterval(()=>{if(!document.getElementById('pane-scenarios').hidden)refreshJobs()},2000);
 tab(location.hash==='#scenarios'?'scenarios':'servers');
