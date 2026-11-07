@@ -377,8 +377,6 @@ JOBS = {
                "self_log": False, "options": {}},
     "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
                         "self_log": False, "options": {}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
-    "scenario2-restore": {"title": "시나리오 2 · 원상 복구", "script": "test/scenario2/setup_env.py", "log": "scenario2",
-                          "self_log": False, "options": {}, "base": ["--restore"]},  # 문서를 실제 VM 과 같은 정상 표로
 }
 JOB_LOGS = {j["log"] for j in JOBS.values()}
 RUNNING: dict[str, dict] = {}  # 작업 → {proc, pid, started, args, finished, code}
@@ -939,7 +937,6 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
-<button id="s2restore" onclick="runJob('scenario2-restore')" title="test/scenario2/setup_env.py --restore: 테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌린다(VM 시작 없음, wiki-repo 로컬 커밋만). 다시 시험하려면 '테스트 환경 준비'">원상 복구</button>
 <button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div>
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div>
@@ -1048,14 +1045,14 @@ function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
 async function runJob(job,options={}){
   const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
   const d=await r.json();if(d.error){alert(d.error);return}const lk=JOBS_LOG[job];showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');setTimeout(refreshJobs,300)}
-const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2','scenario2-restore':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','nsg-ip':'scenario3'};
+const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','nsg-ip':'scenario3'};
 // 카드 안 상태 줄: 카드 제목과 겹치는 '시나리오 N · '는 빼고 PID·인자는 마우스를 올리면 보이게(노트북 폭에서 줄이 넘치던 문제).
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,16),arg=j.args.length?' '+j.args.join(' '):'';
   const name=esc(j.title.replace(/^시나리오 \d · /,'')),tip=esc(`PID ${j.pid} · ${j.started.replace('T',' ')} 시작${arg}`);
   if(j.state==='running')return`<span class="jobstate running" title="${tip}">● ${name} 실행 중 (${since(j.started)}째)</span>`;
   return`<span class="jobstate ${j.code===0?'ok':'fail'}" title="${tip} · 종료 코드 ${j.code}">${j.code===0?'✓':'✗'} ${name} ${j.code===0?'완료':'실패(코드 '+j.code+')'} (${t} 시작)</span>`}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
-  const run=['scenario2','scenario2-setup','scenario2-restore'].some(k=>jobs[k]&&jobs[k].state==='running');['s2run','s2setup','s2restore'].forEach(id=>document.getElementById(id).disabled=run);
+  const run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');['s2run','s2setup'].forEach(id=>document.getElementById(id).disabled=run);
   const s3=['scenario3','scenario3-fault','scenario3-restore','nsg-ip'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
   ['s3run','s3inject','s3restore','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
@@ -1072,7 +1069,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   // 승인을 기다리기 시작하면 한 번만 자동으로 띄운다(팝업이 막혀 있으면 위 버튼으로 연다)
   const s3job=jobs.scenario3&&jobs.scenario3.started;
   if(jobs._approval&&s3job&&approvalShown!==s3job){approvalShown=s3job;openTop(jobs._approval,'approval')}
-  document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup']),jobLine(jobs['scenario2-restore'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
+  document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   // 서버 상태(/api/status)를 아직 못 받았으면 '꺼짐'이 아니라 '확인 중'(새로 고침 직후 잠깐 빨간 글자가 보이던 문제)
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:!lastOkText?'<span class="muted">서버 상태 확인 중…</span>':'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';

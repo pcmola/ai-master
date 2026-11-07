@@ -781,7 +781,7 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 | 탭 | 내용 |
 |---|---|
 | 로컬 서버 | 서버 표(상태·주소·PID·가동 시간, 시작·중지·재시작·로그)와 로그 창(**지우기**: 지금까지의 로그를 화면에서만 숨김, 파일은 그대로. **전체 보기**로 되돌림. 시나리오 실행 탭 로그 창도 같음). 주소를 누르면 서버 화면이 새 창으로 열림 |
-| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창(화면 가로 전체 × 위쪽 절반)으로 엶(질의 입력부터 그 화면에서), 로그는 `scenario1.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행", "원상 복구"(`setup_env.py --restore`: 테스트 문서를 실제 Azure VM과 같은 정상 표로 되돌림, VM 시작 없음), 실행 상태·PID·종료 코드와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`3대 중 N대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "허용 IP 맞추기"(`sync_nsg_ip.py`), "프록시 로그 뷰어"(`proxy-log.local`을 화면 가로 전체 × 위쪽 절반 새 창으로 엶), "로그". 설명은 버튼 툴팁. 실행 중 승인 서버가 뜨면 승인 화면을 같은 크기의 새 창으로 한 번 자동으로 띄우고, "승인 화면 열기" 버튼도 보여 줌(크롬이 팝업을 막으면 버튼으로 열거나 주소창에서 `ai-master.local` 팝업 허용). "현재 심어진 장애"(원격 main 기준, 30초마다 fetch)와 최근 실행 1건 표시, `scenario3.log` 실시간 표시. Azure DevOps의 **proxy-config VM 배포** 파이프라인 실행도 10초마다 읽어 카드에 상태를 보이고, 배포 로그를 `scenario3.log`에 `[pipeline]` 줄로 이어 붙임(허브를 켜기 전에 끝난 실행은 제외) |
+| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창(화면 가로 전체 × 위쪽 절반)으로 엶(질의 입력부터 그 화면에서), 로그는 `scenario1.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행". 원상 복구 버튼은 없음(실행 후 승인하면 Wiki가 실제 VM과 같아짐, 터미널에서는 `setup_env.py --restore`). 실행 상태와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`N/3대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "IP 맞추기"(`sync_nsg_ip.py`), "프록시 로그"(`proxy-log.local`을 화면 가로 전체 × 위쪽 절반 새 창으로 엶), "로그". 설명은 버튼 툴팁. 실행 중 승인 서버가 뜨면 승인 화면을 같은 크기의 새 창으로 한 번 자동으로 띄우고, "승인 화면" 버튼도 보여 줌(크롬이 팝업을 막으면 버튼으로 열거나 주소창에서 `ai-master.local` 팝업 허용). "현재 심어진 장애"(원격 main 기준, 30초마다 fetch)와 최근 실행 1건 표시, `scenario3.log` 실시간 표시. Azure DevOps의 **proxy-config VM 배포** 파이프라인 실행도 10초마다 읽어 카드에 상태를 보이고, 배포 로그를 `scenario3.log`에 `[pipeline]` 줄로 이어 붙임(허브를 켜기 전에 끝난 실행은 제외) |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
 
@@ -1079,7 +1079,7 @@ flowchart LR
 
 ## 7. 프록시 VM 운영
 
-리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트(Squid 8080, NGINX 80)를 허용 클라이언트 IP에만 엽니다(NSG `Allow-SSH`, `Allow-squid-8080`, `Allow-nginx`). 이 PC의 공인 IP가 바뀌면 `sync_nsg_ip.py`(허브 "허용 IP 맞추기")로 출발지를 `PROXY_ALLOWED_CLIENTS`의 IP + 현재 IP로 맞춥니다(NSG 규칙 하나에 출발지 여러 개). Squid는 원래 3128이었는데, 2026-10-23 집 인터넷을 SK브로드밴드로 바꾼 뒤 3128로 나가는 연결이 막혀 2026-10-25에 8080으로 옮겼습니다.
+리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트(Squid 8080, NGINX 80)를 허용 클라이언트 IP에만 엽니다(NSG `Allow-SSH`, `Allow-squid-8080`, `Allow-nginx`). 이 PC의 공인 IP가 바뀌면 `sync_nsg_ip.py`(허브 "IP 맞추기")로 출발지를 `PROXY_ALLOWED_CLIENTS`의 IP + 현재 IP로 맞춥니다(NSG 규칙 하나에 출발지 여러 개). Squid는 원래 3128이었는데, 2026-10-23 집 인터넷을 SK브로드밴드로 바꾼 뒤 3128로 나가는 연결이 막혀 2026-10-25에 8080으로 옮겼습니다.
 
 | VM | 종류 | 접속 로그 위치 | 재시작·VM 중지 후 |
 |---|---|---|---|
@@ -1124,7 +1124,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 | 시나리오 | 시험 준비 | 실제로 바뀌는 것 | 정상으로 되돌리기 |
 |---|---|---|---|
 | 1 | 없음(wiki-repo 문서 그대로) | Wiki 등록 시 `00. AI 문서 생성` 아래 문서 | 등록한 문서 삭제 |
-| 2 | 허브 "테스트 환경 준비"(`setup_env.py`) | wiki-repo 테스트 문서(로컬 커밋), 승인 시 Task | "원상 복구"(실제 VM과 같은 정상 표) 또는 다시 "테스트 환경 준비" |
+| 2 | 허브 "테스트 환경 준비"(`setup_env.py`) | wiki-repo 테스트 문서(로컬 커밋), 승인 시 Task | 시나리오 2 실행 후 승인(Wiki가 실제 VM과 같아짐) 또는 다시 "테스트 환경 준비" |
 | 3 | 허브 "장애 재현"(`proxy_fault_inject.py`) | proxy-config 커밋·VM 설정, 승인 시 Task·PR·이력 Wiki | PR 병합·배포 또는 "원상 복구" |
 
 ### 8.1 시나리오 1 · 시험
@@ -1225,7 +1225,7 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
   - **② 실행**은 시작할 때와 끝날 때 운영 중인 squid VM의 배포된 설정(`/etc/proxy/proxy.conf`, `lists/*`)을 저장소 `origin/main`의 `squid/`와 비교합니다(`config_drift`). 다르면 로그에 `⚠ 경고`와 다른 파일 이름을 남깁니다. 병합한 수정이 배포되지 않은 경우를 잡으려고 넣었습니다(2026-10-31).
   - 장애 커밋·push는 됐는데 배포(SSH)가 실패했다면 같은 종류로 **장애 재현**을 다시 누릅니다. 같은 장애가 이미 심어져 있으면 커밋 없이 배포·시험 트래픽만 다시 합니다(다른 종류가 심어져 있으면 거절).
   - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
-  - 세 VM 모두 SSH가 `connect to host … port 22: Connection timed out`으로 실패하면 VM이 켜져 있어도 이 PC의 공인 IP가 NSG 허용 IP와 다른 경우입니다(회선 변경·테더링). 이때 시나리오 3은 "점검 불가"(종료 코드 2)로 끝나고 현재 공인 IP와 NSG 허용 IP를 비교한 원인 추정을 로그에 남깁니다(일부 VM만 못 읽어도 장애가 없으면 점검 불가). **허용 IP 맞추기**(`python proxy_tools\sync_nsg_ip.py`, 비교만: `--check`)로 NSG에 현재 IP를 넣은 뒤 다시 실행합니다(`PROXY_ALLOWED_CLIENTS`의 IP는 유지). Squid의 허용 클라이언트(`acl allowed_clients`)는 바꾸지 않습니다.
+  - 세 VM 모두 SSH가 `connect to host … port 22: Connection timed out`으로 실패하면 VM이 켜져 있어도 이 PC의 공인 IP가 NSG 허용 IP와 다른 경우입니다(회선 변경·테더링). 이때 시나리오 3은 "점검 불가"(종료 코드 2)로 끝나고 현재 공인 IP와 NSG 허용 IP를 비교한 원인 추정을 로그에 남깁니다(일부 VM만 못 읽어도 장애가 없으면 점검 불가). **IP 맞추기**(`python proxy_tools\sync_nsg_ip.py`, 비교만: `--check`)로 NSG에 현재 IP를 넣은 뒤 다시 실행합니다(`PROXY_ALLOWED_CLIENTS`의 IP는 유지). Squid의 허용 클라이언트(`acl allowed_clients`)는 바꾸지 않습니다.
   - 시험 트래픽은 이 PC에서 프록시 **8080** 포트로 보냅니다(`traffic.sh` 기본값, `PROXY_PORT`로 변경). 이 PC의 네트워크(집, SK브로드밴드)에서 3128로 나가는 연결이 막혀 Squid를 8080으로 옮겼습니다(2026-10-25).
 
 실행 출력은 `data/logs/scenario3.log`(허브에서 봄), 단계별 기록은 `data/traces/scenario3-*.jsonl`에 남습니다.

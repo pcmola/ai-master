@@ -170,7 +170,7 @@ def access_hint(failed: list[dict]) -> None:
     allowed = ", ".join(sorted({s for r in stale for s in r["src"]}))
     think("Observation", f"이 PC 공인 IP {want} ≠ NSG SSH 허용 IP {allowed} ({len(stale)}개 NSG)")
     print(f"원인 추정: 이 PC 의 공인 IP {want} 가 NSG SSH 허용 IP {allowed} 와 다릅니다 "
-          f"→ 허브 '허용 IP 맞추기'(python proxy_tools/sync_nsg_ip.py) 후 다시 실행")
+          f"→ 허브 'IP 맞추기'(python proxy_tools/sync_nsg_ip.py) 후 다시 실행")
 
 
 def sample_lines(rows: list[dict], n: int = 25) -> list[str]:
