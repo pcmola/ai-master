@@ -201,6 +201,10 @@ def scroll_to_last(page, marker: str):
 
 def hub(page):
     ready(page, SITES["hub"])
+    # 허브는 처음 열 때 로그를 허브 시작 시점으로 '지우기'한다. 촬영은 지난 실행 로그가 필요하므로 전체 보기 상태로 다시 연다.
+    page.evaluate("""async () => { const d = await (await fetch('/api/status')).json();
+      localStorage.setItem('hub.logStartAt', (d.log_start || {}).at || ''); localStorage.setItem('hub.logCleared', '{}'); }""")
+    ready(page, SITES["hub"])
     page.locator("#rows button").first.wait_for()
     shot(page, "hub-servers.png")
     page.locator("#mt-scenarios").click()

@@ -101,11 +101,18 @@ flowchart TD
 |---|---|---|
 | 1. 사용자 명령 입력 | "프록시 설정 가이드 알려줘", 주제·유형 인식, 모호하면 되묻기(포워드/리버스), 오타 교정 | 개념 사전, 자모 분해 + 편집 거리 오타 교정, 유형 선택 |
 | 2. Azure DevOps Wiki 검색 | 키워드 검색(proxy = 프록시 = 프락시), 의미 기반 검색(임베딩), 근거가 약하면 웹 검색 보완 | BM25 + 문자 bigram + `text-embedding-3-large`, Tavily 또는 GPT 웹 검색. 고정 16문항 hit@3 16/16(임베딩 가중치 8, 0.8이면 15/16, 2026-10-30 측정, [4.1](#41-주요-설정-값) 벤치마크) |
-| 3. RAG·LLM 분석·통합 | 관련 문서 선별, 중복·상충 정리, 단계별 구성 | 상위 15개 문서를 제목 단위 조각(청크)으로 나눠 질의와 가까운 조각 24개만 LLM에 전달(코드 블록·다이어그램은 자르지 않음, 같은·거의 같은 조각은 하나만). 입력 8,364 → 4,801토큰, 생성 57 → 34초(2026-10-24 측정). 같은 질의를 다시 하면 근거 지문이 같을 때 LLM을 건너뛰는 가이드 캐시로 22.1 → 0.6초(2026-10-30 측정, [6.1](#61-wiki-검색가이드-생성-wiki_searchpy)). AI가 등록한 문서(00. AI 문서 생성)는 재료에서 제외 |
+| 3. RAG·LLM 분석·통합 | 관련 문서 선별, 중복·상충 정리, 단계별 구성 | 상위 15개 문서를 조각(청크)으로 나눠 질의와 가까운 24개만 LLM에 전달. 아래 글머리 참고 |
 | 4. 가이드 문서 생성 | 설정 방법·예제·주의사항, 단계마다 근거 문서, 웹 출처 따로 표시, 원문 다이어그램 유지 | `OPENAI_MODEL`(gpt-6.1-sol) |
 | 5. 사용자 확인 | 미리보기, "Wiki에 등록" 또는 "새로 만들기", Markdown 복사·다운로드 | "Wiki에 등록"은 확인 창(팀원 공개·같은 제목 갱신 안내) 후 진행 |
 | 6. Wiki 문서 등록 | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목`으로 등록, 같은 제목이면 갱신(번호 유지, 이력은 git), Wiki 문서 규칙(채번·`.order`·인코딩·프록시 표기) 준수, 머리에 "AI 생성 · 모델 · 생성 일시 · 질의 · 근거 수" | `wiki_tools/wiki_register.py`. 로컬 뷰어 링크를 Wiki 안 링크로 바꾸고 push. push는 원격 최신 위 임시 작업 트리에서 이 문서 커밋만 만들어 올리므로, wiki-repo에 쌓인 로컬 전용 커밋(시나리오 2 테스트)은 올라가지 않음. 올린 뒤 로컬은 원격 위로 rebase |
 | 7. 결과 제공 | Azure DevOps Wiki 링크, 추가 질문·수정 요청(확장) | 등록 후 "Wiki에서 열기"·로컬 뷰어 링크. 가이드 아래 "수정 요청" 입력칸: 지금 가이드와 요청을 함께 보내 바뀐 절만 다시 받아 끼워 넣음(약 10초, 요청과 관계없는 부분은 유지, 사용자가 적은 문구는 그대로 반영). 고친 판을 그대로 등록 가능 |
+
+3단계(RAG·LLM 분석·통합) 구현 상세:
+
+- 조각은 제목 단위로 나누고, 코드 블록·다이어그램은 자르지 않습니다. 같거나 거의 같은 조각은 하나만 넘깁니다.
+- 입력은 8,364에서 4,801토큰으로, 생성 시간은 57초에서 34초로 줄었습니다(2026-10-24 측정).
+- 같은 질의를 다시 하면, 근거 지문이 같을 때 LLM을 건너뛰는 가이드 캐시로 22.1초에서 0.6초가 됩니다(2026-10-30 측정, [6.1](#61-wiki-검색가이드-생성-wiki_searchpy)).
+- AI가 등록한 문서(00. AI 문서 생성)는 재료에서 뺍니다.
 
 **실행 화면** (2026-10-30 촬영, 설명할 곳은 빨간 테두리)
 
@@ -166,7 +173,11 @@ flowchart TD
 
 ### 1.2 시나리오 2 · 프록시 현황 Wiki 현행화
 
-Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다. 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다. 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**하므로, 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다. 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#83-시나리오-2--실행-proxy_status_syncpy))
+Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으면 Teams 승인을 받아 Task를 만들고 문서를 갱신합니다.
+
+- 원칙은 **정확해야 하는 일(비교·대상 판별·표 갱신)은 규칙, 읽고 설명하는 일은 LLM**입니다.
+- 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**합니다. 그래서 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다.
+- 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#83-시나리오-2--실행-proxy_status_syncpy))
 
 ```mermaid
 flowchart TD
@@ -277,7 +288,12 @@ Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니
 
 ### 1.3 시나리오 3 · 장애 감지 및 자동 조치
 
-프록시 로그에서 장애를 감지하면 LLM이 로그·Wiki 사례·설정 저장소(proxy-config) 변경 이력으로 원인과 수정안을 도출하고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 만듭니다. 원칙은 시나리오 2와 같이 **감지·검증은 규칙, 읽고 판단하는 일은 LLM**이고, 설정 반영(PR 병합·배포)은 사람이 PR을 검토한 뒤에 합니다. 실행: `python proxy_tools\incident_response.py` (허브 **시나리오 실행** 탭의 시나리오 3 "② 실행", 변경 없이 분석만: `--dry-run`)
+프록시 로그에서 장애를 감지하면 LLM이 원인과 수정안을 찾고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 만듭니다.
+
+- 원인과 수정안은 로그, Wiki 사례, 설정 저장소(proxy-config) 변경 이력으로 찾습니다.
+- 원칙은 시나리오 2와 같이 **감지·검증은 규칙, 읽고 판단하는 일은 LLM**입니다.
+- 설정 반영(PR 병합·배포)은 사람이 PR을 검토한 뒤에 합니다.
+- 실행: `python proxy_tools\incident_response.py` (허브 **시나리오 실행** 탭의 시나리오 3 "② 실행". 변경 없이 분석만 하려면 `--dry-run`)
 
 ```mermaid
 flowchart TD
@@ -539,7 +555,10 @@ flowchart LR
   python -m pip install -r requirements.txt
   ```
 
-  이후 실행할 때도 먼저 `.\.venv\Scripts\Activate.ps1`를 실행합니다. PowerShell 실행 정책으로 활성화가 막히면 한 번만 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`를 적용합니다. `anthropic`와 `msal`은 각각 Claude fallback과 Teams Graph 연동용 선택 패키지입니다. 설치 후에는 프로젝트 폴더의 `start.bat`를 더블클릭해 가상환경에서 허브를 실행할 수 있습니다. 명령줄 옵션도 전달할 수 있습니다(예: `start.bat --no-browser`).
+  - 이후 실행할 때도 먼저 `.\.venv\Scripts\Activate.ps1`를 실행합니다.
+  - PowerShell 실행 정책으로 활성화가 막히면 한 번만 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`를 적용합니다.
+  - `anthropic`와 `msal`은 선택 패키지입니다. 각각 Claude fallback과 Teams Graph 연동에 씁니다.
+  - 설치 후에는 프로젝트 폴더의 `start.bat`를 더블클릭해 가상환경에서 허브를 실행할 수 있습니다. 명령줄 옵션도 전달할 수 있습니다(예: `start.bat --no-browser`).
 
 - `.env.sample`을 `.env`로 복사합니다([설정](#4-설정) 참고).
 
@@ -584,7 +603,11 @@ flowchart LR
 | `off` | 웹 검색 안 함 |
 
 - Tavily: <https://tavily.com> 에 가입해 API 키를 발급받아 `TAVILY_API_KEY`에 넣습니다(무료 플랜으로 시험 가능).
-- GPT: Azure 게이트웨이의 Responses API는 api-version `2025-03-01-preview` 이상에서만 열립니다. 가이드 생성용 `OPENAI_API_VERSION`과 따로 `WEB_SEARCH_API_VERSION`(기본 `2025-04-01-preview`)을 씁니다. 검색어와 열어 볼 페이지는 GPT가 정하고, 답 글의 인용(`url_citation`)을 출처별 결과로 바꿔 Tavily 결과와 같은 방식으로 거릅니다. 모델은 가이드 작성과 같은 `OPENAI_MODEL`(gpt-6.1-sol)입니다.
+- GPT: Azure 게이트웨이의 Responses API를 씁니다.
+  - 이 API는 api-version `2025-03-01-preview` 이상에서만 열립니다. 그래서 가이드 생성용 `OPENAI_API_VERSION`과 따로 `WEB_SEARCH_API_VERSION`(기본 `2025-04-01-preview`)을 씁니다.
+  - 검색어와 열어 볼 페이지는 GPT가 정합니다.
+  - 답 글의 인용(`url_citation`)을 출처별 결과로 바꿔, Tavily 결과와 같은 방식으로 거릅니다.
+  - 모델은 가이드 작성과 같은 `OPENAI_MODEL`(gpt-6.1-sol)입니다.
 
 지금은 **Tavily를 씁니다**(`auto`이고 Tavily 키가 있음). 같은 검색어로 비교한 결과입니다(2026-11-03 측정, 검색어 2개 평균).
 
@@ -600,7 +623,12 @@ flowchart LR
 
 어느 공급자든 위키 근거가 약할 때만 웹을 검색합니다(기준: `WEB_SEARCH_MIN_SIM`, `WEB_SEARCH_MIN_VARIANT_SIM`).
 
-가이드의 **수정 요청**도 따로 봅니다. 원 질의는 위키에 있어도 수정 요청이 위키 밖 사실을 물을 수 있기 때문입니다(예: "신규 인력 가이드"에 "SK이노베이션에 출근하려면?"). 수정 요청의 위키 유사도가 `WEB_SEARCH_MIN_SIM` 미만이면 LLM에 공개된 사실을 찾아야 하는지 묻습니다. 필요하다고 답하면 LLM이 준 검색어(예: `SK이노베이션 본사 주소`)로 검색하고, 필수어가 없는 결과는 버립니다. "3단계를 더 자세히"처럼 서식만 바꾸는 요청은 유사도가 낮아도 웹을 쓰지 않습니다. 가이드 끝의 '웹 참고 링크'에는 본문에서 실제로 인용한 결과만 붙습니다.
+가이드의 **수정 요청**도 따로 봅니다. 원 질의는 위키에 있어도 수정 요청이 위키 밖 사실을 물을 수 있기 때문입니다(예: "신규 인력 가이드"에 "SK이노베이션에 출근하려면?").
+
+- 수정 요청의 위키 유사도가 `WEB_SEARCH_MIN_SIM` 미만이면, LLM에 공개된 사실을 찾아야 하는지 묻습니다.
+- 필요하다고 답하면 LLM이 준 검색어(예: `SK이노베이션 본사 주소`)로 검색하고, 필수어가 없는 결과는 버립니다.
+- "3단계를 더 자세히"처럼 서식만 바꾸는 요청은 유사도가 낮아도 웹을 쓰지 않습니다.
+- 가이드 끝의 '웹 참고 링크'에는 본문에서 실제로 인용한 결과만 붙습니다.
 
 ### 3.6 Azure 구독과 Proxy VM
 
@@ -686,7 +714,12 @@ Copy-Item .env.sample .env
 .\.venv\Scripts\python.exe test\wiki_search_benchmark.py --output data\wiki-search-benchmark.json
 ```
 
-2026-10-30 현재 Wiki 1,031개 문서와 고정 16개 케이스로 실행한 결과는 `EMBED_WEIGHT=0.8`에서 15/16(93.8%), `EMBED_WEIGHT=8`(기본값)에서 16/16(100%)입니다(가장 낮은 정답 순위 2위). 2026-10-26 실행(1,032개 문서)은 각각 14/16(87.5%), 15/16(93.8%)였고, 그 뒤 케이스 1개의 정답 경로를 실제 위치(`01.-현황-정리/` 아래)로 고쳤습니다. 과거 코드 주석의 68.8%·87.5%는 당시 테스트셋이 저장되어 있지 않아 이 벤치마크로 재현되는 수치로 표기하지 않습니다.
+2026-10-30 현재 Wiki 1,031개 문서와 고정 16개 케이스로 실행한 결과입니다.
+
+- `EMBED_WEIGHT=0.8`: 15/16(93.8%)
+- `EMBED_WEIGHT=8`(기본값): 16/16(100%), 가장 낮은 정답 순위 2위
+- 2026-10-26 실행(1,032개 문서)은 각각 14/16(87.5%), 15/16(93.8%)였습니다. 그 뒤 케이스 1개의 정답 경로를 실제 위치(`01.-현황-정리/` 아래)로 고쳤습니다.
+- 과거 코드 주석의 68.8%·87.5%는 당시 테스트셋이 저장되어 있지 않았습니다. 그래서 이 벤치마크로 재현되는 수치로 표기하지 않습니다.
 
 임베딩 모델을 바꾸면 처음 실행할 때 문서 전체 임베딩을 다시 계산합니다(약 2분). 결과는 `data/wiki_search_cache.json`에 캐시됩니다.
 
@@ -881,7 +914,12 @@ flowchart LR
 - 실행 여부는 프로세스 명령줄의 스크립트 이름으로 찾으므로 직접 띄운 서버도 허브에 보이고 끌 수 있습니다(로그는 허브에서 시작한 서버만 남음).
 - 허브 콘솔에는 시각과 함께 시작 설정, 시작·중지 요청, 생성·종료한 PID, 상태 변화(직접 끄거나 서버가 죽은 경우 포함), 거부된 요청, 오류가 찍힙니다. 서버가 시작하자마자 죽으면 그 서버 출력의 마지막 줄도 함께 찍힙니다.
 
-허브를 켜면 Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어를 모두 다시 시작합니다. 코드를 고친 뒤 허브만 다시 켜면 서버에도 반영됩니다. 허브가 이미 떠 있으면 `python hub.py`가 그 허브 프로세스를 끄고 새로 띄웁니다. 끄지 않으려면 `--keep`을 붙이며, 이때는 "이미 사용 중"과 함께 PID가 나오고 종료합니다. 허브만 끄려면 다음을 실행합니다.
+- 허브를 켜면 Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어를 모두 다시 시작합니다. 코드를 고친 뒤 허브만 다시 켜면 서버에도 반영됩니다.
+- 허브를 켠 뒤 처음 화면을 열면 모든 로그 창이 허브를 켠 시점으로 '지우기' 된 상태입니다. 그 전 로그는 **전체 보기**로 봅니다.
+- 허브가 이미 떠 있으면 `python hub.py`가 그 허브 프로세스를 끄고 새로 띄웁니다.
+- 끄지 않으려면 `--keep`을 붙입니다. 이때는 "이미 사용 중"과 함께 PID가 나오고 종료합니다.
+
+허브만 끄려면 다음을 실행합니다.
 
 ```powershell
 Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | ForEach-Object { taskkill /PID $_.OwningProcess /F }
@@ -961,7 +999,10 @@ flowchart TD
 같은 질의를 다시 하면 LLM을 건너뛰고 저장된 가이드를 바로 보여 줍니다(약 37초 → 1초 안). 검색·근거 선택까지는 매번 다시 하고, 아래가 **모두** 같을 때만 씁니다.
 
 - 질의(앞뒤·연속 공백, 대소문자만 정리)와 고른 유형. 표현이 다른 질의는 따로 만듭니다.
-- 근거 지문: LLM에 넘길 근거 조각의 원문·경로와 근거 문장, 모델 이름, 프롬프트 버전(`GUIDE_PROMPT_VERSION`), 웹 검색을 할지 판단한 결과. 근거 문서가 고쳐지면 지문이 달라져 새로 만들고, 관계없는 위키 문서가 바뀐 것은 영향이 없습니다. 조각 순서는 지문에 넣지 않습니다. 관계없는 문서가 바뀌어도 점수 기준(단어 희소도·평균 길이)이 조금 변해 비슷한 조각의 순서가 뒤바뀌기 때문입니다. 시나리오 2 테스트 문서(`Proxy VM 현황`)는 시험할 때마다 일부러 틀린 값으로 되돌리므로 가이드 근거에서 뺍니다(`GUIDE_EXCLUDE`).
+- 근거 지문: LLM에 넘길 근거 조각의 원문·경로와 근거 문장, 모델 이름, 프롬프트 버전(`GUIDE_PROMPT_VERSION`), 웹 검색을 할지 판단한 결과입니다.
+  - 근거 문서가 고쳐지면 지문이 달라져 새로 만듭니다. 관계없는 위키 문서가 바뀐 것은 영향이 없습니다.
+  - 조각 순서는 지문에 넣지 않습니다. 관계없는 문서가 바뀌어도 점수 기준(단어 희소도·평균 길이)이 조금 변해 비슷한 조각의 순서가 뒤바뀌기 때문입니다.
+  - 시나리오 2 테스트 문서(`Proxy VM 현황`)는 가이드 근거에서 뺍니다(`GUIDE_EXCLUDE`). 시험할 때마다 일부러 틀린 값으로 되돌리기 때문입니다.
 - 웹 근거를 쓴 가이드는 `GUIDE_CACHE_WEB_DAYS`(기본 7일)가 지나면 새로 만듭니다. 웹 내용은 다시 검색해야 알 수 있어 지문에 넣지 않습니다.
 - 수정 요청 결과와 템플릿 가이드는 저장하지 않습니다. "새로 만들기"를 누르면 캐시를 보지 않고 새로 만들어 덮어씁니다.
 - 저장 위치: `data/guide_cache.json`(최근 300개). 트레이스 `guide_cache` 노드에 사용 여부와 이유(`없음`, `근거 바뀜`, `웹 근거 7일 지남`)가 남습니다.
@@ -1026,7 +1067,11 @@ flowchart TD
 - 노드: `refresh_index` → `analyze`(오타 교정 포함) → `hybrid_search`(안에 `embed_query`) → `select_sources` → `chunk_select`(조각 수·줄어든 글자 수·중복) → `web_decision` → `web_search`(검색어·결과·버린 수) → `llm_generate`(토큰·첫 줄 시각) 또는 `template`.
 - 줄은 단계가 끝날 때 찍히고 번호는 시작 순서입니다. 하위 단계가 있는 단계는 시작할 때 `▸ … 시작` 줄을 먼저 찍으므로, 들여 쓴 하위 줄은 항상 바로 위 `▸` 줄의 하위입니다.
 - 줄 앞 표시: `▸` 하위 단계가 있는 단계의 시작, `↻` 진행 중(LLM 응답을 기다리는 동안 5초마다, 첫 조각이 오기 전에도 로그가 멈춘 것처럼 보이지 않게), `✗` 실패(이유는 `error=`), `…` 연결이 끊겨 중단(cancelled). 번호는 시작 순서이고, 안쪽 노드가 먼저 끝나서 먼저 찍힙니다.
-- 줄 앞은 날짜·시각입니다(서버가 며칠씩 돌아도 어느 날 기록인지 알 수 있게 모든 줄에 날짜를 씀). 그 옆 8자리 16진수(예: `07902dac`)는 **트레이스 ID**로, 요청마다 새로 만듭니다. 요청 두 개가 동시에 돌아 줄이 섞여도 ID가 같은 줄만 보면 한 요청의 흐름을 따라갈 수 있고, `data/traces/*.jsonl`에서 `"trace_id"`로 같은 요청의 상세 기록을 찾습니다(예: `Select-String -Path data	races\wiki-search-*.jsonl -Pattern 07902dac`). 시나리오 2 로그도 같습니다.
+- 줄 앞은 날짜·시각입니다. 서버가 며칠씩 돌아도 어느 날 기록인지 알 수 있게 모든 줄에 날짜를 씁니다.
+- 그 옆 8자리 16진수(예: `07902dac`)는 **트레이스 ID**로, 요청마다 새로 만듭니다.
+  - 요청 두 개가 동시에 돌아 줄이 섞여도, ID가 같은 줄만 보면 한 요청의 흐름을 따라갈 수 있습니다.
+  - `data/traces/*.jsonl`에서 `"trace_id"`로 같은 요청의 상세 기록을 찾습니다(예: `Select-String -Path data\traces\wiki-search-*.jsonl -Pattern 07902dac`).
+  - 시나리오 2 로그도 같습니다.
 - JSONL에는 같은 내용이 요청당 한 줄(노드별 시작 오프셋·소요 시간·속성)로 들어갑니다. 질의 원문이 들어가므로 `data/`(Git 제외)에만 둡니다.
 
 #### 에이전트 추론 로그
@@ -1134,7 +1179,11 @@ flowchart LR
 
 ## 7. 프록시 VM 운영
 
-리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다. 인바운드는 SSH와 프록시 포트(Squid 8080, NGINX 80)를 허용 클라이언트 IP에만 엽니다(NSG `Allow-SSH`, `Allow-squid-8080`, `Allow-nginx`). 이 PC의 공인 IP가 바뀌면 `sync_nsg_ip.py`(허브 "IP 맞추기")로 출발지를 `PROXY_ALLOWED_CLIENTS`의 IP + 현재 IP로 맞춥니다(NSG 규칙 하나에 출발지 여러 개). Squid는 원래 3128이었는데, 2026-10-23 집 인터넷을 SK브로드밴드로 바꾼 뒤 3128로 나가는 연결이 막혀 2026-10-25에 8080으로 옮겼습니다.
+리소스 그룹 `WJY-PROXY-RG`에 VM 3대가 있고, 모두 podman Quadlet(`/etc/containers/systemd/<이름>.container`)으로 컨테이너를 띄웁니다.
+
+- 인바운드는 SSH와 프록시 포트(Squid 8080, NGINX 80)를 허용 클라이언트 IP에만 엽니다(NSG `Allow-SSH`, `Allow-squid-8080`, `Allow-nginx`).
+- 이 PC의 공인 IP가 바뀌면 `sync_nsg_ip.py`(허브 "IP 맞추기")로 출발지를 `PROXY_ALLOWED_CLIENTS`의 IP와 현재 IP로 맞춥니다. NSG 규칙 하나에 출발지를 여러 개 넣습니다.
+- Squid는 원래 3128이었습니다. 2026-10-23 집 인터넷을 SK브로드밴드로 바꾼 뒤 3128로 나가는 연결이 막혀, 2026-10-25에 8080으로 옮겼습니다.
 
 | VM | 종류 | 접속 로그 위치 | 재시작·VM 중지 후 |
 |---|---|---|---|
@@ -1260,9 +1309,17 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 | 4.5 llm_summary (AI) | 차이 전체를 2문장·120자 이내 존댓말로 요약해 LLM(`OPENAI_MODEL`)으로 승인 카드·화면·Task 맨 위에 "AI 요약 · 참고용"으로 넣음(위험도는 기준이 없어 표시하지 않음). 차이 목록은 규칙으로 만든 짧은 줄 그대로. 비교 자체는 규칙으로 하고 AI는 설명만 함. 데이터에 없는 사실은 '확인 필요'로 쓰게 함. 실패하거나 LLM 설정이 없으면 규칙 목록만 표시하고 트레이스에 이유를 남김 |
 | 5. approval | Teams 채널에 요약 카드와 **Yes · 현행화 / No · 기록만** 버튼을 보내고 이 PC의 승인 서버에서 답을 기다림(기본 15분, `SCENARIO2_TIMEOUT`). 웹후크가 없으면 승인 화면을 브라우저로 엶. No·시간 초과는 Teams에 알리고 종료. 이름 규칙으로만 찾은 VM이 있으면 카드에 "프록시로 추정한 VM(한 번만 확인)"을 붙임 |
 | 5.5 proxy_confirm | 승인(Yes) 직후 추정 VM에 태그를 붙여 확정(다음 실행부터 묻지 않음). Teams 카드의 Yes는 모두 프록시로 확정하고, 승인 화면(자세히 보기)에서 '프록시 아님'을 체크하면 그 VM은 `role=not-proxy` 태그를 붙이고 다시 비교해 반영에서 뺌. 태그 실패는 다음 실행 때 다시 물음 |
-| 6. backlog · task_create | 백로그 아래에 Task 생성: Epic `01. 공통`(#1) → Feature `[공통] Proxy 현황 관리` → 그 달 PBI `YYMM) Proxy VM 현황 Wiki 현행화` → Task `NN. [Proxy 현황] …`. Feature·PBI는 있으면 다시 쓰고 없으면 만들며(달이 바뀌면 새 PBI), Task는 PBI 아래 다음 순번. 담당자 = `SCENARIO2_ASSIGNEE` 또는 PAT 소유자, Area·Iteration은 상위 항목을 따름, 태그 `proxy-status; scenario2`. 이름·Epic은 `SCENARIO2_EPIC_ID`·`SCENARIO2_FEATURE`·`SCENARIO2_PBI`로 바꿈 |
+| 6. backlog · task_create | 백로그 아래에 Task 생성. Epic `01. 공통`(#1) → Feature `[공통] Proxy 현황 관리` → 그 달 PBI → Task `NN. [Proxy 현황] …`. 아래 글머리 참고 |
 | 7. wiki_update | 표를 Azure 값으로 고치고 `## 변경 이력`에 행 추가, 최종 수정일 갱신 → wiki-repo 커밋 (`SCENARIO2_PUSH=1`일 때만 push) |
 | 8. report | Task를 완료 상태(프로세스의 Completed 범주, 예: Done)로 바꾸고 댓글, Teams에 결과 카드 |
+
+6단계(backlog · task_create) 상세:
+
+- 그 달 PBI 이름은 `YYMM) Proxy VM 현황 Wiki 현행화`입니다.
+- Feature·PBI는 있으면 다시 쓰고 없으면 만듭니다. 달이 바뀌면 새 PBI를 만듭니다.
+- Task는 PBI 아래 다음 순번으로 만듭니다.
+- 담당자는 `SCENARIO2_ASSIGNEE` 또는 PAT 소유자입니다. Area·Iteration은 상위 항목을 따르고, 태그는 `proxy-status; scenario2`입니다.
+- 이름·Epic은 `SCENARIO2_EPIC_ID`·`SCENARIO2_FEATURE`·`SCENARIO2_PBI`로 바꿉니다.
 
 ```powershell
 python proxy_tools\proxy_status_sync.py              # Teams 승인 후 Task·Wiki 반영 (허브 "실행" 버튼과 같음)
@@ -1270,7 +1327,11 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
 ```
 
 - 옵션은 `--dry-run` 하나입니다. push·승인 대기 시간·비교할 문서는 `.env`의 `SCENARIO2_PUSH`, `SCENARIO2_TIMEOUT`, `SCENARIO2_WIKI_PAGE`로 정합니다. 다른 형식의 문서(예: `Proxy-VM-정리-('26.09.17-기준).md`)를 LLM 파싱으로 시험하려면 `SCENARIO2_WIKI_PAGE`에 그 경로를 넣습니다.
-- Teams의 Yes/No 버튼을 누르면 "받았습니다. 결과는 Teams 결과 카드로 알려 드립니다" 확인만 뜨고, 처리 단계(✓ Task 생성 → ✓ Wiki 현행화 → ✓ 완료 처리)와 링크는 Teams 결과 카드로 옵니다. 확인 화면의 "진행 상황 보기"나 카드의 "자세히 보기"로 연 브라우저 화면은 단계를 실시간으로 보여 주고, 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다. 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있고, 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
+- Teams의 Yes/No 버튼을 누르면 "받았습니다. 결과는 Teams 결과 카드로 알려 드립니다" 확인만 뜹니다.
+  - 처리 단계(✓ Task 생성 → ✓ Wiki 현행화 → ✓ 완료 처리)와 링크는 Teams 결과 카드로 옵니다.
+  - 확인 화면의 "진행 상황 보기"나 카드의 "자세히 보기"로 연 브라우저 화면은 단계를 실시간으로 보여 줍니다.
+  - 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다.
+  - 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있습니다. 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
 - 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **시나리오 실행** 탭에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
@@ -1283,14 +1344,21 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
   1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
   2. 60분 안에 **② 실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
   3. 끝나면 PR을 병합하고 VM에 배포합니다. PR 병합만으로는 VM에 반영되지 않습니다(소스 병합과 VM 배포를 따로 함).
-     - Azure DevOps **Pipelines** › **proxy-config VM 배포** › **Run pipeline**: 배포 대상 VM(`targetVMs`, 기본값 `wjy-proxy01`)에 main을 배포합니다. 칸을 비우면 실행 중인 squid VM 모두에 배포합니다(proxy-config `azure-pipelines.yml`, `az vm run-command`라 SSH 키·NSG 변경 없음, 서비스 연결 `proxy-vm-deploy`). 실행할 때 "문법 확인만"을 켜면 설치하지 않습니다.
+     - Azure DevOps **Pipelines** › **proxy-config VM 배포** › **Run pipeline**: 배포 대상 VM(`targetVMs`, 기본값 `wjy-proxy01`)에 main을 배포합니다.
+       - 칸을 비우면 실행 중인 squid VM 모두에 배포합니다.
+       - proxy-config의 `azure-pipelines.yml`이고, 서비스 연결은 `proxy-vm-deploy`입니다. `az vm run-command`를 써서 SSH 키·NSG를 바꾸지 않습니다.
+       - 실행할 때 "문법 확인만"을 켜면 설치하지 않습니다.
      - 또는 허브 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`): 심어진 장애가 있으면 되돌리는 커밋을 push하고, 없어도 지금 main을 wjy-proxy01에 배포한 뒤 시험 트래픽으로 확인합니다.
   - **② 실행**은 시작할 때와 끝날 때 운영 중인 squid VM의 배포된 설정(`/etc/proxy/proxy.conf`, `lists/*`)을 저장소 `origin/main`의 `squid/`와 비교합니다(`config_drift`). 다르면 로그에 `⚠ 경고`와 다른 파일 이름을 남깁니다. 병합한 수정이 배포되지 않은 경우를 잡으려고 넣었습니다(2026-10-31).
   - 경고가 나오면 파이프라인을 그 VM을 배포 대상으로 넣어 실행해 맞춥니다. 허브 **원상 복구**는 wjy-proxy01에만 배포하므로 다른 VM은 맞추지 못합니다.
   - main에 시험용 장애가 심어져 있는 동안에는 비교 기준이 정상이 아닙니다. 그래서 다른 VM이 있어도 경고 대신 관찰 줄만 남깁니다. 장애를 배포하지 않은 VM(예: wjy-proxy02)이 '다름'으로 잡히던 문제 때문입니다(2026-11-08).
   - 장애 커밋·push는 됐는데 배포(SSH)가 실패했다면 같은 종류로 **장애 재현**을 다시 누릅니다. 같은 장애가 이미 심어져 있으면 커밋 없이 배포·시험 트래픽만 다시 합니다(다른 종류가 심어져 있으면 거절).
   - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
-  - 세 VM 모두 SSH가 `connect to host … port 22: Connection timed out`으로 실패하면 VM이 켜져 있어도 이 PC의 공인 IP가 NSG 허용 IP와 다른 경우입니다(회선 변경·테더링). 이때 시나리오 3은 "점검 불가"(종료 코드 2)로 끝나고 현재 공인 IP와 NSG 허용 IP를 비교한 원인 추정을 로그에 남깁니다(일부 VM만 못 읽어도 장애가 없으면 점검 불가). **IP 맞추기**(`python proxy_tools\sync_nsg_ip.py`, 비교만: `--check`)로 NSG에 현재 IP를 넣은 뒤 다시 실행합니다(`PROXY_ALLOWED_CLIENTS`의 IP는 유지). Squid의 허용 클라이언트(`acl allowed_clients`)는 바꾸지 않습니다.
+  - 세 VM 모두 SSH가 `connect to host … port 22: Connection timed out`으로 실패하면, VM이 켜져 있어도 이 PC의 공인 IP가 NSG 허용 IP와 다른 경우입니다(회선 변경·테더링).
+    - 이때 시나리오 3은 "점검 불가"(종료 코드 2)로 끝나고, 현재 공인 IP와 NSG 허용 IP를 비교한 원인 추정을 로그에 남깁니다.
+    - 일부 VM만 못 읽어도 장애가 없으면 점검 불가로 끝납니다.
+    - **IP 맞추기**(`python proxy_tools\sync_nsg_ip.py`, 비교만: `--check`)로 NSG에 현재 IP를 넣은 뒤 다시 실행합니다. `PROXY_ALLOWED_CLIENTS`의 IP는 그대로 둡니다.
+    - Squid의 허용 클라이언트(`acl allowed_clients`)는 바꾸지 않습니다.
   - 시험 트래픽은 이 PC에서 프록시 **8080** 포트로 보냅니다(`traffic.sh` 기본값, `PROXY_PORT`로 변경). 이 PC의 네트워크(집, SK브로드밴드)에서 3128로 나가는 연결이 막혀 Squid를 8080으로 옮겼습니다(2026-10-25).
 
 실행 출력은 `data/logs/scenario3.log`(허브에서 봄), 단계별 기록은 `data/traces/scenario3-*.jsonl`에 남습니다.
@@ -1298,7 +1366,10 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
 **시험 기록**
 
 - 2026-10-24 (분석만): 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
-- 2026-10-25 (전 과정): 허용 도메인 오타(`.data.go.kr` → `.date.go.kr`)를 wjy-proxy01에 배포 → 감지(허용 도메인이 차단됨·차단 반복) → AI가 원인 커밋 `f7e50de`와 한 줄 수정안을 찾음 → Teams 승인 → Task #2508(PBI #2507) → proxy-config PR !1 → 장애 대응 이력 Wiki·Teams 결과 카드. PR을 병합(Task Done)하고 배포해 `traffic.sh` ok=20 fail=0으로 정상화했습니다. 이때 나온 문제(Wiki push 경고 섞임, CRLF 비교, Teams 링크에 조사 포함)는 고쳤습니다.
+- 2026-10-25 (전 과정): 허용 도메인 오타(`.data.go.kr` → `.date.go.kr`)를 wjy-proxy01에 배포해 시험했습니다.
+  - 흐름: 감지(허용 도메인이 차단됨·차단 반복) → AI가 원인 커밋 `f7e50de`와 한 줄 수정안을 찾음 → Teams 승인 → Task #2508(PBI #2507) → proxy-config PR !1 → 장애 대응 이력 Wiki·Teams 결과 카드.
+  - PR을 병합(Task Done)하고 배포해 `traffic.sh` ok=20 fail=0으로 정상화했습니다.
+  - 이때 나온 문제(Wiki push 경고 섞임, CRLF 비교, Teams 링크에 조사 포함)는 고쳤습니다.
 
 ### 8.5 README 화면 재촬영
 

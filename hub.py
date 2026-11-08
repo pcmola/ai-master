@@ -47,6 +47,8 @@ SERVERS = [s for s in [
      "port": 8768, "site": "proxy-log.local"},
 ] if (s["dir"] / s["script"]).is_file()]
 BY_KEY = {s["key"]: s for s in SERVERS}
+# 허브를 켤 때의 로그 파일 크기. 화면은 이 위치를 '지우기'한 것으로 보고 그 뒤 로그만 보여 준다(전체 보기로 되돌림).
+LOG_START: dict = {"at": "", "sizes": {}}
 
 # 서버를 띄운 셸(powershell -Command "python x.py")까지 한 묶음으로 보고 끄기 위해 셸 프로세스도 함께 읽는다.
 PS_LIST = (
@@ -807,7 +809,8 @@ class Handler(BaseHTTPRequestHandler):
                            "text/html; charset=utf-8")
         elif url.path == "/api/status":
             try:
-                self.send_json({"servers": server_status(), "time": datetime.now().isoformat(timespec="seconds")})
+                self.send_json({"servers": server_status(), "time": datetime.now().isoformat(timespec="seconds"),
+                                "log_start": LOG_START})
             except (OSError, subprocess.SubprocessError, ValueError) as exc:
                 log(f"상태 조회 실패: {type(exc).__name__}: {exc}")
                 self.send_json({"error": str(exc)}, 500)
@@ -1035,12 +1038,16 @@ function staleCheck(){const el=document.getElementById('time');const stale=Date.
   el.textContent=stale?'허브 응답 없음'+(lastOkText?' (마지막 확인 '+lastOkText+')':''):(lastOkText?'서버 상태 확인 '+lastOkText:'')}
 async function refresh(){
   try{const r=await fetch('/api/status');const d=await r.json();if(d.error)throw new Error(d.error);
-    servers=d.servers;lastOk=Date.now();lastOkText=d.time.slice(11);staleCheck();
+    servers=d.servers;lastOk=Date.now();lastOkText=d.time.slice(11);staleCheck();applyLogStart(d.log_start);
     document.getElementById('err').hidden=true;render();if(selected)loadLog()}
   catch(e){const el=document.getElementById('err');el.hidden=false;el.textContent='상태를 읽지 못했습니다: '+e.message}}
 // 로그 '지우기': 파일은 그대로 두고, 누른 시점의 파일 크기를 기억해 그 뒤만 보여 준다(브라우저에 저장, 새로고침해도 유지).
 const CLEARED_KEY='hub.logCleared';let cleared={};try{cleared=JSON.parse(localStorage.getItem(CLEARED_KEY)||'{}')}catch(e){}
 const logSize={};
+// 허브를 새로 켠 뒤 처음 열면 모든 로그를 허브를 켠 시점으로 '지우기'한다. 새로고침해도 다시 지우지 않고, 전체 보기는 유지된다.
+function applyLogStart(ls){if(!ls||!ls.at)return;let seen='';try{seen=localStorage.getItem('hub.logStartAt')||''}catch(e){}
+  if(seen===ls.at)return;cleared={};Object.entries(ls.sizes||{}).forEach(([k,v])=>{if(v>0)cleared[k]=v});saveCleared();
+  try{localStorage.setItem('hub.logStartAt',ls.at)}catch(e){}if(slogKey)loadSLog()}
 function saveCleared(){try{localStorage.setItem(CLEARED_KEY,JSON.stringify(cleared))}catch(e){}}
 async function fetchLog(key){const r=await fetch('/api/log?key='+encodeURIComponent(key)+'&from='+(cleared[key]||0));
   logSize[key]=+(r.headers.get('X-Log-Size')||0);return r.text()}
@@ -1203,6 +1210,11 @@ def main():
                f"--keep 없이 다시 실행하세요(그 허브만 끄고 새로 띄움)." if owner else "."))
         raise SystemExit(1)
     log(f"{HUB_TITLE} 시작: {server.url} (수신 {ip}:{port}, PID {os.getpid()})")
+    # 서버를 다시 시작하기 전에 잰다(다시 시작하며 찍는 '===== 시작' 줄부터 보이게)
+    for key in [s["key"] for s in SERVERS] + sorted(JOB_LOGS):
+        path = LOG_DIR / f"{key}.log"
+        LOG_START["sizes"][key] = path.stat().st_size if path.is_file() else 0
+    LOG_START["at"] = datetime.now().isoformat(timespec="seconds")
     log(f"  파이썬 {sys.executable}")
     log(f"  서버 출력 로그 폴더 {LOG_DIR}")
     for s in server_status(force=True):
