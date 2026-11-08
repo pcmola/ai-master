@@ -72,9 +72,6 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 
 ![시나리오 1 한눈에 보기](docs/images/slide-scenario1.png)
 
-<details>
-<summary>텍스트 흐름도 보기 (분기 포함)</summary>
-
 ```mermaid
 flowchart TD
     q(["사용자 명령<br/>'프록시 설정 가이드 알려줘'"]) --> a["1. 명령 해석<br/>개념·오타 교정<br/>유형 되묻기"]
@@ -101,8 +98,6 @@ flowchart TD
     class u user
     class wiki,web ext
 ```
-
-</details>
 
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
@@ -188,9 +183,6 @@ Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으
 
 ![시나리오 2 한눈에 보기](docs/images/slide-scenario2.png)
 
-<details>
-<summary>텍스트 흐름도 보기 (분기 포함)</summary>
-
 ```mermaid
 flowchart TD
     t(["1. 트리거<br/>직접 실행"]) --> w["2. Wiki 현황 조회<br/>표준 표: 규칙<br/>다른 형식: LLM + 원문 대조"]
@@ -214,8 +206,6 @@ flowchart TD
     class ap user
     class end0,end1 io
 ```
-
-</details>
 
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
@@ -311,9 +301,6 @@ Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니
 
 ![시나리오 3 한눈에 보기](docs/images/slide-scenario3.png)
 
-<details>
-<summary>텍스트 흐름도 보기 (분기 포함)</summary>
-
 ```mermaid
 flowchart TD
     t(["1. 트리거<br/>직접 실행"]) --> d["2. 로그 수집·감지<br/>SSH 로그 수집, 규칙 탐지<br/>+ AI 1차 분석"]
@@ -331,8 +318,6 @@ flowchart TD
     class t,d,sim,src,inj,task,pr,hist done
     class ap,review user
 ```
-
-</details>
 
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
