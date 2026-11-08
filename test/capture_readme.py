@@ -209,12 +209,34 @@ def hub(page):
     page.wait_for_function("document.querySelector('#slog').textContent.length > 100")
     # 마지막 실제 실행(승인까지 한 실행) 시작 줄로 스크롤한다. 그 뒤의 '새로 읽기' 기록 줄은 화면 아래로 밀린다.
     scroll_to_last(page, "시작: proxy_status_sync.py ")
+    try:  # 카드 아래 Wiki·Azure 링크(az·DevOps 조회라 처음엔 수 초 걸림)
+        page.wait_for_function("!document.getElementById('s2links').textContent.includes('불러오는 중')", timeout=60000)
+    except Exception:
+        print("s2links: 링크를 못 읽어 불러오는 중 상태로 찍음", flush=True)
+    plan_panel(page)
     shot(page, "hub-scenarios.png")
     with page.expect_response(lambda r: "/api/log?" in r.url and "scenario3" in r.url):
         page.locator('button.slog[data-key="scenario3"]').click()
     page.wait_for_function("document.querySelector('#slog').textContent.includes('incident_response')")
-    scroll_to_last(page, "시작: incident_response.py")
+    # 실행 시작 직후의 배포 설정 점검 줄 대신 계획(◆ Planning)부터 보이게 한다
+    scroll_to_last(page, "6-step plan generated")
+    plan_panel(page)
     shot(page, "scenario3-run.png")
+    # 시나리오 1(Wiki 검색 서버) 로그: 로그 위 실행 계획 패널에 가장 최근 질의 1건의 4단계 진행
+    with page.expect_response(lambda r: "/api/log?" in r.url and "wiki-search" in r.url):
+        page.locator('button.slog[data-key="wiki-search"]').click()
+    page.wait_for_function("document.querySelector('#slog').textContent.includes('guide/stream')")
+    scroll_to_last(page, "▶ guide/stream")
+    plan_panel(page)
+    shot(page, "hub-scenario1-log.png")
+
+
+def plan_panel(page):
+    """로그 위 실행 계획 패널이 그려질 때까지 기다리고(펼친 상태로) 빨간 테두리를 친다."""
+    page.wait_for_function("(() => { const p = document.getElementById('splan'); return p && !p.hidden && p.querySelector('li'); })()",
+                           timeout=15000)
+    page.wait_for_timeout(300)
+    mark(page, "document.getElementById('splan')")
 
 
 def proxy(page):
