@@ -1323,7 +1323,21 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 | Azure DevOps (`--only devops`) | 허브가 띄운 Chrome(전용 프로필, 포트 9222)에 붙어 시나리오별 승인 기록의 처리 단계 링크로 화면을 찍음 → 시나리오 2 `devops-scenario2-pbi.png`·`devops-scenario2-task.png`, 시나리오 3 `devops-scenario3-task.png`·`devops-scenario3-pr.png`·`devops-scenario3-pr-files.png`. 그 Chrome 창에서 Azure DevOps에 한 번 로그인해 두어야 함 | 없음(조회만). 이름·이메일·IP는 가리고 프로필 사진은 흐리게 |
 | Teams 카드 (`--only teams`) | `data/teams_cards/`에 남은 **실제 전송 카드** 중 종류별 최신 1장(시나리오 2·3의 승인 요청·결과)을 Adaptive Cards 공식 렌더러(`adaptivecards@3.0.5`)로 그림 → `teams-scenario2-approval.png`, `teams-scenario2-result.png`, `teams-scenario3-approval.png`, `teams-scenario3-result.png` | 없음. Teams에 다시 보내지 않음. 멘션 이름·계정·PC 이름은 그리기 전에, IP·이메일은 화면에서 가림 |
 
-로컬 승인 화면은 승인을 기다리는 동안에만 떠 있으므로, `approval_local.Approval`이 화면 내용과 끝난 뒤 진행 상태를 `data/approvals/`(Git 제외)에 남깁니다(`APPROVAL_ARCHIVE=0`이면 끔). Teams 카드는 `teams_notify.send`가 보낼 때마다 `data/teams_cards/`(Git 제외)에 JSON으로 남깁니다(`TEAMS_CARD_ARCHIVE=0`이면 끔). Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요해서 보내는 쪽에서 남깁니다. 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2(테스트 환경 준비 → 실행 → Yes)와 시나리오 3(장애 재현 → 실행 → Yes)을 실제로 한 번씩 실행합니다. 스크립트는 표시되는 IP·이메일·ID를 가리고 촬영하며, 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다. 공유 전에는 이미지도 직접 확인합니다. 시나리오 2 로그를 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다(비교·AI 요약만 수행, 로컬 로그·트레이스 기록).
+**촬영 전에 기록 남기기**
+
+- 로컬 승인 화면은 승인을 기다리는 동안에만 떠 있습니다. 그래서 `approval_local.Approval`이 화면 내용과 끝난 뒤 진행 상태를 `data/approvals/`(Git 제외)에 남깁니다. `APPROVAL_ARCHIVE=0`이면 남기지 않습니다.
+- Teams 카드는 `teams_notify.send`가 보낼 때마다 `data/teams_cards/`(Git 제외)에 JSON으로 남깁니다. `TEAMS_CARD_ARCHIVE=0`이면 남기지 않습니다.
+- 보내는 쪽에서 남기는 이유가 있습니다. Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요하기 때문입니다.
+- 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2와 3을 실제로 한 번씩 실행합니다.
+  - 시나리오 2: 테스트 환경 준비 → 실행 → Yes
+  - 시나리오 3: 장애 재현 → 실행 → Yes
+- 시나리오 2 로그만 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다. 비교와 AI 요약만 하고, 로컬 로그·트레이스에 기록합니다.
+
+**식별값 가리기**
+
+- 스크립트는 화면에 보이는 IP·이메일·ID를 가리고 촬영합니다.
+- 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다.
+- 공유하기 전에는 이미지도 직접 확인합니다.
 
 <sub>[↑ 목차로](#목차)</sub>
 
