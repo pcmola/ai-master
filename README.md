@@ -70,6 +70,11 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 
 명령어 한 줄로 기존 Azure DevOps Wiki를 검색하고, RAG(검색한 Wiki 문서를 근거로 LLM이 작성)로 통합 가이드 문서를 만듭니다. 사용자가 미리보기로 확인한 뒤 Wiki에 등록합니다. 승인 없이 자동 등록하면 LLM이 잘못 쓴 문서가 팀 Wiki에 쌓이므로, 화면의 버튼을 가벼운 승인으로 씁니다. 화면: <http://wiki-search.local>
 
+[![시나리오 1 한눈에 보기](docs/images/slide-scenario1.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/slide-scenario1.png)
+
+<details>
+<summary>텍스트 흐름도 보기 (분기 포함)</summary>
+
 ```mermaid
 flowchart TD
     q(["사용자 명령<br/>'프록시 설정 가이드 알려줘'"]) --> a["1. 명령 해석<br/>개념·오타 교정<br/>유형 되묻기"]
@@ -96,6 +101,8 @@ flowchart TD
     class u user
     class wiki,web ext
 ```
+
+</details>
 
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
@@ -179,6 +186,11 @@ Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으
 - 실제 운영에서는 Proxy VM이 **항상 켜져 있다고 가정**합니다. 그래서 꺼진 VM은 문서 갱신과 별도로 이상 징후로 알립니다.
 - 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#83-시나리오-2--실행-proxy_status_syncpy))
 
+[![시나리오 2 한눈에 보기](docs/images/slide-scenario2.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/slide-scenario2.png)
+
+<details>
+<summary>텍스트 흐름도 보기 (분기 포함)</summary>
+
 ```mermaid
 flowchart TD
     t(["1. 트리거<br/>직접 실행"]) --> w["2. Wiki 현황 조회<br/>표준 표: 규칙<br/>다른 형식: LLM + 원문 대조"]
@@ -202,6 +214,8 @@ flowchart TD
     class ap user
     class end0,end1 io
 ```
+
+</details>
 
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
@@ -295,6 +309,11 @@ Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니
 - 설정 반영(PR 병합·배포)은 사람이 PR을 검토한 뒤에 합니다.
 - 실행: `python proxy_tools\incident_response.py` (허브 **시나리오 실행** 탭의 시나리오 3 "② 실행". 변경 없이 분석만 하려면 `--dry-run`)
 
+[![시나리오 3 한눈에 보기](docs/images/slide-scenario3.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/slide-scenario3.png)
+
+<details>
+<summary>텍스트 흐름도 보기 (분기 포함)</summary>
+
 ```mermaid
 flowchart TD
     t(["1. 트리거<br/>직접 실행"]) --> d["2. 로그 수집·감지<br/>SSH 로그 수집, 규칙 탐지<br/>+ AI 1차 분석"]
@@ -312,6 +331,8 @@ flowchart TD
     class t,d,sim,src,inj,task,pr,hist done
     class ap,review user
 ```
+
+</details>
 
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
@@ -1409,6 +1430,19 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 - 스크립트는 화면에 보이는 IP·이메일·ID를 가리고 촬영합니다.
 - 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다.
 - 공유하기 전에는 이미지도 직접 확인합니다.
+
+**시나리오 슬라이드 다시 내보내기**
+
+- 1.1부터 1.3까지의 "한눈에 보기" 그림은 [`docs/slides/`](docs/slides/)의 PPT 원본에서 내보낸 것입니다.
+- 흐름이 바뀌면 PPT와 각 절의 텍스트 흐름도(mermaid)를 함께 고칩니다.
+- 3·4·5번 슬라이드를 2560×1440 PNG로 내보내 `docs/images/slide-scenario1.png`부터 `slide-scenario3.png`까지 덮어씁니다. PowerPoint가 설치된 PC에서는 아래처럼 내보낼 수 있습니다.
+
+```powershell
+$pp = New-Object -ComObject PowerPoint.Application
+$pres = $pp.Presentations.Open((Resolve-Path "docs\slides\AI_운영자동화_시나리오_20261109.pptx").Path, $true, $false, $false)
+3..5 | ForEach-Object { $pres.Slides.Item($_).Export("$PWD\docs\images\slide-scenario$($_ - 2).png", "PNG", 2560, 1440) }
+$pres.Close(); $pp.Quit()
+```
 
 <sub>[↑ 목차로](#목차)</sub>
 
