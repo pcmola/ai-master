@@ -113,21 +113,21 @@ flowchart TD
 
 `프록시 설정 가이드 알려줘`를 입력하면 포워드인지 리버스인지 먼저 묻습니다.
 
-![Wiki 검색 - 유형 확인](docs/images/wiki-search-type.png)
+[![Wiki 검색 - 유형 확인](docs/images/wiki-search-type.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/wiki-search-type.png)
 
 **② 가이드 생성 (캐시 저장 전)**
 
 - 포워드를 고르면 근거 문서를 다시 찾고 LLM이 가이드를 씁니다(52초).
 - 만든 가이드는 캐시에 저장됩니다. 촬영 중 Wiki에는 등록하지 않았습니다.
 
-![Wiki 검색 - 가이드 생성(캐시 저장 전)](docs/images/wiki-search-guide.png)
+[![Wiki 검색 - 가이드 생성(캐시 저장 전)](docs/images/wiki-search-guide.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/wiki-search-guide.png)
 
 **③ 같은 질의 다시 하기 (캐시 사용)**
 
 - "다시 선택"으로 같은 유형을 고르면 LLM 없이 저장된 가이드가 바로 나옵니다(약 1초).
 - 근거 문서가 바뀌었으면 새로 만듭니다. "새로 만들기"를 누르면 언제든 새로 만듭니다.
 
-![Wiki 검색 - 같은 질의 재요청(캐시 사용)](docs/images/wiki-search-cache.png)
+[![Wiki 검색 - 같은 질의 재요청(캐시 사용)](docs/images/wiki-search-cache.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/wiki-search-cache.png)
 
 > 가이드의 포트 값(예: `3128`)은 Wiki 원문 기준입니다. 실습 Squid 포트는 `8080`이니, 적용 전에 실제 설정과 대조합니다.
 
@@ -135,18 +135,18 @@ flowchart TD
 
 가이드 끝에 근거 문서와 원문 링크가 붙고, 그 아래에서 고칠 내용을 말로 요청합니다.
 
-![Wiki 검색 - 수정 요청](docs/images/wiki-search-revise.png)
+[![Wiki 검색 - 수정 요청](docs/images/wiki-search-revise.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/wiki-search-revise.png)
 
 **⑤ 웹 검색으로 보완**
 
 - 리버스를 고르면 Wiki에 그 내용이 적어서 웹 검색 결과를 근거에 더합니다.
 - 왼쪽 위에 `웹 검색 N건`이 붙고, 가이드에는 웹 자료로 보완했다고 적힙니다.
 
-![Wiki 검색 - 웹 검색으로 근거 보완](docs/images/wiki-search-web.png)
+[![Wiki 검색 - 웹 검색으로 근거 보완](docs/images/wiki-search-web.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/wiki-search-web.png)
 
 - 왼쪽 "웹 검색 결과"는 찾은 결과 전체, 가이드 끝 "웹 참고 링크"는 본문에서 실제로 인용한 것만입니다.
 
-![Wiki 검색 - 웹 검색 결과와 웹 참고 링크](docs/images/wiki-search-web-links.png)
+[![Wiki 검색 - 웹 검색 결과와 웹 참고 링크](docs/images/wiki-search-web-links.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/wiki-search-web-links.png)
 
 **⑥ 허브 로그와 실행 계획** (2026-11-08 촬영)
 
@@ -162,7 +162,7 @@ flowchart TD
 | `◆ Step`·`◆ Self-Correction` | 단계 시작, 질의 오타 교정(프록실 → 프록시) |
 | 번호가 붙은 줄(`02 analyze` 등) | 단계 안에서 실제로 호출한 노드와 걸린 시간 |
 
-![시나리오 1 - 허브 Wiki 검색 서버 로그와 실행 계획](docs/images/hub-scenario1-log.png)
+[![시나리오 1 - 허브 Wiki 검색 서버 로그와 실행 계획](docs/images/hub-scenario1-log.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/hub-scenario1-log.png)
 
 ### 1.2 시나리오 2 · 프록시 현황 Wiki 현행화
 
@@ -217,7 +217,7 @@ flowchart TD
 | wjy-proxy01 | 중지 · Standard_B1s | Running · Standard_B2ats_v2 |
 | wjy-proxy02 | 사설 IP 10.10.0.17 | 사설 IP 10.10.0.5 |
 
-![시나리오 2 - Azure Portal VM 목록(Wiki와 다른 곳)](docs/images/azure-scenario2-vms.png)
+[![시나리오 2 - Azure Portal VM 목록(Wiki와 다른 곳)](docs/images/azure-scenario2-vms.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/azure-scenario2-vms.png)
 
 **② 허브에서 실행** (2026-11-08 촬영)
 
@@ -233,47 +233,47 @@ flowchart TD
 | `◆ Simulation` | 실행 전 점검 4항목과 예상 분기(차이 없으면 종료, No면 알림만) |
 | `◆ Step`·`◆ Tool Call` | 단계마다 무엇을 호출했고 결과가 무엇인지 |
 
-![시나리오 2 - 허브 시나리오 실행 탭과 실제 실행 로그](docs/images/hub-scenarios.png)
+[![시나리오 2 - 허브 시나리오 실행 탭과 실제 실행 로그](docs/images/hub-scenarios.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/hub-scenarios.png)
 
 **③ Teams 승인 요청**
 
 AI 요약과 규칙으로 찾은 변경 5건, Yes·No·자세히 보기 버튼이 있습니다.
 
-![시나리오 2 - Teams 승인 요청 카드](docs/images/teams-scenario2-approval.png)
+[![시나리오 2 - Teams 승인 요청 카드](docs/images/teams-scenario2-approval.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/teams-scenario2-approval.png)
 
 **④ Yes 후 결과 알림**
 
 Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니다.
 
-![시나리오 2 - Teams 현행화 완료 카드](docs/images/teams-scenario2-result.png)
+[![시나리오 2 - Teams 현행화 완료 카드](docs/images/teams-scenario2-result.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/teams-scenario2-result.png)
 
 **⑤ Azure DevOps PBI**
 
 그 달 PBI 아래에 실행할 때마다 Task가 하나씩 붙습니다.
 
-![시나리오 2 - PBI와 하위 Task](docs/images/devops-scenario2-pbi.png)
+[![시나리오 2 - PBI와 하위 Task](docs/images/devops-scenario2-pbi.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/devops-scenario2-pbi.png)
 
 **⑥ Azure DevOps Task**
 
 변경 5건, 문서 링크, AI 요약이 들어가고 Wiki를 고친 뒤 Done이 됩니다.
 
-![시나리오 2 - Task 상세](docs/images/devops-scenario2-task.png)
+[![시나리오 2 - Task 상세](docs/images/devops-scenario2-task.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/devops-scenario2-task.png)
 
 **⑦ Wiki 문서 수정 전/후** (2026-11-02 23:21 실행, 빨간색 = 바뀐 곳)
 
 - 바뀐 값(SIZE·상태·사설 IP), 지워진 VM(취소선), 새 VM, 변경 이력 한 줄이 표시됩니다.
 - 수정 후 표는 ①의 Azure 화면과 같아집니다. 사설 IP는 그대로 보이고 공인 IP만 가렸습니다.
 
-![시나리오 2 - Wiki 현황 문서 수정 전/후](docs/images/wiki-scenario2-diff.png)
+[![시나리오 2 - Wiki 현황 문서 수정 전/후](docs/images/wiki-scenario2-diff.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/wiki-scenario2-diff.png)
 
 **⑧ 로컬 승인 화면과 처리 결과**
 
 - Teams 카드의 "자세히 보기"를 누르면 열리는 화면입니다.
 - 카드에서 바로 Yes를 누르면 "받았습니다"만 뜨고, 결과는 Teams 카드로 옵니다.
 
-![시나리오 2 - 로컬 승인 화면](docs/images/approval.png)
+[![시나리오 2 - 로컬 승인 화면](docs/images/approval.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/approval.png)
 
-![시나리오 2 - 승인 후 처리 결과 화면](docs/images/approval-progress.png)
+[![시나리오 2 - 승인 후 처리 결과 화면](docs/images/approval-progress.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/approval-progress.png)
 
 ### 1.3 시나리오 3 · 장애 감지 및 자동 조치
 
@@ -319,11 +319,11 @@ flowchart TD
 - 위쪽은 복구 뒤 시험 접속(모두 허용), 아래쪽은 장애 중 차단(`TCP_DENIED/403`)입니다.
 - 오른쪽 탐지 결과에는 과거 시험 기록도 섞여 있습니다.
 
-![시나리오 3 - Squid 실제 로그와 탐지 결과](docs/images/proxy-log.png)
+[![시나리오 3 - Squid 실제 로그와 탐지 결과](docs/images/proxy-log.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/proxy-log.png)
 
 NGINX VM을 고르면 리버스 프록시 로그를 봅니다.
 
-![시나리오 3 - NGINX 실제 로그](docs/images/proxy-log-nginx.png)
+[![시나리오 3 - NGINX 실제 로그](docs/images/proxy-log-nginx.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/proxy-log-nginx.png)
 
 **② 허브에서 실행** (2026-11-08 촬영)
 
@@ -332,52 +332,52 @@ NGINX VM을 고르면 리버스 프록시 로그를 봅니다.
 
 로그의 `◆ Planning`은 6단계 계획입니다. 로그 수집 → AI 분석·사례 검색 → 설정 확인·수정안 → 승인 → Task·PR → 이력 Wiki 순서입니다. `◆ Simulation`은 실행 전 점검과 예상 분기입니다.
 
-![시나리오 3 - 허브의 실제 실행 로그](docs/images/scenario3-run.png)
+[![시나리오 3 - 허브의 실제 실행 로그](docs/images/scenario3-run.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/scenario3-run.png)
 
 **③ Teams 조치 승인 요청**
 
 AI 분석, 탐지 3건, 원인 커밋, 수정안, 비슷한 장애 사례 링크가 들어갑니다.
 
-![시나리오 3 - Teams 조치 승인 요청 카드](docs/images/teams-scenario3-approval.png)
+[![시나리오 3 - Teams 조치 승인 요청 카드](docs/images/teams-scenario3-approval.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/teams-scenario3-approval.png)
 
 **④ 로컬 승인 화면과 처리 결과**
 
-![시나리오 3 - 로컬 조치 승인 화면](docs/images/scenario3-approval.png)
+[![시나리오 3 - 로컬 조치 승인 화면](docs/images/scenario3-approval.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/scenario3-approval.png)
 
-![시나리오 3 - 조치 처리 결과 화면](docs/images/scenario3-approval-progress.png)
+[![시나리오 3 - 조치 처리 결과 화면](docs/images/scenario3-approval-progress.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/scenario3-approval-progress.png)
 
 **⑤ Yes 후 결과 알림**
 
 - Task #2532, 수정 PR !14, 장애 대응 이력 Wiki가 만들어집니다.
 - **PR 생성은 복구 완료가 아닙니다.** 병합·배포·확인은 사람이 합니다.
 
-![시나리오 3 - Teams 조치 진행 카드](docs/images/teams-scenario3-result.png)
+[![시나리오 3 - Teams 조치 진행 카드](docs/images/teams-scenario3-result.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/teams-scenario3-result.png)
 
 **⑥ Azure DevOps Task**
 
 설명에 탐지 내용·원인·수정안이 들어가고, PR과 커밋이 연결됩니다.
 
-![시나리오 3 - 장애 조치 Task](docs/images/devops-scenario3-task.png)
+[![시나리오 3 - 장애 조치 Task](docs/images/devops-scenario3-task.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/devops-scenario3-task.png)
 
 **⑦ 수정 PR (병합 전)**
 
 PR 설명에 원인 커밋, 수정 내용, 확인 방법이 들어가고 Task가 연결됩니다.
 
-![시나리오 3 - 수정 PR 개요](docs/images/devops-scenario3-pr.png)
+[![시나리오 3 - 수정 PR 개요](docs/images/devops-scenario3-pr.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/devops-scenario3-pr.png)
 
 **⑧ 소스 비교 (병합 전/후)**
 
 `whitelist.txt`에서 `.date.go.kr` 한 줄만 `.data.go.kr`로 되돌립니다.
 
-![시나리오 3 - 수정 PR 파일 비교](docs/images/devops-scenario3-pr-files.png)
+[![시나리오 3 - 수정 PR 파일 비교](docs/images/devops-scenario3-pr-files.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/devops-scenario3-pr-files.png)
 
 **⑨ 병합 후**
 
 사람이 PR을 검토하고 병합하면 PR은 Completed, Task는 Done이 됩니다.
 
-![시나리오 3 - 병합된 PR](docs/images/devops-scenario3-pr-merged.png)
+[![시나리오 3 - 병합된 PR](docs/images/devops-scenario3-pr-merged.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/devops-scenario3-pr-merged.png)
 
-![시나리오 3 - 완료된 Task](docs/images/devops-scenario3-task-done.png)
+[![시나리오 3 - 완료된 Task](docs/images/devops-scenario3-task-done.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/devops-scenario3-task-done.png)
 
 **⑩ VM 배포 파이프라인** (2026-11-02 실행)
 
@@ -385,7 +385,7 @@ PR 설명에 원인 커밋, 수정 내용, 확인 방법이 들어가고 Task가
 - 문법 검사 → 백업 → 설치 → Squid 재시작을 거쳐 `DEPLOY_RESULT_OK`가 찍히면 성공입니다(빨간 테두리).
 - 테스트 중이라 기본 배포 대상은 wjy-proxy01입니다. 허브의 시나리오 3 로그에도 같은 줄이 `[pipeline]`으로 들어옵니다.
 
-![시나리오 3 - VM 배포 파이프라인 실행 로그](docs/images/devops-scenario3-pipeline.png)
+[![시나리오 3 - VM 배포 파이프라인 실행 로그](docs/images/devops-scenario3-pipeline.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/devops-scenario3-pipeline.png)
 
 **⑪ 복구 확인**
 
@@ -509,7 +509,7 @@ flowchart LR
 
 **Wiki 뷰어** (wiki-repo를 Azure DevOps Wiki처럼 읽기 전용으로 보여 줌):
 
-![Wiki 뷰어](docs/images/wiki-viewer.png)
+[![Wiki 뷰어](docs/images/wiki-viewer.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/wiki-viewer.png)
 
 <sub>[↑ 목차로](#목차)</sub>
 
@@ -857,7 +857,7 @@ Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | For
 
 **허브 - 로컬 서버 탭:**
 
-![허브 - 로컬 서버 탭](docs/images/hub-servers.png)
+[![허브 - 로컬 서버 탭](docs/images/hub-servers.png)](https://raw.githubusercontent.com/pcmola/ai-master/master/docs/images/hub-servers.png)
 
 <sub>[↑ 목차로](#목차)</sub>
 
