@@ -45,7 +45,7 @@ from common.paths import DATA_DIR  # noqa: E402
 from common.server import favicon, local_server, open_chrome, site_url  # noqa: E402
 from common.winlayout import BROWSERS, arrange_later  # noqa: E402
 
-RESULT_TITLES = ("처리 결과", "승인 접수")  # 이 제목의 브라우저 창을 화면 가로 전체 × 위쪽 55%으로 옮긴다
+RESULT_TITLES = ("처리 결과", "승인 접수")  # 이 제목의 브라우저 창을 화면 가로 전체 × 위쪽(내용 영역 42%)으로 옮긴다
 
 PORT = 8771
 ARCHIVE = DATA_DIR / "approvals"
@@ -98,11 +98,11 @@ def shell(title: str, inner: str, script: str = "") -> bytes:
             f'<script>{OPEN_TOP_JS}{script}</script></body></html>').encode("utf-8")
 
 
-# 새 창 링크(Task·PR·이력 Wiki 등)는 화면 가로 전체 × 위쪽 55% 창으로 연다. 같은 글자의 링크는 같은 창을 다시 쓴다.
+# 새 창 링크(Task·PR·이력 Wiki 등)는 화면 가로 전체 × 위쪽 40%(Azure DevOps 는 44%) 창으로 연다. 같은 글자의 링크는 같은 창을 다시 쓴다.
 # 팝업이 막히거나 Ctrl/Shift 를 누르고 클릭하면 원래대로 새 탭으로 연다.
 OPEN_TOP_JS = """document.addEventListener('click',e=>{const a=e.target.closest('a[target=_blank]');
 if(!a||e.ctrlKey||e.shiftKey||e.metaKey)return;
-const w=screen.availWidth,h=Math.round(screen.availHeight*0.55),l=screen.availLeft||0,t=screen.availTop||0;
+const w=screen.availWidth,h=Math.round(screen.availHeight*(/^https:\\/\\/dev\\.azure\\.com\\//.test(a.href)?0.44:0.4)),l=screen.availLeft||0,t=screen.availTop||0;
 const win=window.open(a.href,'top-'+a.textContent.trim().replace(/\\s+/g,'-'),`popup,width=${w},height=${h},left=${l},top=${t}`);
 if(win){win.opener=null;e.preventDefault()}});
 """
@@ -177,7 +177,7 @@ class Approval:
         self.excluded: list[str] = []
         self.token = secrets.token_urlsafe(9)
         self.decided, self.final_seen = threading.Event(), threading.Event()
-        self.arranged = False  # 처리 결과 창을 위쪽 55%으로 옮겼는지(한 번만)
+        self.arranged = False  # 처리 결과 창을 위쪽으로 옮겼는지(한 번만)
         self.answer: bool | None = None
         self.state = {"decision": None, "steps": [], "done": False, "ok": True, "message": "", "links": []}
         self.lock = threading.Lock()

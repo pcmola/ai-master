@@ -377,6 +377,8 @@ JOBS = {
                "self_log": False, "options": {}},
     "scenario2-setup": {"title": "시나리오 2 · 테스트 환경 준비", "script": "test/scenario2/setup_env.py", "log": "scenario2",
                         "self_log": False, "options": {}},  # 꺼진 VM 만 켜고 표·정답을 다시 만든다
+    "scenario2-restore": {"title": "시나리오 2 · 원상 복구", "script": "test/scenario2/setup_env.py", "log": "scenario2",
+                          "self_log": False, "options": {}, "base": ["--restore"]},  # 문서만 실제 VM 과 같은 정상 표로
 }
 JOB_LOGS = {j["log"] for j in JOBS.values()}
 RUNNING: dict[str, dict] = {}  # 작업 → {proc, pid, started, args, finished, code}
@@ -622,6 +624,43 @@ def job_status() -> dict:
     return out
 
 
+_JOB_START = re.compile(r"===== \S+ \S+ 시작: (.*) =====")
+
+
+def restore_needed(key: str) -> dict:
+    """로그를 처음부터 따라가며 지금 원상 복구가 필요한지 판단한다(허브 '원상 복구' 버튼을 켜고 끄는 데 씀).
+    시나리오 2: 테스트 환경 준비 성공 → 필요. 원상 복구 성공, 실행으로 Wiki 반영(wiki_update), 'Wiki 와 Azure 가 같음' → 불필요.
+    시나리오 3: 장애 재현 성공 → 필요. 원상 복구 성공, VM 배포 파이프라인 성공(수정 PR 병합 후 배포) → 불필요.
+    판단할 기록이 없으면 불필요로 본다."""
+    log = LOG_DIR / f"{key}.log"
+    if not log.is_file():
+        return {"need": False, "why": "기록 없음"}
+    with open(log, "rb") as f:
+        f.seek(max(0, log.stat().st_size - 1024 * 1024))
+        rows = f.read().decode("utf-8", errors="replace").splitlines()
+    need, why, pending = False, "기록 없음", None
+    for r in rows:
+        m = _JOB_START.match(r)
+        if m:
+            cmd = m.group(1)
+            if key == "scenario2" and "setup_env.py" in cmd:
+                pending = "restore" if "--restore" in cmd else "setup"
+            elif key == "scenario3" and "proxy_fault_inject.py" in cmd:
+                pending = "restore" if " restore" in cmd else "setup" if " apply" in cmd else None
+            else:
+                pending = None
+        elif "===== 종료: 코드 0," in r and pending:
+            need = pending == "setup"
+            why = {"scenario2": {"setup": "테스트 환경 준비 후 아직 반영 전", "restore": "원상 복구 완료"},
+                   "scenario3": {"setup": "장애 재현 후 아직 복구 전", "restore": "원상 복구 완료"}}[key][pending]
+            pending = None
+        elif key == "scenario2" and ((" wiki_update " in r and "commit=" in r) or "Wiki 와 Azure 가 같음" in r):
+            need, why = False, "실행으로 Wiki 가 실제 VM 과 같아짐"
+        elif key == "scenario3" and "===== 파이프라인 #" in r and "종료: succeeded" in r:
+            need, why = False, "VM 배포 파이프라인 성공(수정 반영)"
+    return {"need": need, "why": why}
+
+
 _TRACE_LINE = re.compile(r"(?:(\d{4}-\d{2}-\d{2}) )?(\d{2}:\d{2}:\d{2}) \[([0-9a-f]{6,})\] (.*)")
 _THINK = re.compile(r"◆ (\S+(?: \S+)?)\s{2,}(.*)")
 
@@ -706,6 +745,7 @@ def run_plan(key: str, start: int = 0) -> dict | None:
             if cur is None:  # 재계획으로 끼어든 단계
                 cur = {"name": name, "desc": s.group(2), "status": "planned", "started": "", "ended": "", "note": ""}
                 steps.append(cur)
+            cur["desc"] = s.group(2).strip() or cur["desc"]  # 실행할 때 설명이 바뀌면(예: 저장된 가이드 사용) 그 설명으로
             cur["status"], cur["started"] = "running", at(d, t)
         elif kind == "Replan":
             rest = body.split("남은 단계", 1)[-1]
@@ -783,7 +823,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/plan":
             qs = parse_qs(url.query)
             key = qs.get("key", [""])[0]
-            if key not in JOB_LOGS:
+            if key not in JOB_LOGS and key != "wiki-search":  # 시나리오 1 은 서버 로그에서 가장 최근 질의 1건
                 self.send_error(404)
                 return
             start = qs.get("from", ["0"])[0]
@@ -812,7 +852,8 @@ class Handler(BaseHTTPRequestHandler):
             # 시나리오 3 이 승인을 기다리는 동안 승인 서버 주소를 알려 화면이 승인 창을 띄우게 한다
             waiting = jobs.get("scenario3", {}).get("state") == "running" and approval_up()
             self.send_json({**jobs, "_fault": fault_state(), "_approval": APPROVAL_URL + "/" if waiting else None,
-                            "_pipeline": PIPELINE_STATE or None})
+                            "_pipeline": PIPELINE_STATE or None,
+                            "_restore": {k: restore_needed(k) for k in ("scenario2", "scenario3")}})
         else:
             self.send_error(404)
 
@@ -937,6 +978,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
+<button id="s2restore" onclick="if(confirm('테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로). 계속할까요?'))runJob('scenario2-restore')" disabled>원상 복구</button>
 <button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
 <div class="jobstate" id="s2state"></div>
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div>
@@ -1018,7 +1060,7 @@ function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t
 // 시나리오 2: Wiki 현황 문서와 Azure Portal VM 목록, 한 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
 async function loadS2Links(refresh){const box=document.getElementById('s2links');if(refresh)box.innerHTML='<span class="muted">다시 읽는 중…</span>';
   let d;try{d=await (await fetch('/api/s2links'+(refresh?'?refresh=1':''))).json()}catch(e){box.innerHTML='<span class="muted">링크를 불러오지 못했습니다.</span>';return}
-  // 링크도 화면 가로 전체 × 위쪽 55% 창으로 연다(openTop). 팝업이 막히면 새 탭으로 연다.
+  // 링크도 화면 가로 전체 × 위쪽 40% 창으로 연다(openTop). 팝업이 막히면 새 탭으로 연다.
   const a=(u,t,name)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" onclick="return !openTop(this.href,'${name}')">${esc(t)}</a>`:'';
   const doc=x=>`${a(x.local,x.title,'wiki-viewer')}${x.devops?' · '+a(x.devops,'Azure DevOps','devops'):''}`;
   const sp=d.status_page;
@@ -1036,25 +1078,32 @@ async function clearGuideCache(){if(!confirm('저장된 가이드 캐시를 모�
 function openServer(key){const s=servers.find(x=>x.key===key);
   if(!s||s.state!=='running'){alert((s?s.title:key)+' 서버가 꺼져 있습니다. 서버 탭에서 먼저 시작하세요.');return}
   openTop(s.url+'/',key)}
-// 화면 가로 전체 × 위쪽 55% 크기의 새 창으로 연다(허브 아래쪽이 보이도록). 같은 name 이면 그 창을 다시 쓴다.
+// 화면 가로 전체 × 위쪽 40% 크기의 새 창으로 연다(허브 아래쪽이 보이도록). 같은 name 이면 그 창을 다시 쓴다.
 // 팝업이 막히면 null 을 돌려준다(noopener 를 주면 늘 null 이라 대신 opener 를 끊는다).
-function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHeight*0.55),l=screen.availLeft||0,t=screen.availTop||0;
+function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHeight*(/^https:\/\/dev\.azure\.com\//.test(url)?0.44:0.4)),l=screen.availLeft||0,t=screen.availTop||0;
   const win=window.open(url,name,`popup,width=${w},height=${h},left=${l},top=${t}`);if(win)win.opener=null;return win}
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
   openTop(s.url+'/','wiki-search');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
-async function runJob(job,options={}){
-  const r=await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})});
-  const d=await r.json();if(d.error){alert(d.error);return}const lk=JOBS_LOG[job];showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');setTimeout(refreshJobs,300)}
-const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','nsg-ip':'scenario3'};
+// 누르는 즉시 같은 카드의 실행 버튼을 끈다(상태를 다시 읽기 전 두 번째 클릭이 '이미 실행 중' 팝업을 띄우던 문제).
+const JOB_BTNS={scenario2:['s2setup','s2run','s2restore'],scenario3:['s3inject','s3run','s3restore','s3nsg']};
+async function runJob(job,options={}){const lk=JOBS_LOG[job];(JOB_BTNS[lk]||[]).forEach(id=>document.getElementById(id).disabled=true);
+  let d;try{d=await (await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})})).json()}
+  catch(e){d={error:'허브에 요청하지 못했습니다: '+e.message}}
+  if(d.error){await refreshJobs();alert(d.error);return}showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');setTimeout(refreshJobs,300)}
+const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2','scenario2-restore':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','nsg-ip':'scenario3'};
 // 카드 안 상태 줄: 카드 제목과 겹치는 '시나리오 N · '는 빼고 PID·인자는 마우스를 올리면 보이게(노트북 폭에서 줄이 넘치던 문제).
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,16),arg=j.args.length?' '+j.args.join(' '):'';
   const name=esc(j.title.replace(/^시나리오 \d · /,'')),tip=esc(`PID ${j.pid} · ${j.started.replace('T',' ')} 시작${arg}`);
   if(j.state==='running')return`<span class="jobstate running" title="${tip}">● ${name} 실행 중 (${since(j.started)}째)</span>`;
   return`<span class="jobstate ${j.code===0?'ok':'fail'}" title="${tip} · 종료 코드 ${j.code}">${j.code===0?'✓':'✗'} ${name} ${j.code===0?'완료':'실패(코드 '+j.code+')'} (${t} 시작)</span>`}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
-  const run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');['s2run','s2setup'].forEach(id=>document.getElementById(id).disabled=run);
+  const run=['scenario2','scenario2-setup','scenario2-restore'].some(k=>jobs[k]&&jobs[k].state==='running');['s2run','s2setup'].forEach(id=>document.getElementById(id).disabled=run);
   const s3=['scenario3','scenario3-fault','scenario3-restore','nsg-ip'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
-  ['s3run','s3inject','s3restore','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
+  ['s3run','s3inject','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
+  // 원상 복구는 로그로 보아 필요할 때만 켠다(테스트 환경 준비·장애 재현 뒤). 꺼진 이유는 툴팁에.
+  const rs=jobs._restore||{};[['s2restore','scenario2',run,'test/scenario2/setup_env.py --restore: 테스트 문서를 실제 VM 과 같은 정상 표로'],
+    ['s3restore','scenario3',run3,'심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인 (proxy_fault_inject.py restore)']].forEach(([id,k,busy,tip])=>{
+    const b=document.getElementById(id),x=rs[k]||{};b.disabled=busy||!x.need;b.title=tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
   const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
     :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 심어진 장애: ${esc(f.active.join(', '))} → 시험 후 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted" title="병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구">(VM 은 배포해야 반영)</span>');
@@ -1069,7 +1118,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   // 승인을 기다리기 시작하면 한 번만 자동으로 띄운다(팝업이 막혀 있으면 위 버튼으로 연다)
   const s3job=jobs.scenario3&&jobs.scenario3.started;
   if(jobs._approval&&s3job&&approvalShown!==s3job){approvalShown=s3job;openTop(jobs._approval,'approval')}
-  document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
+  document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup']),jobLine(jobs['scenario2-restore'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   // 서버 상태(/api/status)를 아직 못 받았으면 '꺼짐'이 아니라 '확인 중'(새로 고침 직후 잠깐 빨간 글자가 보이던 문제)
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:!lastOkText?'<span class="muted">서버 상태 확인 중…</span>':'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
@@ -1088,10 +1137,12 @@ async function loadPlan(){const box=document.getElementById('splan');const key=s
   let p=null;try{p=await (await fetch('/api/plan?key='+encodeURIComponent(key)+'&from='+(cleared[key]||0))).json()}catch(e){}
   if(key!==slogKey)return;if(!p){box.hidden=true;fit();return}
   // 끝 줄(■) 없이 작업이 끝났으면(강제 종료 등) 진행 중이 아니라 중단으로 본다.
-  const live=Object.entries(JOBS_LOG).some(([j,k])=>k===key&&jobs[j]&&jobs[j].state==='running');
+  // 시나리오 1(Wiki 검색 서버)은 작업이 아니라 서버라서, 서버가 켜져 있으면 진행 중으로, 기록은 언제나 이번 것으로 본다.
+  const srv=key==='wiki-search',ws=srv&&wikiSearch();
+  const live=srv?!!(ws&&ws.state==='running'):Object.entries(JOBS_LOG).some(([j,k])=>k===key&&jobs[j]&&jobs[j].state==='running');
   const st=p.status==='running'&&!live?'stopped':p.status;
   // 이번 허브에서 실행한 작업이 아니면(허브를 켜기 전 실행 등) 지난 기록으로 보고 한 줄로 접어 둔다.
-  const ps=toDate(p.started),mine=live||Object.entries(JOBS_LOG).some(([j,k])=>{const x=jobs[j];
+  const ps=toDate(p.started),mine=srv||live||Object.entries(JOBS_LOG).some(([j,k])=>{const x=jobs[j];
     return k===key&&x&&x.started&&ps&&Math.abs(ps-new Date(x.started))<60000});
   const old=!mine,fold=old?oldOpen!==p.id:planFold;
   const ST={running:['● 실행 중','running'],ok:['✓ 완료','ok'],error:['✗ 오류','fail'],cancelled:['… 취소','fail'],stopped:['■ 중단(끝 기록 없음)','fail']}[st]||[st,''];

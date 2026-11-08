@@ -5,10 +5,10 @@ Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 �
 1. trigger      직접 실행(허브 '시나리오 실행' 탭 또는 명령줄)
 2. wiki_read    Wiki 문서의 'VM 목록' 표를 규칙으로 읽는다. 그 형식이 아니면 wiki_parse_llm: LLM 이 표준 형식으로
                 바꾸고, VM 이름이 원문에 실제로 있는지 대조한다(없으면 버림, IP 도 원문에 없으면 비움).
-                LLM 으로 읽은 문서는 형식이 제각각이라 7단계에서 표를 자동으로 고치지 않고 Task 에 수동 반영을 남긴다
+                LLM 으로 읽은 문서는 형식이 제각각이라 4단계에서 표를 자동으로 고치지 않고 Task 에 수동 반영을 남긴다
 3. azure_read   리소스 그룹의 VM 중 태그 SCENARIO2_TAG(기본 role=proxy)가 있거나, 이름이 proxy·prxy·pxy(+숫자)로
                 끝나는 VM(프록시로 추정)의 IP·상태·SIZE·리전을 읽는다. SCENARIO2_EXCLUDE_TAG(기본 role=not-proxy)는 뺀다
-   proxy_confirm  이름 규칙으로만 찾은 VM 은 5단계 승인 카드에서 한 번 확인받는다. Yes 면 확인한 VM 에 SCENARIO2_TAG,
+   proxy_confirm  이름 규칙으로만 찾은 VM 은 3단계 승인 카드에서 한 번 확인받는다. Yes 면 확인한 VM 에 SCENARIO2_TAG,
                 '프록시 아님'으로 고른 VM 에 SCENARIO2_EXCLUDE_TAG 태그를 붙여 다음부터 묻지 않고, 뺀 VM 은 비교에서 제외한다
 4. compare      신규·삭제·변경(사설/공인 IP, 상태, SIZE, 리전). 차이가 없으면 여기서 끝난다
    llm_summary  (AI) 차이 전체를 LLM(OPENAI_MODEL)으로 2문장 이내로 요약해 승인 카드·화면·Task 맨 위에 '참고용'으로 붙인다.
@@ -30,7 +30,7 @@ Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 �
 
 사용 예:
     python proxy_tools/proxy_status_sync.py               # Teams 승인 후 Task·Wiki 반영
-    python proxy_tools/proxy_status_sync.py --dry-run     # 1~4단계만 하고 할 일을 출력(아무것도 바꾸지 않음)
+    python proxy_tools/proxy_status_sync.py --dry-run     # 1–2단계(읽기·비교·요약)만 하고 할 일을 출력(아무것도 바꾸지 않음)
 """
 
 from __future__ import annotations
@@ -570,20 +570,17 @@ def write_wiki(text: str, message: str, push: bool) -> str:
 
 # ---------------------------------------------------------------- main
 
-PLAN = [("wiki_read", "Wiki 현황 표 읽기 (형식이 다르면 LLM 파싱 + 원문 대조)"),
-        ("azure_read", "Azure 에서 Proxy VM 조회 (태그·이름 규칙)"),
-        ("compare", "Wiki ↔ Azure 비교 (규칙)"),
-        ("llm_summary", "(AI) 차이 요약 → 승인 판단 근거"),
+PLAN = [("read", "Wiki 현황 표 읽기·Azure Proxy VM 조회 (형식이 다르면 LLM 파싱 + 원문 대조)"),
+        ("compare", "Wiki ↔ Azure 비교 (규칙) → (AI) 차이 요약"),
         ("approval", "Teams 승인 요청 (Yes/No·프록시 아님 선택)"),
-        ("task_create", "백로그 확인·Azure DevOps Task 생성"),
-        ("wiki_update", "Wiki 표 현행화·변경 이력 추가"),
+        ("apply", "Azure DevOps Task 생성·Wiki 표 현행화"),
         ("report", "Task 완료·Teams 결과 알림")]
 
 
 def preflight(args) -> None:
     """계획 수립과 시뮬레이션: 실행 조건으로 단계를 정하고, 각 단계의 전제를 실행 전에 확인한다."""
     plan("Wiki Proxy 현황을 Azure 실제 상태와 일치시키기" + (" (dry-run: 비교·요약까지)" if args.dry_run else ""),
-         PLAN[:4] if args.dry_run else PLAN)
+         PLAN[:2] if args.dry_run else PLAN)
     llm_ok = bool(os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY")
                   or os.environ.get("OPENAI_API_KEY"))
     checks = [("Wiki 문서", WIKI_PAGE.is_file(), WIKI_PAGE.name if WIKI_PAGE.is_file() else "없음 → 1단계에서 중단 예상"),
@@ -594,7 +591,7 @@ def preflight(args) -> None:
                     else "웹훅 없음 → 로컬 승인 화면으로 대체"),
                    ("Wiki push", PUSH, "Azure DevOps Wiki 에 push" if PUSH else "SCENARIO2_PUSH 꺼짐 → 로컬 커밋만")]
     simulate(checks)
-    think("Simulation", "예상 분기: 차이 없음 → 3단계에서 종료 · 표 형식 아님 → LLM 파싱, 7단계는 수동 반영 요청으로 대체"
+    think("Simulation", "예상 분기: 차이 없음 → 2단계에서 종료 · 표 형식 아님 → LLM 파싱, 4단계는 수동 반영 요청으로 대체"
                         + ("" if args.dry_run else " · 승인 No/시간 초과 → 알림만 하고 종료"))
 
 
@@ -603,7 +600,7 @@ def run(args) -> int:
     with span("trigger", mode="dry-run" if args.dry_run else "teams", push=PUSH):
         pass
     preflight(args)
-    plan_step("wiki_read")
+    plan_step("read")
     think("Tool Call", f"wiki.read({WIKI_PAGE.name}) → 표 파서")
     with span("wiki_read", page=WIKI_PAGE.name) as s:
         if not WIKI_PAGE.is_file():
@@ -620,10 +617,9 @@ def run(args) -> int:
     think("Observation", f"Wiki 현황 VM {len(wiki)}대 ({'규칙' if parsed_by == 'rule' else 'LLM'} 파싱)")
     if parsed_by == "llm":
         if not args.dry_run:
-            replan("LLM 으로 읽은 문서는 자동 수정하지 않음", drop=["wiki_update"],
-                   add=[("manual_request", "Task 에 문서 수동 반영 요청")], before="report")
-        print(f"Wiki 문서를 LLM 으로 읽었습니다(정해진 표 형식이 아님): VM {len(wiki)}대. 이 문서는 7단계에서 자동으로 고치지 않습니다.")
-    plan_step("azure_read")
+            replan("LLM 으로 읽은 문서는 자동 수정하지 않음", drop=["apply"],
+                   add=[("manual_request", "Azure DevOps Task 생성·문서 수동 반영 요청")], before="report")
+        print(f"Wiki 문서를 LLM 으로 읽었습니다(정해진 표 형식이 아님): VM {len(wiki)}대. 이 문서는 4단계에서 자동으로 고치지 않습니다.")
     think("Tool Call", f"az vm list -d -g {RESOURCE_GROUP} (태그 {os.environ.get('SCENARIO2_TAG', 'role=proxy')}, 이름 규칙 {NAME_PATTERN})")
     with span("azure_read", resource_group=RESOURCE_GROUP, pattern=NAME_PATTERN) as s:
         azure = proxy_vms()
@@ -652,7 +648,6 @@ def run(args) -> int:
             with span("teams_notify", kind="stopped_alert"):  # 문서는 맞아도 VM 이 꺼져 있으면 알린다
                 teams_notify.send(alert, "[Proxy 현황] 이상 징후", facts=[("리소스 그룹", RESOURCE_GROUP), ("감지 시각", when)])
         return 0
-    plan_step("llm_summary")
     ai = ai_summary(diffs, wiki, azure)
     think("Reflection", f"차이 {len(diffs)}건은 규칙 비교 결과(근거), AI 는 요약만 담당"
                         + (" · 중지 VM 이상 징후를 먼저 알림" if alert else "")
@@ -702,7 +697,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
     viewer = links[0][1]  # 로컬 뷰어 링크(wiki_links 첫 항목)
     if not decision:
         reason = "거절(No)" if decision is False else "시간 초과"
-        replan(f"승인 {reason} → 반영 단계 생략", drop=["task_create", "wiki_update", "manual_request", "report"])
+        replan(f"승인 {reason} → 반영 단계 생략", drop=["apply", "manual_request", "report"])
         print(f"승인되지 않아 종료합니다: {reason}. 기록은 data/traces/scenario2-*.jsonl 에 남았습니다.")
         if os.environ.get("TEAMS_WEBHOOK_URL"):
             from teams_tools import teams_notify
@@ -714,7 +709,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
             ap.finish(f"{reason}: 아무것도 바꾸지 않았습니다. Wiki 문서와 Task 는 그대로입니다.", [("Wiki 문서 보기", viewer)])
         return 1
 
-    plan_step("task_create")
+    plan_step("manual_request" if parsed_by == "llm" else "apply")
     step("Azure DevOps 백로그(Feature·PBI) 확인 중…")
     with span("backlog") as s:
         parent = backlog(dv, when)
@@ -733,7 +728,6 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
     print(f"Task #{task_id} 생성 (PBI #{parent['pbi']} 아래 {parent['next']:02d}번, 담당 {owner or '-'}): {dv.task_url(task_id)}")
     step(f"Task #{task_id} 생성 ({parent['next']:02d}번, 담당 {owner or '-'})", "ok", (f"Task #{task_id} 열기", dv.task_url(task_id)))
     if parsed_by == "llm":  # 형식이 제각각인 문서는 자동으로 고치지 않는다
-        plan_step("manual_request")
         with span("wiki_update", skipped="LLM 으로 읽은 문서(정해진 표 형식 아님)"):
             dv.add_comment(task_id, "<p><b>문서 수동 반영 필요</b>: 이 현황 문서는 정해진 표 형식이 아니어서(LLM 으로 읽음) "
                                     "자동으로 고치지 않았습니다. 위 변경 내역을 문서에 반영한 뒤 이 Task 를 완료 처리해 주세요.</p>")
@@ -750,7 +744,6 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
             ap.finish("Task 를 만들었습니다. 이 문서는 형식이 달라 자동으로 고치지 않았으니 Task 를 보고 문서를 고쳐 주세요.",
                       [(f"Task #{task_id} 열기", dv.task_url(task_id)), ("Wiki 문서 보기", viewer)])
         return 0
-    plan_step("wiki_update")
     step("Wiki 문서 현행화 중…")
 
     with span("wiki_update", push=PUSH) as s:

@@ -211,7 +211,7 @@ flowchart TD
 | 로그 | 의미 |
 |---|---|
 | `▶ proxy_status_sync` | 실행 시작. `[b9272b31]`은 이 실행의 id(같은 실행의 줄은 같은 id) |
-| `◆ Planning` | 8단계 계획: Wiki 읽기 → Azure 읽기 → 비교 → AI 요약 → 승인 → Task → Wiki 갱신 → 보고 |
+| `◆ Planning` | 5단계 계획: 읽기(Wiki·Azure) → 비교·AI 요약 → 승인 → Task·Wiki 반영 → 보고 |
 | `◆ Simulation` | 실행 전 점검 4항목과 예상 분기(차이 없으면 종료, No면 알림만) |
 | `◆ Step`·`◆ Tool Call` | 단계마다 무엇을 호출했고 결과가 무엇인지 |
 
@@ -309,7 +309,7 @@ NGINX VM을 고르면 리버스 프록시 로그를 봅니다.
 
 **② 허브에서 실행**
 
-로그의 `◆ Planning`은 9단계 계획(로그 수집 → AI 분석 → 사례 검색 → 설정 확인 → 수정안 → 승인 → Task → PR → 이력 Wiki), `◆ Simulation`은 실행 전 점검과 예상 분기입니다.
+로그의 `◆ Planning`은 6단계 계획입니다. 로그 수집 → AI 분석·사례 검색 → 설정 확인·수정안 → 승인 → Task·PR → 이력 Wiki 순서입니다. `◆ Simulation`은 실행 전 점검과 예상 분기입니다.
 
 ![시나리오 3 - 허브의 실제 실행 로그](docs/images/scenario3-run.png)
 
@@ -662,8 +662,8 @@ Copy-Item .env.sample .env
 | `SQUID_RUNTIME` | `podman` | VM에서 Squid 컨테이너를 띄운 런타임(로그 뷰어) |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
 | `TEAMS_CARD_ARCHIVE` | `1` | 보낸 Teams 카드를 `data/teams_cards/`에 JSON으로 남김(README 카드 화면용). `0`이면 끔 |
-| `TEAMS_WINDOW_ARRANGE` | `1` | 카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 55%으로 옮기고 앞으로 가져옴. `0`이면 끔 |
-| `WINDOW_ARRANGE` | `1` | 창 옮기기 전체 스위치(`common/winlayout.py`). 처리 결과 브라우저 창(제목 `처리 결과`·`승인 접수`)도 같은 크기로 옮김. `0`이면 모두 끔 |
+| `TEAMS_WINDOW_ARRANGE` | `1` | 카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 50%로 옮기고 앞으로 가져옴. `0`이면 끔 |
+| `WINDOW_ARRANGE` | `1` | 창 옮기기 전체 스위치(`common/winlayout.py`). 처리 결과 브라우저 창(제목 `처리 결과`·`승인 접수`)도 옮김. 이 창은 페이지 내용 영역이 화면 높이의 42%가 되게 탭 줄·주소창 높이를 더함. `0`이면 모두 끔 |
 | `FAULT_TRAFFIC_ROUNDS` | `3` | 장애 재현·원상 복구 뒤 보내는 시험 접속 횟수(도메인 4개 × N회, `proxy_fault_inject.py`). 허용 도메인 차단은 1건, DNS 장애는 도메인당 3회부터 잡힘 |
 | `SCENARIO3_DEPLOY_PIPELINE` | `proxy-config VM 배포` | 시나리오 3 조치 카드의 "② 병합 후 VM 배포" 버튼이 여는 파이프라인 이름(실행 목록 화면, 못 찾으면 Pipelines 첫 화면) |
 
@@ -781,7 +781,7 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 | 탭 | 내용 |
 |---|---|
 | 로컬 서버 | 서버 표(상태·주소·PID·가동 시간, 시작·중지·재시작·로그)와 로그 창(**지우기**: 지금까지의 로그를 화면에서만 숨김, 파일은 그대로. **전체 보기**로 되돌림. 시나리오 실행 탭 로그 창도 같음). 주소를 누르면 서버 화면이 새 창으로 열림 |
-| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창(화면 가로 전체 × 위쪽 55%)으로 엶(질의 입력부터 그 화면에서), 로그는 `scenario1.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행". 원상 복구 버튼은 없음(실행 후 승인하면 Wiki가 실제 VM과 같아짐, 터미널에서는 `setup_env.py --restore`). 실행 상태와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`N/3대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "IP 맞추기"(`sync_nsg_ip.py`), "프록시 로그"(`proxy-log.local`을 화면 가로 전체 × 위쪽 55% 새 창으로 엶), "로그". 설명은 버튼 툴팁. 실행 중 승인 서버가 뜨면 승인 화면을 같은 크기의 새 창으로 한 번 자동으로 띄우고, "승인 화면" 버튼도 보여 줌(크롬이 팝업을 막으면 버튼으로 열거나 주소창에서 `ai-master.local` 팝업 허용). "현재 심어진 장애"(원격 main 기준, 30초마다 fetch)와 최근 실행 1건 표시, `scenario3.log` 실시간 표시. Azure DevOps의 **proxy-config VM 배포** 파이프라인 실행도 10초마다 읽어 카드에 상태를 보이고, 배포 로그를 `scenario3.log`에 `[pipeline]` 줄로 이어 붙임(허브를 켜기 전에 끝난 실행은 제외) |
+| 시나리오 실행 | 새 창은 화면 가로 전체 × 위쪽 40%로 엶. 주소가 Azure DevOps(`dev.azure.com`)인 창만 44%<br/>**시나리오 1**: 실행하면 Wiki 검색 화면을 새 창으로 엶(질의 입력부터 그 화면에서). 로그는 `wiki-search.log`이고, 로그 위 실행 계획 패널에 가장 최근 질의 1건의 4단계 진행을 보여 줌<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행". "원상 복구"(`setup_env.py --restore`)는 문서만 실제 VM과 같은 정상 표로 되돌림. 로그로 보아 테스트 환경 준비 뒤 아직 반영 전일 때만 켜지고, 실행으로 Wiki가 반영되면 꺼짐(꺼진 이유는 툴팁). 실행 상태와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`N/3대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구"(로그로 보아 장애 재현 뒤에만 켜지고, 원상 복구나 VM 배포 파이프라인이 성공하면 꺼짐), "IP 맞추기"(`sync_nsg_ip.py`), "프록시 로그"(`proxy-log.local`을 새 창으로 엶), "로그". 버튼을 누르면 같은 카드의 실행 버튼을 바로 꺼서 두 번 실행되지 않게 함. 설명은 버튼 툴팁. 실행 중 승인 서버가 뜨면 승인 화면을 같은 크기의 새 창으로 한 번 자동으로 띄우고, "승인 화면" 버튼도 보여 줌(크롬이 팝업을 막으면 버튼으로 열거나 주소창에서 `ai-master.local` 팝업 허용). "현재 심어진 장애"(원격 main 기준, 30초마다 fetch)와 최근 실행 1건 표시, `scenario3.log` 실시간 표시. Azure DevOps의 **proxy-config VM 배포** 파이프라인 실행도 10초마다 읽어 카드에 상태를 보이고, 배포 로그를 `scenario3.log`에 `[pipeline]` 줄로 이어 붙임(허브를 켜기 전에 끝난 실행은 제외) |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
 
@@ -952,7 +952,7 @@ flowchart TD
 
 #### 트레이스
 
-요청마다 노드별 소요 시간과 결과가 허브 로그(`data/logs/scenario1.log`)와 `data/traces/`에 남습니다(`common/trace.py`).
+요청마다 노드별 소요 시간과 결과가 허브 로그(`data/logs/wiki-search.log`)와 `data/traces/`에 남습니다(`common/trace.py`).
 
 ```text
 2026-10-23 01:38:57 [07902dac] ▶ guide/stream  q=프록시 설정 가이드 알려줘 key=proxy variant=forward
@@ -976,15 +976,15 @@ flowchart TD
 
 #### 에이전트 추론 로그
 
-노드 줄이 '무엇을 얼마나 걸려 했나'라면, `◆`로 시작하는 줄은 '왜 그렇게 했나'를 보여 줍니다. 시나리오 1(가이드 생성)·2·3 모두 같은 형식이고, JSONL에는 `plan`(단계별 실행 여부)과 `reasoning`으로 남습니다. 실제 출력(2026-10-25):
+노드 줄이 '무엇을 얼마나 걸려 했나'라면, `◆`로 시작하는 줄은 '왜 그렇게 했나'를 보여 줍니다. 시나리오 1(가이드 생성)·2·3 모두 같은 형식이고, JSONL에는 `plan`(단계별 실행 여부)과 `reasoning`으로 남습니다. 실제 출력(2026-10-25 촬영, 단계 이름은 2026-11-08에 묶은 4단계 기준으로 바꿈):
 
 ```text
-[178a9c68] ◆ Planning         6-step plan generated · 목표: '리버스 프록시 설정 가이드' 통합 가이드 작성 (유형: 리버스 프록시)
-[178a9c68] ◆ Simulation       Simulating plan… 6단계 실행 전 사전 점검 4항목
+[178a9c68] ◆ Planning         4-step plan generated · 목표: '리버스 프록시 설정 가이드' 통합 가이드 작성 (유형: 리버스 프록시)
+[178a9c68] ◆ Simulation       Simulating plan… 4단계 실행 전 사전 점검 4항목
 [178a9c68] ◆ Simulation         ✓ 임베딩            의미 검색 사용
 [178a9c68] ◆ Simulation       시뮬레이션 결과: 모든 단계 실행 가능
-[178a9c68] ◆ Step 5/6         web_decision — 근거 충분성 판단 → 부족하면 웹 검색 추가
-[178a9c68] ◆ Replan           Wiki 근거 부족(위키에 '리버스 프록시' 내용 부족 (유형 유사도 0.41 < 0.45)) → 남은 단계 2개: web_search → llm_generate
+[178a9c68] ◆ Step 3/4         web — 근거 충분성 판단 → 부족하면 웹 검색으로 보완
+[178a9c68] ◆ Decision         Wiki 근거 부족(위키에 '리버스 프록시' 내용 부족 (유형 유사도 0.41 < 0.45)) → 웹 검색으로 보완 (Tavily)
 [178a9c68] ◆ Tool Call        tavily.search(query="리버스 프록시 설정")
 [178a9c68] ◆ Observation      웹 근거 5건
 [178a9c68] ◆ Reflection       가이드 11,218자 · 근거 문서 13건 + 웹 5건 출처 표기 …
@@ -999,7 +999,7 @@ flowchart TD
 | Step i/N | 계획한 단계 시작 |
 | Tool Call / Observation | SSH·az·git·Wiki 검색·웹 검색(Tavily·GPT)·LLM 호출과 그 결과 요약 |
 | Self-Correction | 검증 실패를 스스로 고침: 시나리오 3 수정안이 규칙 검증에 실패하면 이유를 LLM에 돌려주고 1회 재생성(`incident_response.py`의 `FIX_ATTEMPTS`), AI 검색어로 근거 0건이면 규칙 검색어로 재검색, 시나리오 2 표 파서 실패 → LLM 파싱·원문 대조, 시나리오 1 질의 오타 교정 |
-| Replan | 관찰 결과로 계획 변경: 장애·차이 없음 → 종료, 근거 부족 → 웹 검색 단계 추가, 자동 수정안 없음 → PR 단계 제외, 승인 거절 → 조치 단계 생략 |
+| Replan | 관찰 결과로 계획 변경: 장애·차이 없음 → 종료, 자동 수정안 없음 → Task·PR 단계를 Task만 만드는 단계로 바꿈, 승인 거절 → 조치 단계 생략, LLM 생성 불가 → 템플릿 가이드. 시나리오 1에서 웹 검색이 필요하거나 저장된 가이드를 쓰는 경우는 단계를 바꾸지 않고 3·4단계 안에서 처리 |
 | Decision / Reflection | 분기 판단과, 결과물의 근거·신뢰도 점검 |
 
 ### 6.2 프록시 정책 변경 → Task·Wiki 반영 (proxy_policy_publish.py)
@@ -1124,7 +1124,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 | 시나리오 | 시험 준비 | 실제로 바뀌는 것 | 정상으로 되돌리기 |
 |---|---|---|---|
 | 1 | 없음(wiki-repo 문서 그대로) | Wiki 등록 시 `00. AI 문서 생성` 아래 문서 | 등록한 문서 삭제 |
-| 2 | 허브 "테스트 환경 준비"(`setup_env.py`) | wiki-repo 테스트 문서(로컬 커밋), 승인 시 Task | 시나리오 2 실행 후 승인(Wiki가 실제 VM과 같아짐) 또는 다시 "테스트 환경 준비" |
+| 2 | 허브 "테스트 환경 준비"(`setup_env.py`) | wiki-repo 테스트 문서(로컬 커밋), 승인 시 Task | 시나리오 2 실행 후 승인(Wiki가 실제 VM과 같아짐) 또는 "원상 복구" |
 | 3 | 허브 "장애 재현"(`proxy_fault_inject.py`) | proxy-config 커밋·VM 설정, 승인 시 Task·PR·이력 Wiki | PR 병합·배포 또는 "원상 복구" |
 
 ### 8.1 시나리오 1 · 시험
@@ -1139,7 +1139,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 | 수정 요청 | 가이드 생성 후 "3단계를 표로 정리해 주세요" | 요청한 부분만 바뀐 새 판 |
 | Wiki 등록 | "Wiki에 등록" | `02. 운영 > 00. AI 문서 생성` 아래 `NN. 제목` 문서. 시험만 할 때는 `.env`의 `WIKI_REGISTER_PUSH=0`(로컬 커밋만) |
 
-- 단계별 소요 시간과 결과는 허브의 Wiki 검색 로그(`data/logs/scenario1.log`)와 `data/traces/wiki-search-*.jsonl`에 남습니다([트레이스](#트레이스)).
+- 단계별 소요 시간과 결과는 허브의 Wiki 검색 로그(`data/logs/wiki-search.log`)와 `data/traces/wiki-search-*.jsonl`에 남습니다([트레이스](#트레이스)).
 - LLM 게이트웨이·임베딩 연결만 따로 확인하려면 `python test\openai_test.py`, `python test\embedding_test.py`, `python test\streaming_test.py`를 실행합니다.
 - 시험으로 등록한 문서는 Wiki의 `00. AI 문서 생성` 아래에서 지우고 `.order`에서도 뺍니다([`rules/WIKI_DOCUMENT_RULES.md`](rules/WIKI_DOCUMENT_RULES.md)).
 
@@ -1188,6 +1188,14 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 
 ### 8.3 시나리오 2 · 실행 (proxy_status_sync.py)
 
+아래 표는 실제로 하는 일을 순서대로 나눈 것입니다. 허브 실행 계획 패널과 로그의 `◆ Planning`에는 5단계로 묶여 보입니다.
+
+- read: 2·3
+- compare: 4·4.5
+- approval: 5·5.5
+- apply: 6·7(LLM으로 읽은 문서는 7 대신 Task에 수동 반영 요청)
+- report: 8
+
 | 단계 | 하는 일 |
 |---|---|
 | 1. trigger | 직접 실행(허브 "시나리오 실행" 탭 또는 명령줄) |
@@ -1203,7 +1211,7 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 
 ```powershell
 python proxy_tools\proxy_status_sync.py              # Teams 승인 후 Task·Wiki 반영 (허브 "실행" 버튼과 같음)
-python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것도 바꾸지 않음
+python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까지만, 아무것도 바꾸지 않음
 ```
 
 - 옵션은 `--dry-run` 하나입니다. push·승인 대기 시간·비교할 문서는 `.env`의 `SCENARIO2_PUSH`, `SCENARIO2_TIMEOUT`, `SCENARIO2_WIKI_PAGE`로 정합니다. 다른 형식의 문서(예: `Proxy-VM-정리-('26.09.17-기준).md`)를 LLM 파싱으로 시험하려면 `SCENARIO2_WIKI_PAGE`에 그 경로를 넣습니다.
@@ -1220,9 +1228,11 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 1~4단계만, 아무것�
   1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
   2. 60분 안에 **② 실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
   3. 끝나면 PR을 병합하고 VM에 배포합니다. PR 병합만으로는 VM에 반영되지 않습니다(소스 병합과 VM 배포를 따로 함).
-     - Azure DevOps **Pipelines** › **proxy-config VM 배포** › **Run pipeline**: 실행 중인 squid VM 모두에 main을 배포합니다(proxy-config `azure-pipelines.yml`, `az vm run-command`라 SSH 키·NSG 변경 없음, 서비스 연결 `proxy-vm-deploy`). 실행할 때 "문법 확인만"을 켜면 설치하지 않습니다.
+     - Azure DevOps **Pipelines** › **proxy-config VM 배포** › **Run pipeline**: 배포 대상 VM(`targetVMs`, 기본값 `wjy-proxy01`)에 main을 배포합니다. 칸을 비우면 실행 중인 squid VM 모두에 배포합니다(proxy-config `azure-pipelines.yml`, `az vm run-command`라 SSH 키·NSG 변경 없음, 서비스 연결 `proxy-vm-deploy`). 실행할 때 "문법 확인만"을 켜면 설치하지 않습니다.
      - 또는 허브 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`): 심어진 장애가 있으면 되돌리는 커밋을 push하고, 없어도 지금 main을 wjy-proxy01에 배포한 뒤 시험 트래픽으로 확인합니다.
   - **② 실행**은 시작할 때와 끝날 때 운영 중인 squid VM의 배포된 설정(`/etc/proxy/proxy.conf`, `lists/*`)을 저장소 `origin/main`의 `squid/`와 비교합니다(`config_drift`). 다르면 로그에 `⚠ 경고`와 다른 파일 이름을 남깁니다. 병합한 수정이 배포되지 않은 경우를 잡으려고 넣었습니다(2026-10-31).
+  - 경고가 나오면 파이프라인을 그 VM을 배포 대상으로 넣어 실행해 맞춥니다. 허브 **원상 복구**는 wjy-proxy01에만 배포하므로 다른 VM은 맞추지 못합니다.
+  - main에 시험용 장애가 심어져 있는 동안에는 비교 기준이 정상이 아닙니다. 그래서 다른 VM이 있어도 경고 대신 관찰 줄만 남깁니다. 장애를 배포하지 않은 VM(예: wjy-proxy02)이 '다름'으로 잡히던 문제 때문입니다(2026-11-08).
   - 장애 커밋·push는 됐는데 배포(SSH)가 실패했다면 같은 종류로 **장애 재현**을 다시 누릅니다. 같은 장애가 이미 심어져 있으면 커밋 없이 배포·시험 트래픽만 다시 합니다(다른 종류가 심어져 있으면 거절).
   - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
   - 세 VM 모두 SSH가 `connect to host … port 22: Connection timed out`으로 실패하면 VM이 켜져 있어도 이 PC의 공인 IP가 NSG 허용 IP와 다른 경우입니다(회선 변경·테더링). 이때 시나리오 3은 "점검 불가"(종료 코드 2)로 끝나고 현재 공인 IP와 NSG 허용 IP를 비교한 원인 추정을 로그에 남깁니다(일부 VM만 못 읽어도 장애가 없으면 점검 불가). **IP 맞추기**(`python proxy_tools\sync_nsg_ip.py`, 비교만: `--check`)로 NSG에 현재 IP를 넣은 뒤 다시 실행합니다(`PROXY_ALLOWED_CLIENTS`의 IP는 유지). Squid의 허용 클라이언트(`acl allowed_clients`)는 바꾸지 않습니다.

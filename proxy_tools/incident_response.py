@@ -19,7 +19,7 @@
 
 사용 예:
     python proxy_tools/incident_response.py            # 감지되면 승인 후 Task·PR·이력 Wiki
-    python proxy_tools/incident_response.py --dry-run  # 1~4단계만(분석·수정안까지 출력, 아무것도 바꾸지 않음)
+    python proxy_tools/incident_response.py --dry-run  # 1–3단계만(분석·수정안까지 출력, 아무것도 바꾸지 않음)
 
 설정(.env): AZURE_DEVOPS_*, AZURE_OPENAI_*·OPENAI_MODEL, TEAMS_WEBHOOK_URL, PROXY_CONFIG_DIR(기본 ../proxy-config),
             SCENARIO3_WINDOW_MIN(기본 60), SCENARIO3_TIMEOUT(승인 대기 초, 기본 900), SCENARIO3_EPIC_ID(기본 1),
@@ -435,26 +435,23 @@ def write_history(entry: str, when: str, task: int | None):
 # ---------------------------------------------------------------- main
 
 PLAN = [("collect", f"프록시 VM 로그 수집·규칙 탐지 (최근 {WINDOW_MIN}분)"),
-        ("llm_triage", "(AI) 장애 요약·원인 후보·Wiki 검색어 도출"),
-        ("similar", "Wiki 유사 장애 사례·가이드 검색 (RAG)"),
-        ("source", "proxy-config 최근 변경 이력·현재 설정 확인"),
-        ("llm_fix", "(AI) 원인 커밋 특정·수정안 생성 → 규칙 검증 (실패 시 자기 수정)"),
+        ("analyze", "(AI) 장애 요약·원인 후보 → Wiki 유사 사례·가이드 검색 (RAG)"),
+        ("fix", "proxy-config 변경 이력 확인 → (AI) 원인 커밋·수정안 → 규칙 검증 (실패 시 자기 수정)"),
         ("approval", "Teams 승인 요청 (Yes/No)"),
-        ("task_create", "Azure DevOps Task 생성"),
-        ("pull_request", "수정 브랜치·PR 생성 (tests/validate.py 통과 필수)"),
+        ("apply", "Azure DevOps Task·수정 PR 생성 (tests/validate.py 통과 필수)"),
         ("wiki_history", "장애 대응 이력 Wiki 갱신·결과 알림")]
 
 
 def preflight(args) -> None:
     """계획 수립과 시뮬레이션: 실행 조건(dry-run)으로 단계를 정하고, 각 단계의 전제를 실행 전에 확인한다."""
     plan("프록시 장애 감지 → 원인 분석 → 수정안 → 승인 후 조치" + (" (dry-run: 수정안까지)" if args.dry_run else ""),
-         PLAN[:5] if args.dry_run else PLAN)
+         PLAN[:3] if args.dry_run else PLAN)
     llm_ok = bool(os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY")
                   or os.environ.get("OPENAI_API_KEY"))
     repo_ok = (CONFIG_REPO / ".git").exists()
     checks = [("LLM", llm_ok, os.environ.get("OPENAI_MODEL", "gpt-6.1-sol") if llm_ok
                else "설정 없음 → triage·fix 는 규칙 탐지 결과만으로 진행"),
-              ("proxy-config", repo_ok, str(CONFIG_REPO) if repo_ok else f"{CONFIG_REPO} 없음 → source 단계에서 중단 예상")]
+              ("proxy-config", repo_ok, str(CONFIG_REPO) if repo_ok else f"{CONFIG_REPO} 없음 → fix 단계에서 중단 예상")]
     if not args.dry_run:
         webhook = bool(os.environ.get("TEAMS_WEBHOOK_URL"))
         checks += [("Teams", webhook, f"승인 카드, 대기 최대 {int(APPROVAL_TIMEOUT // 60)}분" if webhook
@@ -468,7 +465,9 @@ def preflight(args) -> None:
 def config_drift(at: str) -> list[str]:
     """운영 중인 squid VM 의 설정(/etc/proxy/proxy.conf, lists/*)이 저장소 origin/main 의 squid/ 와 같은지 본다.
     다르면 경고 줄을 남기고 다른 VM 이름 목록을 돌려준다. 확인 자체가 실패해도 시나리오는 계속한다.
-    2026-10-31: 수정 PR 을 병합만 하고 배포하지 않아 저장소는 정상, VM 은 장애 설정 그대로인 것을 놓쳤다."""
+    2026-10-31: 수정 PR 을 병합만 하고 배포하지 않아 저장소는 정상, VM 은 장애 설정 그대로인 것을 놓쳤다.
+    2026-11-08: main 에 시험용 장애가 심어져 있으면 기준(main)이 정상이 아니라서, 장애를 배포하지 않은 정상 VM 이
+    '다름'으로 잡혔다. 그때는 경고 대신 관찰로만 남기고 drifted 에 넣지 않는다."""
     from proxy_log_viewer import ssh
     from proxy_policy_monitor import proxy_targets
     norm = lambda t: "\n".join(line.rstrip() for line in t.replace("\r\n", "\n").strip().split("\n"))
@@ -481,6 +480,11 @@ def config_drift(at: str) -> list[str]:
             git(CONFIG_REPO, "fetch", "-q", "origin")
             paths = git(CONFIG_REPO, "ls-tree", "-r", "--name-only", "origin/main", "--", "squid").splitlines()
             want = {p.removeprefix("squid/"): norm(git(CONFIG_REPO, "show", f"origin/main:{p}")) for p in paths}
+            try:  # 시험용 장애(proxy_fault_inject)가 main 에 심어져 있는지
+                import proxy_fault_inject
+                planted = proxy_fault_inject.active("origin/main")
+            except Exception:
+                planted = []
             t1 = time.monotonic()
             now_at["stage"] = "Azure 에서 운영 중인 프록시 VM 조회 (az vm list)"
             vms = [v for v in proxy_targets() if v["kind"] == "squid" and v["state"] == "운영"]
@@ -500,14 +504,18 @@ def config_drift(at: str) -> list[str]:
                 continue
             have = {m.group(1): norm(m.group(2)) for m in re.finditer(r"^@@@FILE (\S+)\n(.*?)(?=^@@@FILE |\Z)", text, re.M | re.S)}
             diff = sorted(f for f in set(want) | set(have) if want.get(f) != have.get(f))
-            if diff:
+            if diff and planted:
+                think("Observation", f"{vm['name']}: 저장소 main 과 다름 ({', '.join(diff)}) — main 에 시험용 장애"
+                                     f"({', '.join(planted)})가 심어져 있어 비교 기준이 정상이 아님. 장애를 배포하지 않은 VM 이면 정상 ({at})")
+            elif diff:
                 drifted.append(vm["name"])
                 think("Reflection", f"⚠ 경고 ({at}): {vm['name']} 의 배포된 설정이 저장소 main 과 다름 ({', '.join(diff)}) "
-                                    "→ 병합한 수정이 배포되지 않았거나 VM 을 직접 고친 상태. 허브 '원상 복구'로 main 을 배포해 맞추세요")
+                                    f"→ 병합한 수정이 배포되지 않았거나 VM 을 직접 고친 상태. Pipelines 'proxy-config VM 배포'를 "
+                                    f"배포 대상 VM={vm['name']} 으로 실행해 맞추세요(허브 '원상 복구'는 wjy-proxy01 에만 배포)")
             else:
-                think("Observation", f"{vm['name']}: 배포된 설정 = 저장소 main ({at})")
+                think("Observation", f"{vm['name']}: 배포된 설정 = 저장소 main" + (" (시험용 장애 포함)" if planted else "") + f" ({at})")
         stop()
-        s.set(vms=len(vms), drifted=drifted)
+        s.set(vms=len(vms), drifted=drifted, planted=planted)
         return drifted
 
 
@@ -542,7 +550,7 @@ def run(args) -> int:
         return 0
     think("Decision", f"장애 의심 VM {len(incidents)}대 ({', '.join(i['vm']['name'] for i in incidents)}) → 원인 분석 진행")
 
-    plan_step("llm_triage")
+    plan_step("analyze")
     tri = triage(incidents)
     if tri:
         print(f"\nAI 1차 분석 (참고용): {tri.get('summary')}")
@@ -553,16 +561,14 @@ def run(args) -> int:
     query = (tri or {}).get("search_query") or rule_query
     if not tri:
         think("Self-Correction", "AI 1차 분석 실패 → 규칙 탐지 제목으로 검색어를 만들어 계속")
-    plan_step("similar")
     cases = similar(query)
     if not cases and query != rule_query:
         think("Self-Correction", "AI 검색어로 Wiki 근거 0건 → 규칙 탐지 제목으로 검색어를 바꿔 다시 검색")
         query, cases = rule_query, similar(rule_query)
     print(f"\n유사 사례·가이드 (검색어: {query}):" + "".join(f"\n  - {c['title']}" for c in cases))
 
-    plan_step("source")
+    plan_step("fix")
     src = read_source()
-    plan_step("llm_fix")
     fix = propose_fix(incidents, tri, cases, src)
     if fix:
         print(f"\n원인: {fix.get('cause')}  (원인 커밋 {fix.get('suspect_commit') or '-'}, 신뢰도 {fix.get('confidence')})")
@@ -577,7 +583,8 @@ def run(args) -> int:
     if fix and fix.get("confidence") != "high":
         think("Reflection", f"신뢰도 {fix.get('confidence')} → 자동 병합하지 않고 승인·PR 검토에서 사람이 원인을 확인해야 함")
     if not applicable and not args.dry_run:
-        replan("자동 수정안 없음 → PR 단계 제외", drop=["pull_request"])
+        replan("자동 수정안 없음 → PR 단계 제외", drop=["apply"], add=[("task_create", "Azure DevOps Task 생성")],
+               before="wiki_history")
     if args.dry_run:
         print("[dry-run] Teams 승인 → Task 생성 → " + ("수정 PR 생성 → " if fix and fix["applicable"] else "")
               + "장애 대응 이력 Wiki → 결과 알림 (아무것도 바꾸지 않음)")
@@ -602,7 +609,7 @@ def run(args) -> int:
     try:
         if not decision:
             reason = "거절(No)" if decision is False else "시간 초과"
-            replan(f"승인 {reason} → 조치 단계 생략, 기록만 남김", drop=["task_create", "pull_request", "wiki_history"])
+            replan(f"승인 {reason} → 조치 단계 생략, 기록만 남김", drop=["apply", "task_create", "wiki_history"])
             if os.environ.get("TEAMS_WEBHOOK_URL"):
                 from teams_tools import teams_notify
                 teams_notify.send(f"{headline} 장애는 {reason}로 조치하지 않았습니다.", "[프록시 장애] 조치 안 함",
@@ -612,7 +619,7 @@ def run(args) -> int:
             return 1
 
         think("Decision", "승인(Yes) → 조치 단계 실행")
-        plan_step("task_create")
+        plan_step("apply" if fix and fix["applicable"] else "task_create")
         step("Task 생성 중…")
         cases_html = "".join(f"<li>{html.escape(c['title'])} — {html.escape(c['path'])}</li>" for c in cases)
         body = ("<p>" + html.escape((tri or {}).get("summary", "")) + "</p><ul>"
@@ -628,7 +635,6 @@ def run(args) -> int:
 
         pr = None
         if fix and fix["applicable"]:
-            plan_step("pull_request")
             step("수정 브랜치·PR 생성 중…")
             with span("pull_request", file=fix["file"]) as s:
                 pr = create_pr(dv, fix, task, when)
@@ -691,7 +697,7 @@ def main() -> int:
     sys.stdout, sys.stderr = Tee(out, log), Tee(err, log)
     try:
         p = argparse.ArgumentParser(description="시나리오 3: 프록시 장애 감지 및 자동 조치")
-        p.add_argument("--dry-run", action="store_true", help="1~4단계(감지·분석·수정안)만 하고 아무것도 바꾸지 않음")
+        p.add_argument("--dry-run", action="store_true", help="1–3단계(감지·분석·수정안)만 하고 아무것도 바꾸지 않음")
         args = p.parse_args()
         try:
             with trace("scenario3", "incident_response", dry_run=args.dry_run, window_min=WINDOW_MIN) as t:

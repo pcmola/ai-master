@@ -556,11 +556,9 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
     option = CLARIFY[key]["options"][variant] if key in CLARIFY and variant in CLARIFY[key]["options"] else None
     plan(f"'{query[:40]}' 통합 가이드 작성" + (f" (유형: {option['label']})" if option else "")
          + (" · 수정 요청 반영" if revise else ""),
-         [("analyze", "질의 해석 (개념·오타 교정)"),
-          ("hybrid_search", "Wiki 하이브리드 검색 (키워드 + 임베딩)"),
-          ("select_sources", "핵심 개념이 있는 문서만 근거로 선별"),
-          ("chunk_select", "근거 문서를 조각으로 나눠 관련 조각만 선택 (RAG)"),
-          ("web_decision", "근거 충분성 판단 → 부족하면 웹 검색 추가"),
+         [("search", "질의 해석 (개념·오타 교정) → Wiki 하이브리드 검색 (키워드 + 임베딩)"),
+          ("sources", "핵심 개념이 있는 문서만 근거로 선별 → 관련 조각만 선택 (RAG)"),
+          ("web", "근거 충분성 판단 → 부족하면 웹 검색으로 보완"),
           ("llm_generate", "(AI) 근거·출처를 단 가이드 생성" + (" — 기존 가이드 + 수정 요청" if revise else ""))])
     llm_ready = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("AZURE_OPENAI_API_KEY")
                      or os.environ.get("OPENAI_API_KEY"))
@@ -570,17 +568,16 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
               ("LLM", llm_ready, "가이드 생성" if llm_ready else "설정 없음 → 템플릿 가이드로 대체"),
               ("웹 검색", bool(web_provider()), f"{WEB_LABEL.get(web_provider())} (근거 약할 때만)"
                if web_provider() else "공급자 없음(WEB_SEARCH_PROVIDER·키 확인) → Wiki 만 사용")])
-    step("analyze")
+    step("search")
     concepts, terms, groups, fixes = traced_analyze(query)
     think("Observation", f"개념 {', '.join(concepts) or '없음'} · 고유어 {', '.join(terms[:5]) or '없음'}")
     boost = option["terms"] if option else []
     fixed = corrected(query, fixes)
     search_query = f"{fixed} {option['label']} {' '.join(boost)}" if option else fixed
-    step("hybrid_search")
     think("Tool Call", f"index.hybrid_search(query=\"{search_query[:60]}\", boost={len(boost)})")
     ranked = traced_search(groups, search_query, boost)
 
-    step("select_sources")
+    step("sources")
     with span("select_sources", candidates=len(ranked)) as sp:
         # 핵심 개념(가장 드문 동의어 묶음)이 실제로 나오는 문서만 가이드 재료로 쓴다.
         core = min(groups, key=lambda g: sum(1 for d in INDEX.docs if any(s in d.low for s in g))) if groups else []
@@ -596,7 +593,6 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
                top3=[f"{d.title}({s:.2f})" for d, s in sources[:3]])
     think("Observation", f"후보 {len(ranked)}건 중 근거 문서 {len(sources)}건, 근거 문장 {len(statements)}개")
     request = (revise or {}).get("request", "").strip()
-    step("chunk_select")
     words = [w for g in groups for w in g] + boost
     chunks = select_chunks(sources, search_query, words)
     if request:
@@ -607,7 +603,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
                    if (c["doc"].path, c["order"]) not in have][:REVISE_EXTRA_CHUNKS]
 
     title = f"{option['label'] if option else query.strip()} 가이드"
-    step("web_decision")
+    step("web")
     web_reason = web_search_reason(sources, search_query, option)
     # 유형을 골랐으면 그 유형이 속한 개념(예: proxy)을 기준으로 검색어를 만들고 결과를 거른다.
     base = key if option and key in CONCEPTS else None
@@ -622,9 +618,9 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
         fp = guide_fingerprint(chunks, statements, llm_model(llm), bool(web_reason))
         hit = guide_cache_get(ckey, fp, fresh)
         if hit:
-            replan(f"근거 지문이 저장된 가이드와 같음 (처음 생성 {hit['created_at']})", drop=["llm_generate"],
-                   add=[("guide_cache", "저장된 가이드 사용 (LLM 생략)")])
-            step("guide_cache")
+            # 단계를 건너뛰고 새로 붙이지 않고, 4단계(가이드 생성) 자리에서 저장된 가이드를 쓴다고 표시한다.
+            think("Decision", f"근거 지문이 저장된 가이드와 같음 (처음 생성 {hit['created_at']}) → 저장된 가이드 사용")
+            step("llm_generate", "저장된 가이드 사용 (LLM 생략)")
             yield {"type": "meta", "title": title, "model": hit["model"], "web": hit["web"], "web_reason": web_reason,
                    "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms, "fixes": fixes},
                    "highlights": sorted({w for g in groups for w in g} | set(boost), key=len, reverse=True),
@@ -635,8 +631,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
                    "markdown": linkify_sources(hit["markdown"], hit["web"])}  # 예전에 저장한 가이드도 근거를 링크로
             return
     if web_reason:
-        replan(f"Wiki 근거 부족({web_reason})", add=[("web_search", f"웹 검색으로 근거 보완 ({WEB_LABEL.get(web_provider())})")], before="llm_generate")
-        step("web_search")
+        think("Decision", f"Wiki 근거 부족({web_reason}) → 웹 검색으로 보완 ({WEB_LABEL.get(web_provider())})")
         if not wq:
             wq, must = web_query(concepts, terms, option, base), web_must(option, base, core)
         think("Tool Call", f"{web_provider()}.search(query=\"{wq[:60]}\")")
@@ -1517,8 +1512,8 @@ for(const raw of src.replace(/\r/g,'').split('\n')){const line=raw.trimEnd();let
 if(m=line.match(/^(#{1,4})\s+(.*)$/)){fl();out+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`}else if(m=line.match(/^\s{2,}(\S.*)$/)){out=out.replace(/<\/li>$/,'<br><span class="muted">'+inline(m[1])+'</span></li>')}else if(m=line.match(/^[-*]\s+(.*)$/)){if(!list){out+='<ul>';list=true}out+='<li>'+inline(m[1])+'</li>'}else if(m=line.match(/^>\s?(.*)$/)){fl();out+='<blockquote>'+inline(m[1])+'</blockquote>'}else if(line.trim()){fl();out+='<p>'+inline(line)+'</p>'}else if(!list)fl()}if(code)out+=`<pre><code>${esc(code.lines.join('\n'))}</code></pre>`;fl();return out}
 // 완성된 가이드의 코드 블록 구문 강조(highlight.js, cdnjs). 언어가 없으면 자동 판별, 못 불러오면 그대로 둔다.
 function highlightCode(){if(!window.hljs){setTimeout(()=>window.hljs&&highlightCode(),500);return}document.querySelectorAll('#guide pre code:not(.hljs)').forEach(el=>{try{hljs.highlightElement(el)}catch(e){}})}
-let mermaidLib;// a.halfwin 링크는 화면 가로 전체 × 위쪽 55% 새 창으로 연다(허브와 같은 방식). Ctrl/Shift 클릭은 보통 새 탭.
-function openTop(u,n){const w=window.open(u,n,`popup,width=${screen.availWidth},height=${Math.round(screen.availHeight*0.55)},left=${screen.availLeft||0},top=${screen.availTop||0}`);if(w)w.opener=null;return !!w}
+let mermaidLib;// a.halfwin 링크는 화면 가로 전체 × 위쪽 40%(Azure DevOps 는 44%) 새 창으로 연다(허브와 같은 방식). Ctrl/Shift 클릭은 보통 새 탭.
+function openTop(u,n){const w=window.open(u,n,`popup,width=${screen.availWidth},height=${Math.round(screen.availHeight*(/^https:\/\/dev\.azure\.com\//.test(u)?0.44:0.4))},left=${screen.availLeft||0},top=${screen.availTop||0}`);if(w)w.opener=null;return !!w}
 document.addEventListener('click',e=>{const a=e.target.closest('a.halfwin');if(!a||e.ctrlKey||e.shiftKey||e.metaKey)return;if(openTop(a.href,'top-'+a.textContent.trim()))e.preventDefault()});
 async function diagrams(){const els=[...document.querySelectorAll('#guide .mermaid')];if(!els.length)return;try{mermaidLib=mermaidLib||(await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs')).default;mermaidLib.initialize({startOnLoad:false,securityLevel:'strict'});els.forEach(el=>{el.textContent=el.textContent.replace(/https?:\/\//g,'')});await mermaidLib.run({nodes:els,suppressErrors:true})}catch(e){console.warn('mermaid',e)}els.filter(el=>!el.querySelector('svg')).forEach(el=>{el.outerHTML='<pre><code>'+esc(el.textContent)+'</code></pre><p class="muted" style="font-size:11px">다이어그램을 그리지 못해 원문을 표시합니다.</p>'})}
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()}
