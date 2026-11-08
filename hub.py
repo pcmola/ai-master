@@ -1063,7 +1063,7 @@ function pick(key){const s=servers.find(x=>x.key===key);const title=s&&s.title;i
 function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t!=='servers';
   document.getElementById('pane-scenarios').hidden=t!=='scenarios';document.getElementById('allbtns').style.visibility=t==='servers'?'':'hidden';
   document.getElementById('mt-servers').classList.toggle('on',t==='servers');document.getElementById('mt-scenarios').classList.toggle('on',t==='scenarios');
-  if(t==='scenarios'){refreshJobs();loadS2Links();if(!slogKey)showLog('scenario2','시나리오 2 로그')}}
+  if(t==='scenarios'){refreshJobs();loadS2Links();if(!slogKey)showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}}  // 처음에는 시나리오 1 로그
 // 시나리오 2: Wiki 현황 문서와 Azure Portal VM 목록, 한 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
 async function loadS2Links(refresh){const box=document.getElementById('s2links');if(refresh)box.innerHTML='<span class="muted">다시 읽는 중…</span>';
   let d;try{d=await (await fetch('/api/s2links'+(refresh?'?refresh=1':''))).json()}catch(e){box.innerHTML='<span class="muted">링크를 불러오지 못했습니다.</span>';return}
