@@ -161,7 +161,7 @@ def send(text: str, title: str | None = None, url: str | None = None,
 
 
 def arrange_teams_window() -> bool:
-    """카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 절반으로 옮기고 앞으로 가져온다.
+    """카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 55%으로 옮기고 앞으로 가져온다.
     Teams 가 안 떠 있거나 실패해도 전송에는 영향 없음. TEAMS_WINDOW_ARRANGE=0 이면 끈다."""
     if os.environ.get("TEAMS_WINDOW_ARRANGE", "1") == "0":
         return False

@@ -662,7 +662,7 @@ Copy-Item .env.sample .env
 | `SQUID_RUNTIME` | `podman` | VM에서 Squid 컨테이너를 띄운 런타임(로그 뷰어) |
 | `TEAMS_*` | (비움) | 회사·학교 Microsoft 365 계정이 있을 때만 사용 |
 | `TEAMS_CARD_ARCHIVE` | `1` | 보낸 Teams 카드를 `data/teams_cards/`에 JSON으로 남김(README 카드 화면용). `0`이면 끔 |
-| `TEAMS_WINDOW_ARRANGE` | `1` | 카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 절반으로 옮기고 앞으로 가져옴. `0`이면 끔 |
+| `TEAMS_WINDOW_ARRANGE` | `1` | 카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 55%으로 옮기고 앞으로 가져옴. `0`이면 끔 |
 | `WINDOW_ARRANGE` | `1` | 창 옮기기 전체 스위치(`common/winlayout.py`). 처리 결과 브라우저 창(제목 `처리 결과`·`승인 접수`)도 같은 크기로 옮김. `0`이면 모두 끔 |
 | `FAULT_TRAFFIC_ROUNDS` | `3` | 장애 재현·원상 복구 뒤 보내는 시험 접속 횟수(도메인 4개 × N회, `proxy_fault_inject.py`). 허용 도메인 차단은 1건, DNS 장애는 도메인당 3회부터 잡힘 |
 | `SCENARIO3_DEPLOY_PIPELINE` | `proxy-config VM 배포` | 시나리오 3 조치 카드의 "② 병합 후 VM 배포" 버튼이 여는 파이프라인 이름(실행 목록 화면, 못 찾으면 Pipelines 첫 화면) |
@@ -781,7 +781,7 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 | 탭 | 내용 |
 |---|---|
 | 로컬 서버 | 서버 표(상태·주소·PID·가동 시간, 시작·중지·재시작·로그)와 로그 창(**지우기**: 지금까지의 로그를 화면에서만 숨김, 파일은 그대로. **전체 보기**로 되돌림. 시나리오 실행 탭 로그 창도 같음). 주소를 누르면 서버 화면이 새 창으로 열림 |
-| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창(화면 가로 전체 × 위쪽 절반)으로 엶(질의 입력부터 그 화면에서), 로그는 `scenario1.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행". 원상 복구 버튼은 없음(실행 후 승인하면 Wiki가 실제 VM과 같아짐, 터미널에서는 `setup_env.py --restore`). 실행 상태와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`N/3대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "IP 맞추기"(`sync_nsg_ip.py`), "프록시 로그"(`proxy-log.local`을 화면 가로 전체 × 위쪽 절반 새 창으로 엶), "로그". 설명은 버튼 툴팁. 실행 중 승인 서버가 뜨면 승인 화면을 같은 크기의 새 창으로 한 번 자동으로 띄우고, "승인 화면" 버튼도 보여 줌(크롬이 팝업을 막으면 버튼으로 열거나 주소창에서 `ai-master.local` 팝업 허용). "현재 심어진 장애"(원격 main 기준, 30초마다 fetch)와 최근 실행 1건 표시, `scenario3.log` 실시간 표시. Azure DevOps의 **proxy-config VM 배포** 파이프라인 실행도 10초마다 읽어 카드에 상태를 보이고, 배포 로그를 `scenario3.log`에 `[pipeline]` 줄로 이어 붙임(허브를 켜기 전에 끝난 실행은 제외) |
+| 시나리오 실행 | **시나리오 1**: 실행하면 Wiki 검색 화면을 새 창(화면 가로 전체 × 위쪽 55%)으로 엶(질의 입력부터 그 화면에서), 로그는 `scenario1.log`<br/>**시나리오 2**: "테스트 환경 준비"(`setup_env.py`: 꺼진 Proxy VM만 켜고 표·정답을 다시 만듦) 후 "실행". 원상 복구 버튼은 없음(실행 후 승인하면 Wiki가 실제 VM과 같아짐, 터미널에서는 `setup_env.py --restore`). 실행 상태와 `scenario2.log` 실시간 표시. 실행 중에는 다시 실행할 수 없음. 카드 아래 한 줄에 Wiki 현황 문서(비교 대상, 로컬 뷰어 · 올라가 있으면 Azure DevOps) 링크와 Azure Portal VM 목록 링크(`N/3대 실행 중`)를 보여 줌(`/api/s2links`, az·DevOps 조회라 5분 캐시, "새로 읽기"로 즉시)<br/>**시나리오 3**: 한 줄 흐름 ① 장애 종류 선택·"장애 재현" → ② "실행"(최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki) → ③ "원상 복구", "IP 맞추기"(`sync_nsg_ip.py`), "프록시 로그"(`proxy-log.local`을 화면 가로 전체 × 위쪽 55% 새 창으로 엶), "로그". 설명은 버튼 툴팁. 실행 중 승인 서버가 뜨면 승인 화면을 같은 크기의 새 창으로 한 번 자동으로 띄우고, "승인 화면" 버튼도 보여 줌(크롬이 팝업을 막으면 버튼으로 열거나 주소창에서 `ai-master.local` 팝업 허용). "현재 심어진 장애"(원격 main 기준, 30초마다 fetch)와 최근 실행 1건 표시, `scenario3.log` 실시간 표시. Azure DevOps의 **proxy-config VM 배포** 파이프라인 실행도 10초마다 읽어 카드에 상태를 보이고, 배포 로그를 `scenario3.log`에 `[pipeline]` 줄로 이어 붙임(허브를 켜기 전에 끝난 실행은 제외) |
 
 `http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
 

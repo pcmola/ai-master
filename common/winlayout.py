@@ -1,4 +1,4 @@
-"""Windows 데스크톱 창을 화면 가로 전체 × 위쪽 절반으로 옮긴다(Teams 창, 처리 결과 브라우저 창).
+"""Windows 데스크톱 창을 화면 가로 전체 × 위쪽 55%으로 옮긴다(Teams 창, 처리 결과 브라우저 창).
 
 웹 페이지 스크립트로는 일반 탭 창의 크기를 바꿀 수 없어서, 프로세스 이름과 창 제목으로 창을 찾아 Win32 API 로 옮긴다.
 Windows 가 아니거나 창을 못 찾으면 아무것도 하지 않는다. WINDOW_ARRANGE=0 이면 끈다.
@@ -16,7 +16,7 @@ BROWSERS = ("chrome.exe", "msedge.exe")
 
 def arrange_top_half(exes: tuple[str, ...], title_prefixes: tuple[str, ...] = ()) -> bool:
     """exes 프로세스의 보이는 최상위 창 중(제목 앞부분 조건이 있으면 그것에 맞는 것 중) 가장 큰 창을
-    그 모니터 작업 영역의 가로 전체 × 위쪽 절반으로 옮기고 앞으로 가져온다. 옮겼으면 True."""
+    그 모니터 작업 영역의 가로 전체 × 위쪽 55%으로 옮기고 앞으로 가져온다. 옮겼으면 True."""
     if sys.platform != "win32" or os.environ.get("WINDOW_ARRANGE", "1") == "0":
         return False
     try:
@@ -69,7 +69,7 @@ def arrange_top_half(exes: tuple[str, ...], title_prefixes: tuple[str, ...] = ()
         mi = MONITORINFO(cbSize=ctypes.sizeof(MONITORINFO))
         user32.GetMonitorInfoW(user32.MonitorFromWindow(hwnd, 2), ctypes.byref(mi))  # MONITOR_DEFAULTTONEAREST
         w = mi.rcWork
-        user32.SetWindowPos(hwnd, 0, w.left, w.top, w.right - w.left, (w.bottom - w.top) // 2, 0x0040)  # SWP_SHOWWINDOW
+        user32.SetWindowPos(hwnd, 0, w.left, w.top, w.right - w.left, round((w.bottom - w.top) * 0.55), 0x0040)  # SWP_SHOWWINDOW
         user32.SetForegroundWindow(hwnd)  # 다른 프로그램이 앞에 있으면 Windows 가 막을 수 있다(작업 표시줄 깜빡임)
         return True
     except Exception:

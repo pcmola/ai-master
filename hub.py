@@ -1018,7 +1018,7 @@ function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t
 // 시나리오 2: Wiki 현황 문서와 Azure Portal VM 목록, 한 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
 async function loadS2Links(refresh){const box=document.getElementById('s2links');if(refresh)box.innerHTML='<span class="muted">다시 읽는 중…</span>';
   let d;try{d=await (await fetch('/api/s2links'+(refresh?'?refresh=1':''))).json()}catch(e){box.innerHTML='<span class="muted">링크를 불러오지 못했습니다.</span>';return}
-  // 링크도 화면 가로 전체 × 위쪽 절반 창으로 연다(openTop). 팝업이 막히면 새 탭으로 연다.
+  // 링크도 화면 가로 전체 × 위쪽 55% 창으로 연다(openTop). 팝업이 막히면 새 탭으로 연다.
   const a=(u,t,name)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" onclick="return !openTop(this.href,'${name}')">${esc(t)}</a>`:'';
   const doc=x=>`${a(x.local,x.title,'wiki-viewer')}${x.devops?' · '+a(x.devops,'Azure DevOps','devops'):''}`;
   const sp=d.status_page;
@@ -1036,9 +1036,9 @@ async function clearGuideCache(){if(!confirm('저장된 가이드 캐시를 모�
 function openServer(key){const s=servers.find(x=>x.key===key);
   if(!s||s.state!=='running'){alert((s?s.title:key)+' 서버가 꺼져 있습니다. 서버 탭에서 먼저 시작하세요.');return}
   openTop(s.url+'/',key)}
-// 화면 가로 전체 × 위쪽 절반 크기의 새 창으로 연다(허브 아래쪽이 보이도록). 같은 name 이면 그 창을 다시 쓴다.
+// 화면 가로 전체 × 위쪽 55% 크기의 새 창으로 연다(허브 아래쪽이 보이도록). 같은 name 이면 그 창을 다시 쓴다.
 // 팝업이 막히면 null 을 돌려준다(noopener 를 주면 늘 null 이라 대신 opener 를 끊는다).
-function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHeight/2),l=screen.availLeft||0,t=screen.availTop||0;
+function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHeight*0.55),l=screen.availLeft||0,t=screen.availTop||0;
   const win=window.open(url,name,`popup,width=${w},height=${h},left=${l},top=${t}`);if(win)win.opener=null;return win}
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;
   openTop(s.url+'/','wiki-search');showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
