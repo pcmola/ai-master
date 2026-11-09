@@ -932,7 +932,7 @@ button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-c
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
-.scwrap{display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.s1view{display:flex;flex-direction:column;flex:1;min-height:260px}.s1view iframe{flex:1;border:0;width:100%;background:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:24px}.s1view:not([hidden])+.s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body:not(.logmode) .sclog{display:none}body.logmode header,body.logmode .scgrid,body.logmode .s1view,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{max-height:45%;overflow:auto}.scgrid .sc.s3 .row{flex-wrap:wrap!important}.scgrid .s2links .head{flex-wrap:wrap}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}.s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.s1view{display:flex;flex-direction:column;flex:1;min-height:260px}.s1view iframe{flex:1;border:0;width:100%;background:#fff}.s1desc{padding:6px 14px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line)}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:24px}.s1view:not([hidden])+.s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body:not(.logmode) .sclog{display:none}body.logmode header,body.logmode .scgrid,body.logmode .s1view,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{max-height:45%;overflow:auto}.scgrid .sc.s3 .row{flex-wrap:wrap!important}.scgrid .s2links .head{flex-wrap:wrap}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}.s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -960,11 +960,8 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div id="err" class="err card" hidden></div>
 <div class="scwrap">
 <div class="scgrid">
-<div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
-<p>Wiki 검색 화면을 오른쪽에 엽니다(로그는 별도 창). 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 그 화면에서 합니다.</p>
-<div class="row"><button class="main" id="s1run" onclick="runS1()" title="Wiki 검색 화면을 오른쪽에 엽니다">실행</button><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button>
-<button class="slog" data-key="wiki-search" onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button>
-<span class="jobstate" id="s1state"></span></div><div class="jobstate" id="s1cache"></div></div>
+<div class="card sc"><button class="main s1btn" id="s1run" onclick="runS1()" title="시나리오 1 · 프록시 설정 가이드 자동 생성: Wiki 검색 화면을 오른쪽에 엽니다">Wiki 기반 가이드 생성</button>
+<span class="jobstate" id="s1state"></span></div>
 <div class="card sc"><h2>시나리오 2 · 프록시 현황 Wiki 현행화</h2>
 <p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
@@ -988,8 +985,8 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div class="jobstate" id="s3state"></div></div>
 </div>
 <div class="scright">
-<div class="card s1view" id="s1view" hidden><div class="tabs"><span class="name">시나리오 1 · Wiki 검색</span><span class="muted" style="margin-left:auto">질의 입력부터 Wiki 등록까지 이 화면에서 합니다</span><button class="slog" data-key="wiki-search" onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button><button onclick="s1Popup()" title="같은 화면을 새 창으로 엽니다(진행 중인 내용은 옮겨지지 않음)">새 창</button><button onclick="s1Close()">닫기</button></div><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
-<div class="card s1empty">시나리오 1 "실행"을 누르면 여기에 Wiki 검색 화면이 열립니다.<br>각 카드의 "로그"는 별도 창(화면 아래쪽)으로 열립니다.</div>
+<div class="card s1view" id="s1view" hidden><div class="tabs"><span class="name">Wiki 기반 가이드 생성</span><span class="jobstate" id="s1cache" style="margin-left:auto"></span><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button><button onclick="s1Popup()" title="같은 화면을 새 창으로 엽니다(진행 중인 내용은 옮겨지지 않음)">새 창</button><button onclick="s1Close()">닫기</button></div><div class="s1desc">Wiki 검색 화면입니다(로그는 별도 창). 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 이 화면에서 합니다.</div><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
+<div class="card s1empty">"Wiki 기반 가이드 생성"을 누르면 여기에 Wiki 검색 화면이 열립니다.<br>각 카드의 "로그"는 별도 창(화면 아래쪽)으로 열립니다.</div>
 <div class="card sclog"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(slogKey,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
 <button id="sall" onclick="unclearLog(slogKey,loadSLog)" hidden>전체 보기</button></div>
