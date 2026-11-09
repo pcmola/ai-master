@@ -209,7 +209,7 @@ flowchart TD
 
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
-| 1. 점검 트리거 | 직접 실행 | 직접 실행. 스케줄러는 하지 않기로 함(2026-10-24). 허브 **시나리오 실행** 탭에서 실행하고 `data/logs/scenario2.log`를 봄 |
+| 1. 점검 트리거 | 직접 실행 | 직접 실행. 스케줄러는 하지 않기로 함(2026-10-24). 허브에서 실행하고 `data/logs/scenario2.log`를 로그 창에서 봄 |
 | 2. Wiki 현황 조회 | 표준 표는 규칙으로 파싱, 형식이 다른 문서는 LLM이 표준 형식으로 바꾸고 원문 대조로 검증 | `wiki_parse_llm`: VM 이름이 원문에 없으면 버리고, IP·SIZE가 원문에 없으면 비움. 실제 문서 `Proxy VM 정리 ('26.09.17 기준)` 11행 확인. LLM으로 읽은 문서는 7단계에서 자동 수정하지 않고 Task에 수동 반영 요청 |
 | 3. Azure VM 조회 | 이름 규칙(proxy·prxy·pxy)과 태그로 판별, IP·상태·SIZE·리전 수집 | 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있으면 이름과 상관없이 대상, 없으면 이름 규칙으로 **프록시로 추정**. `SCENARIO2_EXCLUDE_TAG`(기본 `role=not-proxy`)는 뺌. 트레이스에 `by_tag`·`by_name` |
 | 4. 비교 분석 | 신규·삭제·IP·상태·SIZE 변경 규칙 비교, 중지된 VM은 ⚠ 이상 징후, 차이 없으면 종료(꺼진 VM이 있으면 이상 징후만 알림) | 테스트 문서면 정답(`data/scenario2/expected_diff.json`)과 자동 대조 |
@@ -248,7 +248,7 @@ flowchart TD
 | `◆ Simulation` | 실행 전 점검 4항목과 예상 분기(차이 없으면 종료, No면 알림만) |
 | `◆ Step`·`◆ Tool Call` | 단계마다 무엇을 호출했고 결과가 무엇인지 |
 
-![시나리오 2 - 허브 시나리오 실행 탭과 실제 실행 로그](docs/images/hub-scenarios.png)
+![시나리오 2 - 허브 로그 창의 실제 실행 로그](docs/images/hub-scenarios.png)
 
 **③ Teams 승인 요청**
 
@@ -297,7 +297,7 @@ Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니
 - 원인과 수정안은 로그, Wiki 사례, 설정 저장소(proxy-config) 변경 이력으로 찾습니다.
 - 원칙은 시나리오 2와 같이 **감지·검증은 규칙, 읽고 판단하는 일은 LLM**입니다.
 - 설정 반영(PR 병합·배포)은 사람이 PR을 검토한 뒤에 합니다.
-- 실행: `python proxy_tools\incident_response.py` (허브 **시나리오 실행** 탭의 시나리오 3 "② 실행". 변경 없이 분석만 하려면 `--dry-run`)
+- 실행: `python proxy_tools\incident_response.py` (허브 시나리오 3 카드의 "② 실행". 변경 없이 분석만 하려면 `--dry-run`)
 
 ![시나리오 3 한눈에 보기](docs/images/slide-scenario3.png)
 
@@ -421,7 +421,7 @@ PR 설명에 원인 커밋, 수정 내용, 확인 방법이 들어가고 Task가
 
 ```
 ai-master/
-├─ hub.py          로컬 웹서버 허브: 로컬 서버 탭(시작·중지·재시작, 로그) + 시나리오 실행 탭
+├─ hub.py          로컬 웹서버 허브: 시나리오 1·2·3 실행 화면(서버는 켤 때 자동 시작), 로그는 별도 창
 ├─ start.bat       가상환경(.venv)을 켜고 hub.py 실행 (옵션 그대로 전달)
 ├─ requirements.txt  Python 패키지 목록 (anthropic·msal 은 선택)
 ├─ common/         공통 모듈: 프로젝트 경로(paths.py), 로컬 웹서버·크롬 열기(server.py), 노드별 트레이싱(trace.py)
@@ -742,9 +742,9 @@ Copy-Item .env.sample .env
 | `teams_cards/` | teams_notify.py (보낸 Teams 카드 JSON, README 카드 화면 재촬영용) |
 | `approvals/` | approval_local.py (로컬 승인 화면 내용·최종 진행 상태, README 승인 화면 재촬영용) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
-| `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 "시나리오 실행" 탭에서 봄, 2MB 넘으면 `.old.log`) |
+| `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 로그 창에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py·proxy_status_sync.py·proxy_log_viewer.py (요청·실행별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
-| `logs/scenario3.log` | incident_response.py (시나리오 3 실행 출력. 허브 "시나리오 실행" 탭에서 봄) |
+| `logs/scenario3.log` | incident_response.py (시나리오 3 실행 출력. 허브 로그 창에서 봄) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
 <sub>[↑ 목차로](#목차)</sub>
@@ -832,19 +832,18 @@ hosts를 바꾼 뒤에는 서버를 다시 시작해야 새 주소로 뜹니다.
 
 ### 5.2 허브 (hub.py)
 
-<http://ai-master.local> 한 화면에서 ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)의 상태를 보고 시작·중지·재시작하고, 로그를 봅니다. 화면은 탭 두 개입니다.
+<http://ai-master.local> 한 화면에서 시나리오 1·2·3을 실행하고 로그를 봅니다. 탭은 없습니다.
+
+- ai-master 서버 3개(Wiki 뷰어, Wiki 검색, 프록시 로그 뷰어)는 허브를 켤 때 자동으로 시작합니다. 아래 실행 옵션 참고.
+- 서버 표와 시작·중지 버튼은 없습니다. 꺼진 서버는 그 서버를 쓰는 버튼(시나리오 1 "서버 시작", 시나리오 3 "프록시 로그")에서 바로 시작하거나, 허브를 다시 켭니다.
 
 Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/decide`, `/approval/open`)를 거칩니다. 승인 서버(8771)가 떠 있으면 그리로 넘기고, 이미 끝나 닫혔으면 "연결 거부" 대신 그 요청의 기록(`data/approvals/`)으로 결정·처리 단계·결과 링크를 보여 줍니다(다시 처리하지 않음). 허브가 꺼져 있거나 옛 버전이면 지금처럼 승인 서버로 바로 연결합니다.
 
-머리글 오른쪽의 `서버 상태 확인 HH:MM:SS`는 서버 상태를 마지막으로 받은 시각입니다(3초마다 갱신). 10초 넘게 받지 못하면 빨간색 `허브 응답 없음 (마지막 확인 …)`으로 바뀝니다. 허브가 죽었거나 멈춘 것이므로, 그동안 표의 상태는 옛 정보입니다. `start.bat`으로 다시 띄웁니다.
+머리글 오른쪽의 `서버 상태 확인 HH:MM:SS`는 서버 상태를 마지막으로 받은 시각입니다(3초마다 갱신). 10초 넘게 받지 못하면 빨간색 `허브 응답 없음 (마지막 확인 …)`으로 바뀝니다. 허브가 죽었거나 멈춘 것이므로, 그동안 카드의 상태는 옛 정보입니다. `start.bat`으로 다시 띄웁니다.
 
-#### 로컬 서버 탭
+![허브 - 시나리오 실행 화면](docs/images/hub-main.png)
 
-- 서버 표에서 상태·주소·PID·가동 시간을 보고, 서버마다 시작·중지·재시작·로그 버튼을 씁니다.
-- 주소를 누르면 서버 화면이 새 창으로 열립니다.
-- 로그 창의 **지우기**는 지금까지의 로그를 화면에서만 숨깁니다. 파일은 그대로이고, **전체 보기**로 되돌립니다. 시나리오 실행 탭의 로그 창도 같습니다.
-
-#### 시나리오 실행 탭
+#### 화면
 
 공통
 
@@ -853,7 +852,9 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 - 시나리오 1·2·3 카드는 왼쪽에 위아래로 놓이고, 오른쪽은 시나리오 1 화면 자리입니다. 창 폭이 1000px보다 좁으면 오른쪽이 카드 아래로 내려갑니다.
 - 로그는 **별도 창**(화면 가로 전체 × 아래쪽 58%)으로 엽니다. 각 카드의 "로그"를 누르거나 시나리오를 실행하면 열립니다.
 - 로그 창은 하나를 다시 씁니다. 다른 카드의 "로그"를 누르면 같은 창이 그 로그로 바뀝니다.
-- 로그 창 위쪽의 실행 계획 패널에 가장 최근 실행의 단계별 진행이 나옵니다. 지우기·전체 보기도 로그 창에서 합니다.
+- 로그 창 위쪽의 실행 계획 패널에 가장 최근 실행의 단계별 진행이 나옵니다.
+- 로그 창의 **지우기**는 지금까지의 로그를 화면에서만 숨깁니다. 파일은 그대로이고, **전체 보기**로 되돌립니다.
+- 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다.
 - 팝업이 막혀 있으면 로그 창이 열리지 않습니다. 브라우저에서 허브 주소의 팝업을 허용합니다.
 
 시나리오 1
@@ -883,7 +884,7 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 - **proxy-config VM 배포** 파이프라인 실행도 10초마다 읽어 카드에 상태를 보여 줍니다.
 - 배포 로그는 `scenario3.log`에 `[pipeline]` 줄로 이어 붙입니다. 허브를 켜기 전에 끝난 실행은 빼고 붙입니다.
 
-`http://ai-master.local/#scenarios`로 열면 시나리오 실행 탭이 바로 열립니다. 서버 화면은 표의 주소를 눌러 새 창에서 엽니다. 지금 보고 있는 로그의 "로그" 버튼은 연한 파랑으로 표시됩니다(로컬 서버 탭·시나리오 실행 탭 모두). 사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
+사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
 
 가상환경(`.\.venv\Scripts\Activate.ps1`)을 켠 뒤 실행합니다. `start.bat`은 가상환경 활성화와 `python hub.py`를 한 번에 하며 아래 옵션도 그대로 받습니다(예: `start.bat --no-restart`).
 
@@ -938,10 +939,6 @@ Get-NetTCPConnection -LocalAddress 127.0.87.64 -LocalPort 80 -State Listen | For
 ```
 
 `/T`(프로세스 트리)를 붙이면 허브가 띄운 서버까지 함께 꺼지므로 붙이지 않습니다.
-
-**허브 - 로컬 서버 탭:**
-
-![허브 - 로컬 서버 탭](docs/images/hub-servers.png)
 
 <sub>[↑ 목차로](#목차)</sub>
 
@@ -1245,7 +1242,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 
 ### 8.1 시나리오 1 · 시험
 
-허브 **로컬 서버** 탭에서 Wiki 검색 서버를 켜고, **시나리오 실행** 탭의 시나리오 1 "실행"으로 Wiki 검색 화면을 엽니다. 따로 준비할 테스트 데이터는 없고 wiki-repo 문서를 그대로 씁니다.
+허브 시나리오 1 카드의 "실행"으로 Wiki 검색 화면을 엽니다. Wiki 검색 서버는 허브를 켤 때 자동으로 시작하고, 꺼져 있으면 카드의 "서버 시작"으로 켭니다. 따로 준비할 테스트 데이터는 없고 wiki-repo 문서를 그대로 씁니다.
 
 | 시험 | 질의 예 | 확인할 것 |
 |---|---|---|
@@ -1314,7 +1311,7 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 
 | 단계 | 하는 일 |
 |---|---|
-| 1. trigger | 직접 실행(허브 "시나리오 실행" 탭 또는 명령줄) |
+| 1. trigger | 직접 실행(허브 시나리오 2 카드 또는 명령줄) |
 | 2. wiki_read | Wiki 문서의 `## VM 목록` 표를 읽음 (머리글 이름으로 칸을 찾음). 문서는 `SCENARIO2_WIKI_PAGE`(비우면 테스트 문서) |
 | 3. azure_read | 리소스 그룹에서 `SCENARIO2_TAG` 태그가 있거나, 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM(프록시로 추정)의 IP·상태·SIZE·리전. `SCENARIO2_EXCLUDE_TAG` 태그가 있는 VM은 뺌 |
 | 4. compare | 신규·삭제·변경(사설/공인 IP, 상태, SIZE, LOCATION, RESOURCE GROUP). 차이 없으면 종료. Proxy(용도) 칸은 사람이 관리하므로 비교하지 않음 |
@@ -1345,12 +1342,12 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
   - 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다.
   - 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있습니다. 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
-- 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브의 **시나리오 실행** 탭에서 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
+- 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브 시나리오 2 카드의 "로그"로 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
 
 ### 8.4 시나리오 3 · 시험
 
-허브 **시나리오 실행** 탭의 시나리오 3 칸에서 ①→②→③ 순서로 합니다. 세 버튼 모두 실제 저장소·VM·Azure DevOps를 바꿉니다. 아무것도 바꾸지 않고 원인·수정안만 보려면 `python proxy_tools\incident_response.py --dry-run`을 씁니다.
+허브 시나리오 3 카드에서 ①→②→③ 순서로 합니다. 세 버튼 모두 실제 저장소·VM·Azure DevOps를 바꿉니다. 아무것도 바꾸지 않고 원인·수정안만 보려면 `python proxy_tools\incident_response.py --dry-run`을 씁니다.
 
 **전 과정 시험 절차**:
   1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).

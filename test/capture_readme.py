@@ -205,34 +205,34 @@ def hub(page):
     page.evaluate("""async () => { const d = await (await fetch('/api/status')).json();
       localStorage.setItem('hub.logStartAt', (d.log_start || {}).at || ''); localStorage.setItem('hub.logCleared', '{}'); }""")
     ready(page, SITES["hub"])
-    page.locator("#rows button").first.wait_for()
-    shot(page, "hub-servers.png")
-    page.locator("#mt-scenarios").click()
-    with page.expect_response(lambda r: "/api/log?" in r.url and "scenario2" in r.url):
-        page.locator('button.slog[data-key="scenario2"]').click()
-    page.wait_for_function("document.querySelector('#slog').textContent.length > 100")
-    # 마지막 실제 실행(승인까지 한 실행) 시작 줄로 스크롤한다. 그 뒤의 '새로 읽기' 기록 줄은 화면 아래로 밀린다.
-    scroll_to_last(page, "시작: proxy_status_sync.py ")
-    try:  # 카드 아래 Wiki·Azure 링크(az·DevOps 조회라 처음엔 수 초 걸림)
+    try:  # 시나리오 2 카드 아래 Wiki·Azure 링크(az·DevOps 조회라 처음엔 수 초 걸림)
         page.wait_for_function("!document.getElementById('s2links').textContent.includes('불러오는 중')", timeout=60000)
     except Exception:
         print("s2links: 링크를 못 읽어 불러오는 중 상태로 찍음", flush=True)
+    shot(page, "hub-main.png")
+    # 로그는 별도 창(허브 페이지의 로그 전용 모드 /?log=<키>)이라 그 주소를 같은 탭에서 열어 찍는다.
+    log_window(page, "scenario2", "시나리오 2 로그", "proxy_status_sync")
+    # 마지막 실제 실행(승인까지 한 실행) 시작 줄로 스크롤한다. 그 뒤의 '새로 읽기' 기록 줄은 화면 아래로 밀린다.
+    scroll_to_last(page, "시작: proxy_status_sync.py ")
     plan_panel(page)
     shot(page, "hub-scenarios.png")
-    with page.expect_response(lambda r: "/api/log?" in r.url and "scenario3" in r.url):
-        page.locator('button.slog[data-key="scenario3"]').click()
-    page.wait_for_function("document.querySelector('#slog').textContent.includes('incident_response')")
+    log_window(page, "scenario3", "시나리오 3 로그", "incident_response")
     # 실행 시작 직후의 배포 설정 점검 줄 대신 계획(◆ Planning)부터 보이게 한다
     scroll_to_last(page, "6-step plan generated")
     plan_panel(page)
     shot(page, "scenario3-run.png")
     # 시나리오 1(Wiki 검색 서버) 로그: 로그 위 실행 계획 패널에 가장 최근 질의 1건의 4단계 진행
-    with page.expect_response(lambda r: "/api/log?" in r.url and "wiki-search" in r.url):
-        page.locator('button.slog[data-key="wiki-search"]').click()
-    page.wait_for_function("document.querySelector('#slog').textContent.includes('guide/stream')")
+    log_window(page, "wiki-search", "시나리오 1 · Wiki 검색 서버 로그", "guide/stream")
     scroll_to_last(page, "▶ guide/stream")
     plan_panel(page)
     shot(page, "hub-scenario1-log.png")
+
+
+def log_window(page, key: str, title: str, expect: str):
+    """허브 로그 창(/?log=<key>)을 열고 로그에 expect 가 나올 때까지 기다린다."""
+    from urllib.parse import quote
+    ready(page, f"{SITES['hub'].rstrip('/')}/?log={quote(key)}&t={quote(title)}")
+    page.wait_for_function("(m) => document.querySelector('#slog').textContent.includes(m)", arg=expect, timeout=30000)
 
 
 def plan_panel(page):

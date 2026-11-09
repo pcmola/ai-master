@@ -932,10 +932,7 @@ button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-c
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
-nav.maintabs{display:flex;gap:4px;padding:0 24px;background:var(--top);border-top:1px solid #22324f}
-nav.maintabs button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;color:#aebbd0;padding:10px 14px;font-weight:600}
-nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
-.scwrap{display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 140px);min-height:520px}.s1view{display:flex;flex-direction:column;flex:1;min-height:260px}.s1view iframe{flex:1;border:0;width:100%;background:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:24px}.s1view:not([hidden])+.s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body:not(.logmode) .sclog{display:none}body.logmode header,body.logmode nav.maintabs,body.logmode #pane-servers,body.logmode .scgrid,body.logmode .s1view,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{max-height:45%;overflow:auto}.scgrid .sc.s3 .row{flex-wrap:wrap!important}.scgrid .s2links .head{flex-wrap:wrap}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}.s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.s1view{display:flex;flex-direction:column;flex:1;min-height:260px}.s1view iframe{flex:1;border:0;width:100%;background:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:24px}.s1view:not([hidden])+.s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body:not(.logmode) .sclog{display:none}body.logmode header,body.logmode .scgrid,body.logmode .s1view,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{max-height:45%;overflow:auto}.scgrid .sc.s3 .row{flex-wrap:wrap!important}.scgrid .s2links .head{flex-wrap:wrap}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}.s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -955,22 +952,12 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 #splan .nm{font-family:Consolas,monospace;font-size:12px}#splan .nt{color:var(--muted);font-size:12px;text-align:right;max-width:46vw}
 #splan li.planned>span{color:var(--muted)}#splan li.skipped>span{color:var(--off);text-decoration:line-through}
 #splan li.running>span{color:var(--warn);font-weight:700}#splan li.done .ic{color:var(--ok)}#splan li.error>span{color:var(--bad)}
-@media(max-width:820px){.hide-sm{display:none}main{padding:12px}}
+@media(max-width:820px){main{padding:12px}}
 </style></head><body>
 <header><h1>__TITLE__</h1><span class="time" id="time"></span>
-<span id="allbtns"><button onclick="act('all','start')">모두 시작</button> <button onclick="act('all','restart')">모두 재시작</button>
-<button onclick="if(confirm('모든 서버를 끌까요?'))act('all','stop')">모두 중지</button></span></header>
-<nav class="maintabs"><button id="mt-servers" onclick="tab('servers')">로컬 서버</button><button id="mt-scenarios" onclick="tab('scenarios')">시나리오 실행</button></nav>
-<main id="pane-servers">
-<div class="card"><table><thead><tr><th>상태</th><th>서버</th><th>주소</th><th class="hide-sm">PID · 실행 시간</th><th>관리</th></tr></thead>
-<tbody id="rows"><tr><td colspan="5" class="muted">불러오는 중…</td></tr></tbody></table><div id="err" class="err" hidden></div></div>
-<div class="card" id="panel" hidden><div class="tabs"><button id="tab-log" class="on">로그</button><span class="name" id="pname"></span>
-<span class="muted" style="margin-left:auto" id="phint"></span>
-<button onclick="clearLog(selected,loadLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
-<button id="pall" onclick="unclearLog(selected,loadLog)" hidden>전체 보기</button></div>
-<pre id="log"></pre></div>
-</main>
-<main id="pane-scenarios" hidden>
+</header>
+<main id="pane-scenarios">
+<div id="err" class="err card" hidden></div>
 <div class="scwrap">
 <div class="scgrid">
 <div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
@@ -1012,31 +999,14 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 </div>
 </main>
 <script>
-let servers=[], selected=null;
+let servers=[];
 
-const LABEL={running:'실행 중',starting:'시작 중',stopped:'꺼짐'};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function since(iso){if(!iso)return'';const s=Math.max(0,(Date.now()-new Date(iso))/1000);
   if(s<60)return Math.floor(s)+'초';if(s<3600)return Math.floor(s/60)+'분';if(s<86400)return Math.floor(s/3600)+'시간 '+Math.floor(s%3600/60)+'분';return Math.floor(s/86400)+'일'}
 async function act(key,action){
   const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({key,action})});
   if(!r.ok){alert('요청 실패: '+r.status);return}setTimeout(refresh,300)}
-function render(){
-  document.getElementById('rows').innerHTML=servers.map(s=>{
-    const n=s.instances.length, busy=s.busy;
-    const label=busy||LABEL[s.state];
-    const warn=[n>1?`중복 실행 ${n}개 (재시작하면 하나로 정리)`:'',
-      s.stale?`예전 주소로 실행 중 → 재시작하면 ${esc(s.address)} 로 뜸`:'',
-      s.conflict?`${esc(s.address)} 를 다른 프로그램이 사용 중 (PID ${s.conflict.pid} ${esc(s.conflict.name)})`:''].filter(Boolean);
-    const pid=s.instances.map(i=>`${i.pid} · ${since(i.started)}`).join('<br>')||'-';
-    const link=s.state==='running'?`<a href="${esc(s.url)}" target="_blank">${esc(s.url)}</a>`:`<span class="muted">${esc(s.url)}</span>`;
-    return `<tr class="${s.key===selected?'sel':''}"><td><span class="state ${busy?'starting':s.state}"><span class="dot"></span>${esc(label)}</span></td>
-<td><div class="title">${esc(s.title)}</div><div class="script">${esc(s.script)}</div>${warn.map(w=>`<div class="warn">${w}</div>`).join('')}</td>
-<td>${link}</td><td class="hide-sm muted">${pid}</td>
-<td><div class="acts"><button ${busy||n?'disabled':''} onclick="act('${s.key}','start')">시작</button>
-<button ${busy?'disabled':''} onclick="act('${s.key}','restart')">재시작</button>
-<button ${busy||!n?'disabled':''} onclick="act('${s.key}','stop')">중지</button>
-<button class="${s.key===selected?'logon':''}" onclick="pick('${s.key}')">로그</button></div></td></tr>`}).join('')}
 // 머리글 시각: 서버 상태를 마지막으로 받은 때. 10초 넘게 못 받으면 허브가 죽었거나 멈춘 것 → 빨간 '허브 응답 없음'
 // (그동안 표의 '실행 중'은 옛 정보). 요청이 매달려도 알 수 있게 응답과 따로 1초마다 본다.
 let lastOk=Date.now(),lastOkText='';
@@ -1045,7 +1015,7 @@ function staleCheck(){const el=document.getElementById('time');const stale=Date.
 async function refresh(){
   try{const r=await fetch('/api/status');const d=await r.json();if(d.error)throw new Error(d.error);
     servers=d.servers;lastOk=Date.now();lastOkText=d.time.slice(11);staleCheck();applyLogStart(d.log_start);
-    document.getElementById('err').hidden=true;render();if(selected)loadLog()}
+    document.getElementById('err').hidden=true}
   catch(e){const el=document.getElementById('err');el.hidden=false;el.textContent='상태를 읽지 못했습니다: '+e.message}}
 // 로그 '지우기': 파일은 그대로 두고, 누른 시점의 파일 크기를 기억해 그 뒤만 보여 준다(브라우저에 저장, 새로고침해도 유지).
 const CLEARED_KEY='hub.logCleared';let cleared={};try{cleared=JSON.parse(localStorage.getItem(CLEARED_KEY)||'{}')}catch(e){}
@@ -1059,17 +1029,6 @@ async function fetchLog(key){const r=await fetch('/api/log?key='+encodeURICompon
   logSize[key]=+(r.headers.get('X-Log-Size')||0);return r.text()}
 function clearLog(key,reload){if(!key)return;cleared[key]=logSize[key]||0;saveCleared();reload()}
 function unclearLog(key,reload){delete cleared[key];saveCleared();reload()}
-async function loadLog(){const pre=document.getElementById('log');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
-  pre.textContent=await fetchLog(selected);document.getElementById('pall').hidden=!cleared[selected];if(atEnd)pre.scrollTop=pre.scrollHeight}
-// 하단 패널은 로그만 보여 준다. 서버 화면은 주소를 눌러 새 창에서 연다. 보고 있는 로그의 버튼은 파랗게 표시한다.
-function pick(key){const s=servers.find(x=>x.key===key);const title=s&&s.title;if(!title)return;selected=key;
-  document.getElementById('panel').hidden=false;document.getElementById('pname').textContent=title;
-  document.getElementById('phint').textContent='data/logs/'+key+'.log';loadLog();render()}
-// ---------------------------------------------------------------- 탭
-function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t!=='servers';
-  document.getElementById('pane-scenarios').hidden=t!=='scenarios';document.getElementById('allbtns').style.visibility=t==='servers'?'':'hidden';
-  document.getElementById('mt-servers').classList.toggle('on',t==='servers');document.getElementById('mt-scenarios').classList.toggle('on',t==='scenarios');
-  if(t==='scenarios'){refreshJobs();loadS2Links()}}
 // 시나리오 2: Wiki 현황 문서와 Azure Portal VM 목록, 한 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
 async function loadS2Links(refresh){const box=document.getElementById('s2links');if(refresh)box.innerHTML='<span class="muted">다시 읽는 중…</span>';
   let d;try{d=await (await fetch('/api/s2links'+(refresh?'?refresh=1':''))).json()}catch(e){box.innerHTML='<span class="muted">링크를 불러오지 못했습니다.</span>';return}
@@ -1089,7 +1048,7 @@ async function clearGuideCache(){if(!confirm('저장된 가이드 캐시를 모�
     el.innerHTML=d.error?`<span class="jobstate fail">캐시 초기화 실패: ${esc(d.error)}</span>`:`<span class="jobstate ok">캐시 초기화: 저장된 가이드 ${d.removed}건 삭제</span>`}
   catch(e){el.innerHTML=`<span class="jobstate fail">캐시 초기화 실패: ${esc(String(e))}</span>`}}
 function openServer(key){const s=servers.find(x=>x.key===key);
-  if(!s||s.state!=='running'){alert((s?s.title:key)+' 서버가 꺼져 있습니다. 서버 탭에서 먼저 시작하세요.');return}
+  if(!s||s.state!=='running'){if(confirm((s?s.title:key)+' 서버가 꺼져 있습니다. 지금 시작할까요? 몇 초 뒤 다시 누르세요.'))act(key,'start');return}
   openTop(s.url+'/',key)}
 // 화면 가로 전체 × 위쪽 40% 크기의 새 창으로 연다(허브 아래쪽이 보이도록). 같은 name 이면 그 창을 다시 쓴다.
 // 팝업이 막히면 null 을 돌려준다(noopener 를 주면 늘 null 이라 대신 opener 를 끊는다).
@@ -1138,7 +1097,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup']),jobLine(jobs['scenario2-restore'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   // 서버 상태(/api/status)를 아직 못 받았으면 '꺼짐'이 아니라 '확인 중'(새로 고침 직후 잠깐 빨간 글자가 보이던 문제)
-  document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:!lastOkText?'<span class="muted">서버 상태 확인 중…</span>':'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
+  document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:!lastOkText?'<span class="muted">서버 상태 확인 중…</span>':'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다.</span> '+(ws&&ws.busy?`<span class="muted">${esc(ws.busy)}…</span>`:`<button style="padding:1px 8px" onclick="act('wiki-search','start')">서버 시작</button>`);
   if(slogKey)loadSLog()}
 // 로그는 별도 창(화면 가로 전체 × 아래쪽 58%, 위쪽 40% 창과 겹치지 않게)으로 연다. 같은 창을 다시 쓰고, 같은 로그면 다시 읽지 않는다.
 // 로그 창은 이 페이지를 ?log=<key> 로 연 '로그 전용 모드'라서 실행 계획 패널·지우기·전체 보기가 그대로 동작한다.
@@ -1190,14 +1149,14 @@ async function loadPlan(){const box=document.getElementById('splan');const key=s
   box.innerHTML=h;box.hidden=false;fit()}
 // 로그 창은 화면 아래 끝까지만 늘려 페이지 전체 스크롤이 생기지 않게 한다.
 // 높이를 바꾸기 전에 맨 아래를 보고 있었으면 바꾼 뒤에도 맨 아래에 붙인다(위 실행 계획 패널이 커지면 마지막 줄이 가려지던 문제).
-function fit(){for(const id of ['log','slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
+function fit(){for(const id of ['slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
   if(top<=0)continue;const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
   pre.style.height=Math.max(160,innerHeight-top-22)+'px';if(atEnd)pre.scrollTop=pre.scrollHeight}}
 addEventListener('resize',fit);setInterval(fit,500);
-refresh();setInterval(refresh,3000);setInterval(staleCheck,1000);setInterval(()=>{if(!document.getElementById('pane-scenarios').hidden)refreshJobs()},2000);
+refresh();setInterval(refresh,3000);setInterval(staleCheck,1000);setInterval(refreshJobs,2000);
 if(LOGMODE){document.body.classList.add('logmode');const k=LOGQ.get('log'),tt=LOGQ.get('t')||k;document.title=tt;
-  document.getElementById('pane-servers').hidden=true;document.getElementById('pane-scenarios').hidden=false;showLogHere(k,tt);refreshJobs()}
-else tab(location.hash==='#scenarios'?'scenarios':'servers');
+  showLogHere(k,tt);refreshJobs()}
+else{refreshJobs();loadS2Links()}
 </script></body></html>"""
 
 
