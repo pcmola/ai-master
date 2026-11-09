@@ -935,7 +935,7 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 nav.maintabs{display:flex;gap:4px;padding:0 24px;background:var(--top);border-top:1px solid #22324f}
 nav.maintabs button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;color:#aebbd0;padding:10px 14px;font-weight:600}
 nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
-.scwrap{display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 140px);min-height:520px}.s1view{display:flex;flex-direction:column;flex:62 1 0;min-height:260px}.s1view iframe{flex:1;border:0;width:100%;background:#fff}.sclog{display:flex;flex-direction:column;flex:38 1 0;min-height:200px}.s1view[hidden]+.sclog{flex:1}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{max-height:45%;overflow:auto}.scgrid .sc.s3 .row{flex-wrap:wrap!important}.scgrid .s2links .head{flex-wrap:wrap}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}.s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 140px);min-height:520px}.s1view{display:flex;flex-direction:column;flex:1;min-height:260px}.s1view iframe{flex:1;border:0;width:100%;background:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:24px}.s1view:not([hidden])+.s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body:not(.logmode) .sclog{display:none}body.logmode header,body.logmode nav.maintabs,body.logmode #pane-servers,body.logmode .scgrid,body.logmode .s1view,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{max-height:45%;overflow:auto}.scgrid .sc.s3 .row{flex-wrap:wrap!important}.scgrid .s2links .head{flex-wrap:wrap}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}.s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -974,7 +974,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="scwrap">
 <div class="scgrid">
 <div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
-<p>Wiki 검색 화면을 오른쪽에 엽니다(로그는 그 아래). 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 그 화면에서 합니다.</p>
+<p>Wiki 검색 화면을 오른쪽에 엽니다(로그는 별도 창). 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 그 화면에서 합니다.</p>
 <div class="row"><button class="main" id="s1run" onclick="runS1()" title="Wiki 검색 화면을 오른쪽에 엽니다">실행</button><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button>
 <button class="slog" data-key="wiki-search" onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button>
 <span class="jobstate" id="s1state"></span></div><div class="jobstate" id="s1cache"></div></div>
@@ -1001,7 +1001,8 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="jobstate" id="s3state"></div></div>
 </div>
 <div class="scright">
-<div class="card s1view" id="s1view" hidden><div class="tabs"><span class="name">시나리오 1 · Wiki 검색</span><span class="muted" style="margin-left:auto">질의 입력부터 Wiki 등록까지 이 화면에서 합니다</span><button onclick="s1Popup()" title="같은 화면을 새 창으로 엽니다(진행 중인 내용은 옮겨지지 않음)">새 창</button><button onclick="s1Close()">닫기</button></div><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
+<div class="card s1view" id="s1view" hidden><div class="tabs"><span class="name">시나리오 1 · Wiki 검색</span><span class="muted" style="margin-left:auto">질의 입력부터 Wiki 등록까지 이 화면에서 합니다</span><button class="slog" data-key="wiki-search" onclick="showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')">로그</button><button onclick="s1Popup()" title="같은 화면을 새 창으로 엽니다(진행 중인 내용은 옮겨지지 않음)">새 창</button><button onclick="s1Close()">닫기</button></div><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
+<div class="card s1empty">시나리오 1 "실행"을 누르면 여기에 Wiki 검색 화면이 열립니다.<br>각 카드의 "로그"는 별도 창(화면 아래쪽)으로 열립니다.</div>
 <div class="card sclog"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(slogKey,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
 <button id="sall" onclick="unclearLog(slogKey,loadSLog)" hidden>전체 보기</button></div>
@@ -1068,7 +1069,7 @@ function pick(key){const s=servers.find(x=>x.key===key);const title=s&&s.title;i
 function tab(t){location.hash=t;document.getElementById('pane-servers').hidden=t!=='servers';
   document.getElementById('pane-scenarios').hidden=t!=='scenarios';document.getElementById('allbtns').style.visibility=t==='servers'?'':'hidden';
   document.getElementById('mt-servers').classList.toggle('on',t==='servers');document.getElementById('mt-scenarios').classList.toggle('on',t==='scenarios');
-  if(t==='scenarios'){refreshJobs();loadS2Links();if(!slogKey)showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}}  // 처음에는 시나리오 1 로그
+  if(t==='scenarios'){refreshJobs();loadS2Links()}}
 // 시나리오 2: Wiki 현황 문서와 Azure Portal VM 목록, 한 줄. 서버가 5분 캐시, '새로 읽기'는 즉시.
 async function loadS2Links(refresh){const box=document.getElementById('s2links');if(refresh)box.innerHTML='<span class="muted">다시 읽는 중…</span>';
   let d;try{d=await (await fetch('/api/s2links'+(refresh?'?refresh=1':''))).json()}catch(e){box.innerHTML='<span class="muted">링크를 불러오지 못했습니다.</span>';return}
@@ -1094,7 +1095,7 @@ function openServer(key){const s=servers.find(x=>x.key===key);
 // 팝업이 막히면 null 을 돌려준다(noopener 를 주면 늘 null 이라 대신 opener 를 끊는다).
 function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHeight*(/^https:\/\/dev\.azure\.com\//.test(url)?0.44:0.4)),l=screen.availLeft||0,t=screen.availTop||0;
   const win=window.open(url,name,`popup,width=${w},height=${h},left=${l},top=${t}`);if(win)win.opener=null;return win}
-// 시나리오 1: 팝업 대신 오른쪽 위에 Wiki 검색 화면을 띄운다(로그는 그 아래). 이미 열려 있으면 진행 중인 화면을 그대로 둔다.
+// 시나리오 1: 팝업 대신 오른쪽에 Wiki 검색 화면을 띄운다(로그는 별도 창). 이미 열려 있으면 진행 중인 화면을 그대로 둔다.
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;const f=document.getElementById('s1frame'),u=s.url+'/';
   if(f.dataset.src!==u){f.src=u;f.dataset.src=u}document.getElementById('s1view').hidden=false;showLog('wiki-search','시나리오 1 · Wiki 검색 서버 로그')}
 function s1Close(){const f=document.getElementById('s1frame');f.removeAttribute('src');delete f.dataset.src;document.getElementById('s1view').hidden=true}
@@ -1102,9 +1103,10 @@ function s1Popup(){const s=wikiSearch();if(s)openTop(s.url+'/','wiki-search')}
 // 누르는 즉시 같은 카드의 실행 버튼을 끈다(상태를 다시 읽기 전 두 번째 클릭이 '이미 실행 중' 팝업을 띄우던 문제).
 const JOB_BTNS={scenario2:['s2setup','s2run','s2restore'],scenario3:['s3inject','s3run','s3restore','s3nsg']};
 async function runJob(job,options={}){const lk=JOBS_LOG[job];(JOB_BTNS[lk]||[]).forEach(id=>document.getElementById(id).disabled=true);
+  showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');
   let d;try{d=await (await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})})).json()}
   catch(e){d={error:'허브에 요청하지 못했습니다: '+e.message}}
-  if(d.error){await refreshJobs();alert(d.error);return}showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');setTimeout(refreshJobs,300)}
+  if(d.error){await refreshJobs();alert(d.error);return}setTimeout(refreshJobs,300)}
 const JOBS_LOG={scenario2:'scenario2','scenario2-setup':'scenario2','scenario2-restore':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','nsg-ip':'scenario3'};
 // 카드 안 상태 줄: 카드 제목과 겹치는 '시나리오 N · '는 빼고 PID·인자는 마우스를 올리면 보이게(노트북 폭에서 줄이 넘치던 문제).
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,16),arg=j.args.length?' '+j.args.join(' '):'';
@@ -1132,14 +1134,24 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
     +(jobs._approval?` <button style="padding:1px 8px" onclick="openTop('${esc(jobs._approval)}','approval')">승인 화면</button>`:'');
   // 승인을 기다리기 시작하면 한 번만 자동으로 띄운다(팝업이 막혀 있으면 위 버튼으로 연다)
   const s3job=jobs.scenario3&&jobs.scenario3.started;
-  if(jobs._approval&&s3job&&approvalShown!==s3job){approvalShown=s3job;openTop(jobs._approval,'approval')}
+  if(!LOGMODE&&jobs._approval&&s3job&&approvalShown!==s3job){approvalShown=s3job;openTop(jobs._approval,'approval')}
   document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-setup']),jobLine(jobs['scenario2-restore'])].filter(Boolean).join('<br>')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   // 서버 상태(/api/status)를 아직 못 받았으면 '꺼짐'이 아니라 '확인 중'(새로 고침 직후 잠깐 빨간 글자가 보이던 문제)
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:!lastOkText?'<span class="muted">서버 상태 확인 중…</span>':'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다. 로컬 서버 탭에서 시작하세요.</span>';
   if(slogKey)loadSLog()}
-function showLog(key,title){slogKey=key;document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
-async function loadSLog(){const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
+// 로그는 별도 창(화면 가로 전체 × 아래쪽 58%, 위쪽 40% 창과 겹치지 않게)으로 연다. 같은 창을 다시 쓰고, 같은 로그면 다시 읽지 않는다.
+// 로그 창은 이 페이지를 ?log=<key> 로 연 '로그 전용 모드'라서 실행 계획 패널·지우기·전체 보기가 그대로 동작한다.
+const LOGQ=new URLSearchParams(location.search),LOGMODE=!!LOGQ.get('log');let logWin=null;
+function showLog(key,title){if(LOGMODE)return showLogHere(key,title);slogKey=key;
+  document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));
+  const url='/?log='+encodeURIComponent(key)+'&t='+encodeURIComponent(title);
+  try{if(logWin&&!logWin.closed&&logWin.location.search===url.slice(1)){logWin.focus();return}}catch(e){}
+  const W=screen.availWidth,H=screen.availHeight,h=Math.round(H*0.58),l=screen.availLeft||0,tp=(screen.availTop||0)+H-h;
+  logWin=window.open(url,'hub-log',`popup,width=${W},height=${h},left=${l},top=${tp}`);
+  if(!logWin)alert('로그 창이 팝업 차단으로 열리지 않았습니다. 이 주소의 팝업을 허용하세요.');else logWin.focus()}
+function showLogHere(key,title){slogKey=key;document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log';loadSLog()}
+async function loadSLog(){if(!LOGMODE)return;const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
   pre.textContent=await fetchLog(slogKey);document.getElementById('sall').hidden=!cleared[slogKey];if(atEnd)pre.scrollTop=pre.scrollHeight;loadPlan()}
 // 실행 계획 패널: 로그가 빨리 흘러가도 계획·사전 점검·진행 단계를 로그 위에 고정해 보여 준다(/api/plan 이 로그를 해석).
 let planFold=localStorage.getItem('hub-plan-fold')==='1';
@@ -1183,7 +1195,9 @@ function fit(){for(const id of ['log','slog']){const pre=document.getElementById
   pre.style.height=Math.max(160,innerHeight-top-22)+'px';if(atEnd)pre.scrollTop=pre.scrollHeight}}
 addEventListener('resize',fit);setInterval(fit,500);
 refresh();setInterval(refresh,3000);setInterval(staleCheck,1000);setInterval(()=>{if(!document.getElementById('pane-scenarios').hidden)refreshJobs()},2000);
-tab(location.hash==='#scenarios'?'scenarios':'servers');
+if(LOGMODE){document.body.classList.add('logmode');const k=LOGQ.get('log'),tt=LOGQ.get('t')||k;document.title=tt;
+  document.getElementById('pane-servers').hidden=true;document.getElementById('pane-scenarios').hidden=false;showLogHere(k,tt);refreshJobs()}
+else tab(location.hash==='#scenarios'?'scenarios':'servers');
 </script></body></html>"""
 
 
