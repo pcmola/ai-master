@@ -935,7 +935,7 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 nav.maintabs{display:flex;gap:4px;padding:0 24px;background:var(--top);border-top:1px solid #22324f}
 nav.maintabs button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;color:#aebbd0;padding:10px 14px;font-weight:600}
 nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
-.scgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px}
+.scwrap{display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.sclog{position:sticky;top:12px;display:flex;flex-direction:column;height:calc(100vh - 140px);min-height:420px}.sclog #slog{flex:1;height:auto;min-height:160px}.sclog #splan{max-height:45%;overflow:auto}.scgrid .sc.s3 .row{flex-wrap:wrap!important}.scgrid .s2links .head{flex-wrap:wrap}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.sclog{position:static;height:auto}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -971,6 +971,7 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <pre id="log"></pre></div>
 </main>
 <main id="pane-scenarios" hidden>
+<div class="scwrap">
 <div class="scgrid">
 <div class="card sc"><h2>시나리오 1 · 프록시 설정 가이드 자동 생성</h2>
 <p>Wiki 검색 화면을 새 창으로 엽니다. 질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 그 화면에서 합니다.</p>
@@ -999,11 +1000,12 @@ nav.maintabs button.on{color:#fff;border-bottom-color:#4f8cff}
 <div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
 <div class="jobstate" id="s3state"></div></div>
 </div>
-<div class="card"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
+<div class="card sclog"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(slogKey,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
 <button id="sall" onclick="unclearLog(slogKey,loadSLog)" hidden>전체 보기</button></div>
 <div id="splan" hidden></div>
 <pre id="slog"></pre></div>
+</div>
 </main>
 <script>
 let servers=[], selected=null;
