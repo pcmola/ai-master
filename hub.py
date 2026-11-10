@@ -1204,7 +1204,7 @@ async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json(
     +(n?'<div class="hbad">'+h.failed.map(f=>`<div>✗ ${esc(f.vm)} · ${esc(f.item)}: ${esc(f.detail)}</div>`).join('')+'</div>':'')
     +outcomeRow(h.outcome,run,[['Task 열기','task_url'],['① PR 열기','pr_url'],['② 병합 후 VM 배포','deploy_url'],['이력 Wiki','wiki_url']],{yes:'조치',no:'조치 안 함'})}
 // 대응 결과 줄: Teams 결과 카드와 같은 버튼(있는 링크만). 시나리오 2·3 공통.
-function outcomeRow(o,run,btns,said){if(!o||!o.approval)return'';
+function outcomeRow(o,run,btns,said){if(!o||!o.approval||(o.approval==='wait'&&run))return'';  // 승인 대기 중이면 위의 승인 상자가 이미 보여 준다
   const st=o.approval==='wait'?(run?'<span class="jobstate running">● 승인 대기 중</span>':'<b class="hfail">승인 전에 중단됨</b>')
     :o.approval==='yes'?`<b class="hok">승인: Yes → ${said.yes}</b>`:o.approval==='no'?`승인: No → ${said.no}`:'승인 시간 초과';
   const links=btns.filter(([,k])=>o[k]).map(([l,k])=>`<button onclick="openTop('${esc(o[k])}','devops')">${esc(l)}</button>`).join('');
