@@ -1025,7 +1025,7 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 .s2links .head{display:flex;gap:12px;align-items:center;flex-wrap:nowrap}.s2links .head>span{white-space:nowrap}.s2links .head>span.az{min-width:0;overflow:hidden;text-overflow:ellipsis}.s2links .head button{padding:2px 8px;flex:none}.sc>*,.s2links>*{min-width:0}
 @media(max-width:1250px){.s2links .head{flex-wrap:wrap}}@media(max-width:1400px){.sc.s3 .row{flex-wrap:wrap!important}}.s2links a,.s2links button{white-space:nowrap}
 .jobstate.running{color:var(--warn)}.jobstate.ok{color:var(--ok)}.jobstate.fail{color:var(--bad)}
-#splan{border-bottom:1px solid var(--line);padding:8px 14px;font-size:13px;display:grid;gap:5px}
+#splan{border-bottom:1px solid var(--line);padding:5px 14px;font-size:13px;display:grid;gap:3px}
 #splan .ph{display:flex;gap:10px;align-items:center;flex-wrap:wrap}#splan .ph b{font-size:13px}
 #splan .ph button{margin-left:auto;padding:1px 8px;font-size:12px}
 #splan .chk{display:flex;gap:6px;flex-wrap:wrap}#splan .chip{border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px;background:var(--soft)}
@@ -1311,14 +1311,14 @@ async function loadPlan(){const box=document.getElementById('splan');const key=p
   const ST={running:['● 실행 중','running'],ok:['✓ 완료','ok'],error:['✗ 오류','fail'],cancelled:['… 취소','fail'],stopped:['■ 중단(끝 기록 없음)','fail']}[st]||[st,''];
   const icon={planned:'○',running:'●',done:'✓',error:'✗',skipped:'–'};
   const total=dur(p.started,st==='running'?'':p.ended);
-  let h=`<div class="ph"><b>${old?'지난 실행 기록':'실행 계획'}</b><span class="${old?'muted':'jobstate '+ST[1]}">${ST[0]}</span>`
+  let h=`<div class="ph"><b title="${esc(p.goal?'목표: '+p.goal:'')}">${old?'지난 실행 기록':'실행 계획'}</b><span class="${old?'muted':'jobstate '+ST[1]}">${ST[0]}</span>`
     +`<span class="muted">${esc(p.started)} 시작${old&&ps?' ('+since(p.started.replace(' ','T'))+' 전)':''}${total?' · '+total+(st==='running'?'째':''):''} · trace ${esc(p.id)}</span>`
-    +`<button onclick="foldPlan(${old},'${esc(p.id)}')">${fold?'펼치기':'접기'}</button></div>`;
+    +(!fold&&p.checks.length?`<span class="chk"><span class="muted">사전 점검</span>`+p.checks.map(c=>`<span class="chip${c.ok?'':' no'}" title="${esc(c.note)}">${c.ok?'✓':'△'} ${esc(c.name)}${c.ok?'':' · '+esc(c.note)}</span>`).join('')+`</span>`:'')
+    +`<button onclick="foldPlan(${old},'${esc(p.id)}')">${fold?'펼치기':'접기'}</button></div>`;  // 목표는 제목 툴팁, 사전 점검은 머리 줄에(세로 공간 절약)
   if(fold&&old){}
   else if(fold){const cur=p.steps.findIndex(s=>s.status==='running');
     h+=`<div class="muted">${cur>=0?`지금 ${cur+1}/${p.steps.length} 단계: ${esc(p.steps[cur].name)} — ${esc(p.steps[cur].desc)}`:esc(p.goal)}</div>`}
-  else{if(p.goal)h+=`<div>목표: ${esc(p.goal)}</div>`;
-    if(p.checks.length)h+=`<div class="chk"><span class="muted">사전 점검</span>`+p.checks.map(c=>`<span class="chip${c.ok?'':' no'}" title="${esc(c.note)}">${c.ok?'✓':'△'} ${esc(c.name)}${c.ok?'':' · '+esc(c.note)}</span>`).join('')+`</div>`;
+  else{
     h+='<ol>'+p.steps.map((s,i)=>{const t=s.status==='running'?dur(s.started)+'째':(s.started&&s.ended?dur(s.started,s.ended):'');
       const note=s.note||(s.status==='skipped'?'건너뜀(재계획)':'');
       return`<li class="${s.status}"><span class="ic">${icon[s.status]||''}</span><span>${i+1}</span><span class="nm">${esc(s.name)}</span>`
