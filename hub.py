@@ -1280,7 +1280,7 @@ function setNames(key,title){document.getElementById('sname').textContent=title;
 // 로그는 늘 맨 아래(최신)를 따라간다. 사용자가 직접 위로 올렸을 때만 멈추고, 다시 맨 아래로 내리면 또 따라간다.
 // (예전에는 '지금 맨 아래인가'로만 봐서, 실행 계획 패널이 커지며 로그 칸이 줄면 따라가기가 풀려 위에 머물렀다)
 let slogFollow=true,slogShown='';
-const slogStick=()=>{const pre=document.getElementById('slog');if(slogFollow)pre.scrollTop=pre.scrollHeight};
+const slogStick=()=>{const pre=document.getElementById('slog');const lh=parseFloat(getComputedStyle(pre).lineHeight)||18,pb=12+(((pre.clientHeight-12)%lh)+lh)%lh;if(Math.abs(parseFloat(pre.style.paddingBottom||0)-pb)>.5)pre.style.paddingBottom=pb+'px';if(slogFollow)pre.scrollTop=pre.scrollHeight};
 document.getElementById('slog').addEventListener('scroll',e=>{const pre=e.target;slogFollow=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20});
 async function loadSLog(){if(!pageLog)return;const pre=document.getElementById('slog'),key=pageLog;
   const text=await fetchLog(key);if(key!==pageLog)return;
