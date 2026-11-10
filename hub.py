@@ -1210,24 +1210,30 @@ function outcomeRow(o,run,btns,said){if(!o||!o.approval)return'';
 let s2Key='';
 async function loadS2Result(){let r;try{r=await (await fetch('/api/s2result')).json()}catch(e){return}
   const box=document.getElementById('s2result'),run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');
-  const key=JSON.stringify([r&&r.at,r&&r.result,r&&r.approval,r&&r.task,r&&r.wiki_url,run]);if(key===s2Key)return;s2Key=key;
+  const rs2=(jobs._restore||{}).scenario2||{};
+  const key=JSON.stringify([r&&r.at,r&&r.result,r&&r.approval,r&&r.task,r&&r.wiki_url,run,rs2.at]);if(key===s2Key)return;s2Key=key;
   if(!r||!r.diffs){box.innerHTML='<div class="muted">아직 비교하지 않았습니다. "실행"을 누르면 Wiki 문서와 Azure 실제 VM을 비교합니다.</div>';return}
   const n=r.diffs.length,t=(r.at||'').replace('T',' ').slice(5,16),L=r.labels||{};
   const A=Object.fromEntries((r.azure||[]).map(v=>[v.name,v])),W=Object.fromEntries((r.wiki||[]).map(v=>[v.name,v]));
   const vmtxt=v=>v?[v.state,v.size,v.private_ip].filter(Boolean).join(' · '):'(없음)';
   const AP={wait:'<span class="jobstate running">승인 대기 중</span>',yes:'승인: Yes',no:'승인: No',timeout:'승인: 시간 초과'};
   const RS={applied:'<b class="hok">Wiki 반영 완료</b>',declined:'반영 안 함',manual:'문서 수동 반영 요청',error:'<b class="hfail">처리 실패</b>','dry-run':'분석만(dry-run)'};
-  let h=`<div class="hsum">${run?'<span class="jobstate running">● 실행 중 (아래는 지난 결과)</span> ':''}<b class="${n?'hfail':'hok'}">${n?'차이 '+n+'건':'Wiki와 Azure가 같음'}</b>`
+  // 현행화까지 끝난 결과는 '지금 오류'가 아니라 '찾아서 고친 기록'으로 보인다. 점검 뒤 모의 훈련·원상 복구가 있었으면 다시 점검하라고 알린다
+  const done=r.result==='applied',stale=rs2.at&&new Date(rs2.at)>new Date(r.at);
+  let h=(stale&&!run?`<div class="hsum"><span class="drilltag">다시 점검 필요</span> ${new Date(rs2.at).toTimeString().slice(0,5)} ${rs2.need?'불일치 모의 훈련':'원상 복구'} 뒤 아직 점검하지 않았습니다. 아래는 그 전 결과입니다 → <b>현황 점검 실행</b>으로 확인하세요.</div>`:'')
+    +`<div class="hsum">${run?'<span class="jobstate running">● 실행 중 (아래는 지난 결과)</span> ':''}`
+    +(done?`<b class="hok">차이 ${n}건 → Wiki 현행화 완료</b>${stale?'':' <span class="muted">· 지금은 Wiki와 Azure가 같습니다</span>'}`:`<b class="${n?'hfail':'hok'}">${n?'차이 '+n+'건':'Wiki와 Azure가 같음'}</b>`)
     +` <span class="muted">· ${esc(t)} 점검</span>`+(RS[r.result]&&r.result!=='applied'?' · '+RS[r.result]:'')+'</div>'
     +outcomeRow(r.approval?{approval:r.approval,task:r.task,task_url:r.task_url,wiki_url:r.wiki_url,error:r.error}:null,run,[['수정된 Wiki 문서 열기','wiki_url'],['Task 열기','task_url']],{yes:r.result==='applied'?'Wiki 반영 완료':'현행화',no:'기록만'});
   if(r.score){const sc=r.score,ok=sc.found===sc.planted&&!sc.extra.length;
     h+=`<div class="hsum"><span class="drilltag">모의 훈련 채점</span> 심은 차이 ${sc.planted}건 중 <b class="${ok?'hok':'hfail'}">${sc.found}건 찾음</b>`
       +(sc.extra.length?` · 정답 밖 ${sc.extra.length}건`:'')+(ok?' <span class="hok">✓</span>':'')+'</div>'}
   if(r.alert)h+=`<div class="hbad">${esc(r.alert)}</div>`;
-  if(n){h+='<table><tr><th>VM</th><th>항목</th><th>Wiki 문서</th><th>Azure 실제</th><th>결과</th></tr>'
-    +r.diffs.map(d=>d.type==='added'?`<tr><td>${esc(d.name)}</td><td>-</td><td class="hskip">(없음)</td><td>${esc(vmtxt(A[d.name]))}</td><td class="hok">＋ 신규</td></tr>`
-      :d.type==='removed'?`<tr><td>${esc(d.name)}</td><td>-</td><td>${esc(vmtxt(W[d.name]))}</td><td class="hskip">(없음)</td><td class="hskip">－ 삭제</td></tr>`
-      :`<tr><td>${esc(d.name)}</td><td>${esc(L[d.field]||d.field)}</td><td class="hfail">${esc(d.wiki)}</td><td>${esc(d.azure)}</td><td class="hfail">✗ 변경</td></tr>`).join('')+'</table>'}
+  const fixed=done?'<span class="hok">✓ 반영됨</span>':'',bad=done?'':' class="hfail"';
+  if(n){h+=`<table><tr><th>VM</th><th>항목</th><th>Wiki 문서${done?' (현행화 전)':''}</th><th>Azure 실제</th><th>결과</th></tr>`
+    +r.diffs.map(d=>d.type==='added'?`<tr><td>${esc(d.name)}</td><td>-</td><td class="hskip">(없음)</td><td>${esc(vmtxt(A[d.name]))}</td><td class="hok">＋ 신규 ${fixed}</td></tr>`
+      :d.type==='removed'?`<tr><td>${esc(d.name)}</td><td>-</td><td>${esc(vmtxt(W[d.name]))}</td><td class="hskip">(없음)</td><td class="hskip">－ 삭제 ${fixed}</td></tr>`
+      :`<tr><td>${esc(d.name)}</td><td>${esc(L[d.field]||d.field)}</td><td${bad}>${esc(d.wiki)}</td><td>${esc(d.azure)}</td><td${bad}>${done?'변경 '+fixed:'✗ 변경'}</td></tr>`).join('')+'</table>'}
   else h+='<table><tr><th>VM</th><th>Azure 실제</th><th>결과</th></tr>'+(r.azure||[]).map(v=>`<tr><td>${esc(v.name)}</td><td>${esc(vmtxt(v))}</td><td class="hok">✓ 같음</td></tr>`).join('')+'</table>';
   box.innerHTML=h}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}

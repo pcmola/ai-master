@@ -656,7 +656,7 @@ def run(args) -> int:
         diffs = compare(wiki, azure)
         s.set(diffs=len(diffs), summary=[describe(d) for d in diffs][:6])
     think("Observation", f"차이 {len(diffs)}건" + (f": {', '.join(describe(d) for d in diffs[:3])}" if diffs else ""))
-    if verify_target():  # 테스트 문서면 정답과 자동 대조
+    if verify_target() and diffs:  # 테스트 문서면 정답과 자동 대조(차이 0건 = 이미 현행화된 문서라 대조하지 않음)
         verify(diffs)
     alert = stopped_alert(azure)  # 실제 운영 가정: Proxy VM 은 항상 켜져 있어야 한다
     row = lambda r: {k: r.get(k) for k in ("name", "state", "size", "private_ip", "location")}
