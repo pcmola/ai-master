@@ -77,7 +77,7 @@
   <text x="1140" y="386" class="t" fill="#0c4a6e">Work Items · Task 생성 · 완료</text>
 
   <rect x="970" y="414" width="340" height="46" rx="6" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1.4"/>
-  <text x="1140" y="442" class="t" fill="#0c4a6e">Repos (proxy-config) · 원인 커밋 분석 · 수정 PR</text>
+  <text x="1140" y="442" class="t" fill="#0c4a6e">Repos (proxy-config) · 원인 설정 변경 분석 · 수정 PR</text>
 
   <rect x="970" y="470" width="340" height="46" rx="6" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1.4"/>
   <text x="1140" y="498" class="t" fill="#0c4a6e">Pipelines · proxy-config VM 배포</text>

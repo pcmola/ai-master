@@ -148,7 +148,7 @@ def reselect(page):
 
 
 def wiki(page):
-    ready(page, SITES["wiki"])
+    ready(page, SITES["wiki"] + "/?embed=1")  # 허브 안에서 보이는 화면(위 검은 머리 없음, 가로 꽉 채움)과 같게
     page.locator("#q").fill("프록시 설정 가이드 알려줘")
     page.locator("#go").click()
     page.locator("#ask .opt").first.wait_for(timeout=60000)
