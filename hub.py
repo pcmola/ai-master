@@ -1071,14 +1071,20 @@ function pickSc(n){curSc=n;const b=document.body;b.classList.remove('nosel','sel
 function logToggle(on){document.body.classList.toggle('nolog',!on);document.querySelectorAll('.logon-cb').forEach(c=>c.checked=on);applySplit();if(on)setTimeout(fit,0)}
 // 위 화면과 로그 사이 조절 막대: 끌면 위 화면 높이를 정하고 시나리오별로 브라우저에 기억(오른쪽 열 높이에 대한 비율). 두 번 누르면 기본값.
 const SPLIT_KEY=n=>'hub.split.'+n;
+// 시나리오 2·3 은 위 화면이 내용보다 작아지지 않게 한다(안쪽 스크롤바가 생기지 않게). 시나리오 1(Wiki 검색 화면)은 제한 없음.
+function contentH(n){if(n===1)return 90;const v=document.getElementById('s'+n+'view');
+  const sc=v.querySelector('.sc'),last=sc.lastElementChild;if(!last)return 90;  // 칸 크기가 아니라 마지막 항목의 아래 끝으로 잰다
+  const inner=last.getBoundingClientRect().bottom-sc.getBoundingClientRect().top+sc.scrollTop+parseFloat(getComputedStyle(sc).paddingBottom);
+  return v.querySelector('.tabs').offsetHeight+Math.ceil(inner)+2}
 function applySplit(){if(!curSc)return;const v=document.getElementById('s'+curSc+'view');let f=null;
   if(!document.body.classList.contains('nolog'))try{f=parseFloat(localStorage.getItem(SPLIT_KEY(curSc)))}catch(e){}
-  v.style.flex=f>0?`0 0 ${Math.round(f*document.querySelector('.scright').clientHeight)}px`:''}
+  const want=f>0?Math.max(contentH(curSc),Math.round(f*document.querySelector('.scright').clientHeight)):0;
+  const flex=want?`0 0 ${want}px`:'';if(v.style.flex!==flex)v.style.flex=flex}
 (function(){const sp=document.getElementById('split');let y0=0,h0=0,v=null;
   sp.addEventListener('pointerdown',e=>{if(!curSc)return;v=document.getElementById('s'+curSc+'view');y0=e.clientY;h0=v.getBoundingClientRect().height;
     sp.setPointerCapture(e.pointerId);document.body.classList.add('dragging');e.preventDefault()});
   sp.addEventListener('pointermove',e=>{if(!v)return;const H=document.querySelector('.scright').clientHeight;
-    const h=Math.max(90,Math.min(H-150,h0+e.clientY-y0));v.style.flex=`0 0 ${h}px`});
+    const h=Math.max(contentH(curSc),Math.min(H-150,h0+e.clientY-y0));v.style.flex=`0 0 ${h}px`});
   const end=()=>{if(!v)return;const H=document.querySelector('.scright').clientHeight;
     try{localStorage.setItem(SPLIT_KEY(curSc),String(v.getBoundingClientRect().height/H))}catch(e){}v=null;document.body.classList.remove('dragging');fit()};
   sp.addEventListener('pointerup',end);sp.addEventListener('pointercancel',end);
@@ -1218,7 +1224,7 @@ async function loadPlan(){const box=document.getElementById('splan');const key=p
 // 높이를 바꾸기 전에 맨 아래를 보고 있었으면 바꾼 뒤에도 맨 아래에 붙인다(위 실행 계획 패널이 커지면 마지막 줄이 가려지던 문제).
 function fit(){for(const id of ['slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
   if(top<=0)continue;pre.style.height=Math.max(160,innerHeight-top-22)+'px';slogStick()}}
-addEventListener('resize',fit);setInterval(fit,500);
+addEventListener('resize',fit);setInterval(()=>{applySplit();fit()},500);
 refresh();setInterval(refresh,3000);setInterval(staleCheck,1000);setInterval(refreshJobs,2000);
 if(LOGMODE){document.body.classList.add('logmode');const k=LOGQ.get('log'),tt=LOGQ.get('t')||k;document.title=tt;
   showLogHere(k,tt);refreshJobs()}
