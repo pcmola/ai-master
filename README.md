@@ -231,14 +231,13 @@ flowchart TD
 **① 실행 전: Wiki와 실제 Azure가 다름** (2026-11-03 촬영)
 
 - Azure Portal **Virtual machines** 목록입니다. 빨간 테두리가 Wiki 현황 문서(⑦의 수정 전)와 다른 곳입니다.
-- Portal 기본 목록에 없는 사설 IP 차이는 ⑦에서 봅니다.
+- 사설 IP는 Portal 기본 목록에 안 보여 눈으로 대조할 수 없으므로 비교하지 않습니다(2026-11-11부터).
 
 | VM | Wiki (수정 전) | Azure 실제 |
 |---|---|---|
 | wjy-proxy03 | 없음 | 있음 (Running) |
 | wjy-prxy04 | 있음 | 없음 |
 | wjy-proxy01 | 중지 · Standard_B1s | Running · Standard_B2ats_v2 |
-| wjy-proxy02 | 사설 IP 10.10.0.17 | 사설 IP 10.10.0.5 |
 
 ![시나리오 2 - Azure Portal VM 목록(Wiki와 다른 곳)](docs/images/azure-scenario2-vms.png)
 
@@ -261,7 +260,7 @@ flowchart TD
 
 **③ Teams 승인 요청**
 
-AI 요약과 규칙으로 찾은 변경 5건, Yes·No·자세히 보기 버튼이 있습니다.
+AI 요약과 규칙으로 찾은 변경 5건, Yes·No·자세히 보기 버튼이 있습니다. 사설 IP도 비교하던 때의 촬영이라 5건이고, 지금은 4건입니다.
 
 ![시나리오 2 - Teams 승인 요청 카드](docs/images/teams-scenario2-approval.png)
 
@@ -279,13 +278,13 @@ Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니
 
 **⑥ Azure DevOps Task**
 
-변경 5건, 문서 링크, AI 요약이 들어가고 Wiki를 고친 뒤 Done이 됩니다.
+변경 5건(촬영 당시, 지금은 사설 IP를 빼 4건), 문서 링크, AI 요약이 들어가고 Wiki를 고친 뒤 Done이 됩니다.
 
 ![시나리오 2 - Task 상세](docs/images/devops-scenario2-task.png)
 
 **⑦ Wiki 문서 수정 전/후** (2026-11-02 23:21 실행, 빨간색 = 바뀐 곳)
 
-- 바뀐 값(SIZE·상태·사설 IP), 지워진 VM(취소선), 새 VM, 변경 이력 한 줄이 표시됩니다.
+- 바뀐 값(SIZE·상태, 촬영 당시에는 사설 IP 포함), 지워진 VM(취소선), 새 VM, 변경 이력 한 줄이 표시됩니다.
 - 수정 후 표는 ①의 Azure 화면과 같아집니다. 사설 IP는 그대로 보이고 공인 IP만 가렸습니다.
 
 ![시나리오 2 - Wiki 현황 문서 수정 전/후](docs/images/wiki-scenario2-diff.png)
@@ -1345,7 +1344,7 @@ flowchart LR
 | VM | Wiki(현행화 전) | 비교 단계가 찾아야 할 차이 |
 |---|---|---|
 | 1번째 VM | 상태·SIZE를 실제와 다르게 | 상태 변경, 스펙 변경 |
-| 2번째 VM | 사설 IP를 실제와 다르게 | IP 변경 |
+| 2번째 VM | 그대로 둠 | 없음(사설 IP는 Portal 목록에 안 보여 비교하지 않음) |
 | 3번째 VM | 표에서 뺌 | 신규 |
 | 없는 VM(`*-prxy04`) | 표에 넣음 | 삭제 |
 
@@ -1377,7 +1376,7 @@ python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신�
 | 1. trigger | 점검 배치의 주기 실행(가정, `--trigger auto`). 시연은 허브 "현황 점검 실행" 또는 명령줄(`--trigger manual`, 기본) |
 | 2. wiki_read | Wiki 문서의 `## VM 목록` 표를 읽음 (머리글 이름으로 칸을 찾음). 문서는 `SCENARIO2_WIKI_PAGE`(비우면 테스트 문서) |
 | 3. azure_read | 리소스 그룹에서 `SCENARIO2_TAG` 태그가 있거나, 이름이 proxy·prxy·pxy(+숫자)로 끝나는 VM(프록시로 추정)의 IP·상태·SIZE·리전. `SCENARIO2_EXCLUDE_TAG` 태그가 있는 VM은 뺌 |
-| 4. compare | 신규·삭제·변경(사설/공인 IP, 상태, SIZE, LOCATION, RESOURCE GROUP). 차이 없으면 종료. Proxy(용도) 칸은 사람이 관리하므로 비교하지 않음 |
+| 4. compare | 신규·삭제·변경(공인 IP, 상태, SIZE, LOCATION, RESOURCE GROUP). 차이 없으면 종료. Proxy(용도) 칸은 사람이 관리하고, 사설 IP는 Portal 목록에 안 보여 비교하지 않음 |
 | 4.5 llm_summary (AI) | 차이 전체를 2문장·120자 이내 존댓말로 요약해 LLM(`OPENAI_MODEL`)으로 승인 카드·화면·Task 맨 위에 "AI 요약 · 참고용"으로 넣음(위험도는 기준이 없어 표시하지 않음). 차이 목록은 규칙으로 만든 짧은 줄 그대로. 비교 자체는 규칙으로 하고 AI는 설명만 함. 데이터에 없는 사실은 '확인 필요'로 쓰게 함. 실패하거나 LLM 설정이 없으면 규칙 목록만 표시하고 트레이스에 이유를 남김 |
 | 5. approval | Teams 채널에 요약 카드와 **Yes · 현행화 / No · 기록만** 버튼을 보내고 이 PC의 승인 서버에서 답을 기다림(기본 15분, `SCENARIO2_TIMEOUT`). 웹후크가 없으면 승인 화면을 브라우저로 엶. No·시간 초과는 Teams에 알리고 종료. 이름 규칙으로만 찾은 VM이 있으면 카드에 "프록시로 추정한 VM(한 번만 확인)"을 붙임 |
 | 5.5 proxy_confirm | 승인(Yes) 직후 추정 VM에 태그를 붙여 확정(다음 실행부터 묻지 않음). Teams 카드의 Yes는 모두 프록시로 확정하고, 승인 화면(자세히 보기)에서 '프록시 아님'을 체크하면 그 VM은 `role=not-proxy` 태그를 붙이고 다시 비교해 반영에서 뺌. 태그 실패는 다음 실행 때 다시 물음 |

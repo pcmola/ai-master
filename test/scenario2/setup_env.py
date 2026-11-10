@@ -1,14 +1,14 @@
 """시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경을 점검하고, 테스트용 Wiki 문서를 '현행화 전' 상태로 되돌린다.
 
 Azure 는 바꾸지 않는다. 실제 Proxy VM 을 읽어 일부러 틀린 값을 넣은 Wiki 문서를 만들고,
-비교 단계가 찾아야 할 차이(신규·삭제·IP·상태·스펙 변경)를 정답으로 저장한다.
+비교 단계가 찾아야 할 차이(신규·삭제·상태·스펙 변경)를 정답으로 저장한다.
 저장소가 공개라 구독 ID·IP 는 코드에 두지 않고, 실행할 때 읽어 data/scenario2/(Git 제외)에 저장한다.
 
 하는 일
 1. 사전 조건 점검: az 로그인, 테스트 Proxy VM(3대 이상), Azure DevOps PAT, 승인 화면 모듈
 2. 꺼진 Proxy VM 을 켜고(실제 운영 가정: 항상 켜짐), 실제 VM 으로 '현행화 전' 표와 정답을 다시 만든다
      1번째 VM: 상태·스펙을 다르게 → 상태 변경, 스펙 변경
-     2번째 VM: 사설 IP 를 다르게   → IP 변경
+     2번째 VM: 그대로 둔다(사설 IP 는 Portal 목록에 안 보여 비교하지 않음)
      3번째 VM: 표에서 뺀다         → 신규
      없는 VM 하나를 표에 넣는다     → 삭제
 3. wiki-repo 의 테스트 문서를 '현행화 전' 표로 다시 쓰고, 바뀌었으면 wiki-repo 에 로컬 커밋(push 하지 않음)
@@ -62,7 +62,6 @@ def make_seed(vms: list[dict]) -> tuple[list[dict], list[dict]]:
     other_state = "중지" if first["state"] == "운영" else "운영"
     other_size = "Standard_B1s" if first["size"] != "Standard_B1s" else "Standard_B1ms"
     a, b, c, d = second["private_ip"].split(".")
-    wrong_ip = f"{a}.{b}.{c}.{(int(d) + 10) % 250 + 2}"
     removed = {**first, "name": first["name"].split("-")[0] + "-prxy" + f"{len(vms) + 1:02d}",
                "private_ip": f"{a}.{b}.{c}.{(int(d) + 30) % 250 + 2}", "public_ip": "-",
                "size": "Standard_B1s", "state": "운영"}
@@ -71,10 +70,8 @@ def make_seed(vms: list[dict]) -> tuple[list[dict], list[dict]]:
         {"type": "removed", "name": removed["name"]},
         {"type": "changed", "name": first["name"], "field": "state", "wiki": other_state, "azure": first["state"]},
         {"type": "changed", "name": first["name"], "field": "size", "wiki": other_size, "azure": first["size"]},
-        {"type": "changed", "name": second["name"], "field": "private_ip", "wiki": wrong_ip, "azure": second["private_ip"]},
     ]
     first.update(state=other_state, size=other_size)
-    second.update(private_ip=wrong_ip)
     # 3번째 이후 VM 은 표에 그대로 둔다(3번째만 빼서 '신규'를 만든다).
     seed = [first, second, *(dict(v) for v in vms[3:]), removed]
     return seed, expected

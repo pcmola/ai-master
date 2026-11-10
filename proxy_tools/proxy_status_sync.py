@@ -10,7 +10,7 @@ Teams 로 승인을 받아 Azure DevOps Task 를 만들고 Wiki 표를 고친 �
                 끝나는 VM(프록시로 추정)의 IP·상태·SIZE·리전을 읽는다. SCENARIO2_EXCLUDE_TAG(기본 role=not-proxy)는 뺀다
    proxy_confirm  이름 규칙으로만 찾은 VM 은 3단계 승인 카드에서 한 번 확인받는다. Yes 면 확인한 VM 에 SCENARIO2_TAG,
                 '프록시 아님'으로 고른 VM 에 SCENARIO2_EXCLUDE_TAG 태그를 붙여 다음부터 묻지 않고, 뺀 VM 은 비교에서 제외한다
-4. compare      신규·삭제·변경(사설/공인 IP, 상태, SIZE, 리전). 차이가 없으면 여기서 끝난다
+4. compare      신규·삭제·변경(공인 IP, 상태, SIZE, 리전, 리소스 그룹. 사설 IP 는 비교 안 함). 차이가 없으면 여기서 끝난다
    llm_summary  (AI) 차이 전체를 LLM(OPENAI_MODEL)으로 2문장 이내로 요약해 승인 카드·화면·Task 맨 위에 '참고용'으로 붙인다.
                 비교 자체는 규칙으로 하고 AI 는 설명만 한다. 실패하거나 LLM 설정이 없으면 규칙 목록만 쓴다
 5. approval     Teams 채널에 요약 카드(Yes/No 버튼)를 보내고 이 PC 의 승인 서버에서 답을 기다린다.
@@ -68,8 +68,9 @@ PUSH = os.environ.get("SCENARIO2_PUSH", "0") == "1"
 APPROVAL_TIMEOUT = float(os.environ.get("SCENARIO2_TIMEOUT") or 900)
 COLUMNS = ["NAME", "RESOURCE GROUP", "LOCATION", "사설 IP", "공인 IP", "SIZE", "Proxy", "상태"]
 FIELDS = ["name", "resource_group", "location", "private_ip", "public_ip", "size", "proxy", "state"]
-COMPARE = {"private_ip": "사설 IP", "public_ip": "공인 IP", "state": "상태", "size": "SIZE",
-           "location": "LOCATION", "resource_group": "RESOURCE GROUP"}  # Proxy(용도) 칸은 사람이 관리한다
+COMPARE = {"public_ip": "공인 IP", "state": "상태", "size": "SIZE",
+           "location": "LOCATION", "resource_group": "RESOURCE GROUP"}
+# Proxy(용도) 칸은 사람이 관리한다. 사설 IP 는 Azure Portal VM 목록에 안 보여 눈으로 대조할 수 없으므로 비교에서 뺀다(2026-11-11).
 LOCATIONS = {"koreacentral": "Korea Central", "eastus": "East US"}
 EXPECTED = DATA_DIR / "scenario2" / "expected_diff.json"
 TRIGGER = "manual"  # --trigger: manual(허브·명령줄) | auto(점검 배치 가정). Teams 카드에 '점검 방식'으로 남긴다
