@@ -421,11 +421,29 @@ def pump_job_log(proc: subprocess.Popen, path: Path):
     write(f"===== 종료: 코드 {code}, 소요 {time.time() - started:.0f}초 =====")
 
 
+def stop_job(job: str, reason: str) -> None:
+    """실행 중인 작업을 자식 프로세스(ssh·승인 서버 등)까지 끈다. 로그에 중지 줄을 남긴다."""
+    r = RUNNING[job]
+    subprocess.run(["taskkill", "/PID", str(r["pid"]), "/T", "/F"], capture_output=True, timeout=30, creationflags=NO_WINDOW)
+    try:
+        r["proc"].wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        pass
+    with open(LOG_DIR / f"{JOBS[job]['log']}.log", "ab") as f:
+        f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 중지: {JOBS[job]['title']} ({reason}) =====\n".encode("utf-8"))
+    log(f"[{job}] 작업 중지 PID {r['pid']}: {reason}")
+
+
 def run_job(job: str, options: dict) -> dict:
-    """작업을 창 없이 실행한다. 같은 로그를 쓰는 작업(예: 시나리오 2 실행과 테스트 환경 준비)은 동시에 돌리지 않는다."""
+    """작업을 창 없이 실행한다. 같은 로그를 쓰는 작업(예: 시나리오 2 실행과 테스트 환경 준비)은 동시에 돌리지 않는다.
+    원상 복구(-restore)는 force 로 부르면 실행 중인 작업을 멈추고 실행한다(화면에서 한 번 확인받은 뒤)."""
     spec = JOBS[job]
     with _job_lock:
         busy = [k for k, r in RUNNING.items() if JOBS[k]["log"] == spec["log"] and r["proc"].poll() is None]
+        if busy and options.get("force") and job.endswith("-restore"):
+            for k in busy:
+                stop_job(k, "원상 복구를 위해 허브에서 멈춤")
+            busy = []
         if busy:
             return {"error": f"이미 실행 중입니다: {JOBS[busy[0]]['title']}"}
         args = [flag for opt, flag in spec["options"].items() if options.get(opt)]
@@ -981,14 +999,14 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 </div>
 <div class="scright">
 <div class="card scview" id="s1view" hidden><div class="tabs"><span class="name" title="질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 아래 화면에서 합니다. 서버 로그는 맨 아래에 나옵니다.">Wiki 기반 가이드 생성</span><span class="jobstate" id="s1cache" style="margin-left:auto"></span><button onclick="if(!openTop(this.dataset.url,'devops'))window.open(this.dataset.url,'_blank','noopener')" data-url="https://dev.azure.com/ai-master/AI%20Master/_wiki/wikis/AI-Master.wiki/1/AI-Master-%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8" title="Azure DevOps Wiki(AI-Master 프로젝트 첫 페이지)를 새 창으로 엽니다">Azure Wiki 바로 가기</button><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div><p class="s1desc">Wiki 문서를 의미 검색해 근거를 찾고, AI가 근거와 출처를 단 가이드를 만듭니다. 질의 입력부터 미리보기·수정 요청·Wiki 등록까지 아래 화면에서 합니다.</p><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
-<div class="card scview" id="s2view" hidden><div class="tabs"><span class="name">프록시 현황 점검</span><span style="margin-left:auto"></span><button id="s2servers" onclick="runJob('scenario2-servers')" title="test/scenario2/setup_env.py --servers: 꺼진 Proxy VM 을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검(문서·정답은 그대로)">서버 환경 점검</button><button id="s2setup" class="drillbtn" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py --seed: 실제 VM 으로 일부러 틀린 '현행화 전' 표와 정답을 만들어 Wiki 테스트 문서에 씀(VM 은 켜지 않음)">불일치 모의 훈련</button><button id="s2restore" onclick="if(confirm('테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로). 계속할까요?'))runJob('scenario2-restore')" disabled>원상 복구</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
+<div class="card scview" id="s2view" hidden><div class="tabs"><span class="name">프록시 현황 점검</span><span style="margin-left:auto"></span><button id="s2servers" onclick="runJob('scenario2-servers')" title="test/scenario2/setup_env.py --servers: 꺼진 Proxy VM 을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검(문서·정답은 그대로)">서버 환경 점검</button><button id="s2setup" class="drillbtn" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py --seed: 실제 VM 으로 일부러 틀린 '현행화 전' 표와 정답을 만들어 Wiki 테스트 문서에 씀(VM 은 켜지 않음)">불일치 모의 훈련</button><button id="s2restore" onclick="restoreJob('scenario2-restore','테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로).')" disabled>원상 복구</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
 <div class="sc"><p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button class="main" id="s2run" onclick="runJob('scenario2')">실행</button><span class="jobstate" id="s2state"></span></div>
 <div id="s2result"></div>
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div></div>
 <div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">프록시 Health Check</span><span style="margin-left:auto"></span><span class="drill" title="장애 모의 훈련: 고른 종류의 잘못된 설정을 배포합니다"><button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포만 함(점검은 Health Check 실행으로) (proxy_fault_inject.py apply)">장애 모의 훈련</button><select id="s3fault" title="일부러 넣을 장애 종류">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
-<option value="bad-dns">잘못된 DNS 서버</option></select></span><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button><button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="회선이 바뀌어 VM 에 접속이 안 될 때(SSH Connection timed out) 누르세요. Proxy VM 방화벽(NSG) 허용 목록에 이 PC 의 지금 공인 IP 를 넣고 예전 IP 는 지웁니다 (sync_nsg_ip.py)">내 IP 허용</button><button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
+<option value="bad-dns">잘못된 DNS 서버</option></select></span><button id="s3restore" onclick="restoreJob('scenario3-restore','심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다.')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button><button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="회선이 바뀌어 VM 에 접속이 안 될 때(SSH Connection timed out) 누르세요. Proxy VM 방화벽(NSG) 허용 목록에 이 PC 의 지금 공인 IP 를 넣고 예전 IP 는 지웁니다 (sync_nsg_ip.py)">내 IP 허용</button><button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
 <div class="sc s3"><p>Wiki <b>Proxy Health Check 기준</b> 문서의 허용·차단 목적지로 VM 마다 실제 접속해 봅니다. 이상이 있으면 원인을 분석하고 Teams 승인 후 Task·수정 PR·이력 Wiki를 남깁니다(VM 반영은 PR 병합 뒤 <b>VM 배포</b> 파이프라인).</p>
 <div class="row"><button class="main" id="s3run" onclick="runJob('scenario3')" title="Health Check(Wiki 기준 목적지 실제 접속) → 최근 로그 탐지 → 이상이면 원인 분석·Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">Health Check 실행</button></div>
 <div id="s3health"></div>
@@ -1098,6 +1116,12 @@ async function runJob(job,options={}){slogFollow=true;const lk=JOBS_LOG[job];(JO
   let d;try{d=await (await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})})).json()}
   catch(e){d={error:'허브에 요청하지 못했습니다: '+e.message}}
   if(d.error){await refreshJobs();alert(d.error);return}setTimeout(refreshJobs,300)}
+// 원상 복구: 같은 시나리오 작업이 실행 중이면 '멈추고 원상 복구할까요?'로 한 번만 묻고, 허브가 그 작업을 멈춘 뒤 복구한다.
+function restoreJob(job,msg){const lk=JOBS_LOG[job],cur=Object.keys(JOBS_LOG).find(j=>JOBS_LOG[j]===lk&&jobs[j]&&jobs[j].state==='running');
+  if(cur){if(confirm(`지금 '${jobs[cur].title.replace(/^시나리오 \d · /,'')}' 이(가) 실행 중입니다. 멈추고 원상 복구할까요?
+
+${msg}`))runJob(job,{force:true});return}
+  if(confirm(msg+' 계속할까요?'))runJob(job)}
 const JOBS_LOG={scenario2:'scenario2','scenario2-servers':'scenario2','scenario2-setup':'scenario2','scenario2-restore':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','nsg-ip':'scenario3'};
 // 카드 안 상태 줄: 카드 제목과 겹치는 '시나리오 N · '는 빼고 PID·인자는 마우스를 올리면 보이게(노트북 폭에서 줄이 넘치던 문제).
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,16),arg=j.args.length?' '+j.args.join(' '):'';
@@ -1149,8 +1173,8 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   // 원상 복구는 로그로 보아 필요할 때만 켠다(테스트 환경 준비·장애 모의 훈련 뒤). 꺼진 이유는 툴팁에.
   const rs=jobs._restore||{};[['s2restore','scenario2',run,'test/scenario2/setup_env.py --restore: 테스트 문서를 실제 VM 과 같은 정상 표로'],
     ['s3restore','scenario3',run3,'심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인 (proxy_fault_inject.py restore)']].forEach(([id,k,busy,tip])=>{
-    const b=document.getElementById(id),x=rs[k]||{};b.disabled=busy||!x.need;
-    b.title=(busy&&x.need?'다른 작업이 실행 중이라 끝난 뒤에 누를 수 있습니다(같은 시나리오 작업은 동시에 돌리지 않음) · ':'')+tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});
+    const b=document.getElementById(id),x=rs[k]||{};b.disabled=!x.need||(busy&&jobs[id==='s2restore'?'scenario2-restore':'scenario3-restore']?.state==='running');
+    b.title=(busy&&x.need?'지금 실행 중인 작업을 멈추고 원상 복구합니다(누르면 한 번 확인) · ':'')+tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
   const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
     :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 심어진 장애: ${esc(f.active.join(', '))} → 시험 후 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted" title="병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구">(VM 은 배포해야 반영)</span>');
