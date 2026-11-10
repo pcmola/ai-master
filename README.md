@@ -237,7 +237,7 @@ flowchart TD
 **② 허브에서 실행** (2026-11-08 촬영)
 
 - 카드 아래에 비교 대상 Wiki 문서와 Azure VM 목록 링크가 있습니다.
-- "원상 복구"는 실행으로 Wiki가 이미 반영되어 꺼져(회색) 있습니다. "테스트 환경 준비" 뒤에만 켜집니다.
+- "원상 복구"는 실행으로 Wiki가 이미 반영되어 꺼져(회색) 있습니다. "불일치 모의 훈련" 뒤에만 켜집니다.
 - 로그 위 실행 계획 패널(빨간 테두리)에 5단계 진행과 단계별 결과가 나옵니다.
 - 아래 로그는 이 실행의 시작 부분입니다. 줄마다 의미는 다음과 같습니다.
 
@@ -662,7 +662,7 @@ flowchart LR
    ```
 
 3. 시나리오 2가 VM을 찾는 기준: 리소스 그룹 `SCENARIO2_RESOURCE_GROUP`(기본 `WJY-PROXY-RG`) 안에서 태그 `SCENARIO2_TAG`(기본 `role=proxy`)가 있거나 이름이 `proxy`·`prxy`·`pxy`(+숫자)로 끝나는 VM.
-4. 권한: 조회만 하려면 리소스 그룹 **Reader**, 승인 때 추정 VM에 태그를 붙이려면 **Tag Contributor**, "테스트 환경 준비"에서 꺼진 VM을 켜려면 **Virtual Machine Contributor**가 필요합니다.
+4. 권한: 조회만 하려면 리소스 그룹 **Reader**, 승인 때 추정 VM에 태그를 붙이려면 **Tag Contributor**, "서버 환경 점검"에서 꺼진 VM을 켜려면 **Virtual Machine Contributor**가 필요합니다.
 5. 시나리오 3: 프록시 로그 뷰어는 이 PC의 기본 SSH 키로 `azureuser@<VM 공용 IP>`에 접속해 로그를 읽습니다(VM을 만들 때 넣은 키, NSG에서 이 PC IP 허용). 허용 클라이언트 대역은 `PROXY_ALLOWED_CLIENTS`에 넣습니다. 정책 변경 감지(`proxy_policy_*.py`)도 같은 SSH 접속을 씁니다(기본 사용자 azureuser, 다른 키를 쓰면 `PROXY_SSH_USER`·`PROXY_SSH_KEY`).
 
 ### 3.7 Microsoft Teams
@@ -752,7 +752,7 @@ Copy-Item .env.sample .env
 | `teams_cards/` | teams_notify.py (보낸 Teams 카드 JSON, README 카드 화면 재촬영용) |
 | `approvals/` | approval_local.py (로컬 승인 화면 내용·최종 진행 상태, README 승인 화면 재촬영용) |
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
-| `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 화면 아래 로그에서 봄, 2MB 넘으면 `.old.log`) |
+| `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 서버 환경 점검·불일치 모의 훈련 출력. 허브 화면 아래 로그에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py·proxy_status_sync.py·proxy_log_viewer.py (요청·실행별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
 | `health/latest.json` | proxy_health.py (시나리오 3 Health Check 마지막 결과. 허브 점검표가 읽음) |
 | `logs/scenario3.log` | incident_response.py (시나리오 3 실행 출력. 허브 화면 아래 로그에서 봄) |
@@ -878,17 +878,20 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 시나리오 2
 
 - **프록시 현황 점검**을 누르면 오른쪽에 아래 버튼과 상태, 그 아래에 `scenario2.log`가 나옵니다.
-- "테스트 환경 준비"와 "원상 복구"는 화면 머리(로그 보기 왼쪽)에, "실행"은 설명 아래에 있습니다.
-- "테스트 환경 준비"(`setup_env.py`) 후 "실행"을 누릅니다. 테스트 환경 준비는 꺼진 Proxy VM만 켜고 표·정답을 다시 만듭니다.
+- "서버 환경 점검", "불일치 모의 훈련", "원상 복구"는 화면 머리(로그 보기 왼쪽)에, "실행"은 설명 아래에 있습니다.
+- 시험 흐름: "서버 환경 점검" → "불일치 모의 훈련" → "실행".
+  - **서버 환경 점검**(`setup_env.py --servers`): 꺼진 Proxy VM을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검합니다. 문서는 바꾸지 않습니다.
+  - **불일치 모의 훈련**(`setup_env.py --seed`): 실제 VM으로 일부러 틀린 '현행화 전' 표와 정답을 만들어 Wiki 테스트 문서에 씁니다. VM은 켜지 않습니다.
+- 모의 훈련 버튼(시나리오 2 불일치 모의 훈련, 시나리오 3 장애 모의 훈련)은 주황색으로 구분합니다.
 - "원상 복구"(`setup_env.py --restore`)는 문서만 실제 VM과 같은 정상 표로 되돌립니다.
-- 원상 복구는 로그로 보아 테스트 환경 준비 뒤 아직 반영 전일 때만 켜집니다. 실행으로 Wiki가 반영되면 꺼지고, 꺼진 이유는 툴팁에 나옵니다.
+- 원상 복구는 로그로 보아 불일치 모의 훈련 뒤 아직 반영 전일 때만 켜집니다. 실행으로 Wiki가 반영되면 꺼지고, 꺼진 이유는 툴팁에 나옵니다.
 - 버튼 아래 한 줄에 Wiki 현황 문서 링크와 Azure Portal VM 목록 링크(`N/3대 실행 중`)가 있습니다.
 - 이 링크는 az·Azure DevOps를 조회해서 5분 동안 캐시합니다. "새로 읽기"를 누르면 바로 다시 읽습니다.
 
 시나리오 3
 
 - **프록시 Health Check**를 누르면 오른쪽에 아래 버튼과 상태, 그 아래에 `scenario3.log`가 나옵니다.
-- 시험 도구(장애 종류 선택, "장애 모의 훈련", "원상 복구", "IP 맞추기", "프록시 로그")는 화면 머리에 있습니다.
+- 시험 도구는 화면 머리에 있습니다. 주황색 묶음 하나가 **장애 모의 훈련** 버튼과 장애 종류 선택이고, 그 옆에 "원상 복구", "IP 맞추기", "프록시 로그"가 있습니다.
 - 본문의 **Health Check 실행**은 Health Check → 최근 60분 로그 탐지 → 이상이면 원인 분석·Teams 승인 → Task·수정 PR·이력 Wiki 순서로 진행합니다.
 - 그 아래 점검표에 VM × 항목(VM 상태, 서비스, 허용 목적지 접속, 차단 목적지 접속)의 마지막 결과가 나옵니다. 칸에 마우스를 올리면 자세한 결과가 보이고, 이상 항목은 표 아래에 줄로 나옵니다.
 - 시험 흐름: 장애 모의 훈련 → Health Check 실행 → 원상 복구.
@@ -1254,7 +1257,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 | 시나리오 | 시험 준비 | 실제로 바뀌는 것 | 정상으로 되돌리기 |
 |---|---|---|---|
 | 1 | 없음(wiki-repo 문서 그대로) | Wiki 등록 시 `00. AI 문서 생성` 아래 문서 | 등록한 문서 삭제 |
-| 2 | 허브 "테스트 환경 준비"(`setup_env.py`) | wiki-repo 테스트 문서(로컬 커밋), 승인 시 Task | 시나리오 2 실행 후 승인(Wiki가 실제 VM과 같아짐) 또는 "원상 복구" |
+| 2 | 허브 "불일치 모의 훈련"(`setup_env.py --seed`) | wiki-repo 테스트 문서(로컬 커밋), 승인 시 Task | 시나리오 2 실행 후 승인(Wiki가 실제 VM과 같아짐) 또는 "원상 복구" |
 | 3 | 허브 "장애 모의 훈련"(`proxy_fault_inject.py`) | proxy-config 커밋·VM 설정, 승인 시 Task·PR·이력 Wiki | PR 병합·배포 또는 "원상 복구" |
 
 ### 8.1 시나리오 1 · 시험
@@ -1306,7 +1309,9 @@ flowchart LR
 | 없는 VM(`*-prxy04`) | 표에 넣음 | 삭제 |
 
 ```powershell
-python test\scenario2\setup_env.py            # 꺼진 Proxy VM 켜기 + 표·정답 재생성 + 문서를 '현행화 전'으로 (허브 "테스트 환경 준비")
+python test\scenario2\setup_env.py --servers  # 꺼진 Proxy VM 켜기 + 사전 조건 점검 (허브 "서버 환경 점검")
+python test\scenario2\setup_env.py --seed     # 표·정답 재생성 + 문서를 '현행화 전'으로 (허브 "불일치 모의 훈련")
+python test\scenario2\setup_env.py            # 위 둘을 한 번에
 python test\scenario2\setup_env.py --check    # 점검만, 아무것도 바꾸지 않음
 python teams_tools\approval_local.py --title "Proxy 현황 변경 감지" "신규: wjy-proxy03"   # 승인 화면만 시험
 ```
@@ -1426,7 +1431,7 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 - Teams 카드는 `teams_notify.send`가 보낼 때마다 `data/teams_cards/`(Git 제외)에 JSON으로 남깁니다. `TEAMS_CARD_ARCHIVE=0`이면 남기지 않습니다.
 - 보내는 쪽에서 남기는 이유가 있습니다. Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요하기 때문입니다.
 - 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2와 3을 실제로 한 번씩 실행합니다.
-  - 시나리오 2: 테스트 환경 준비 → 실행 → Yes
+  - 시나리오 2: 서버 환경 점검 → 불일치 모의 훈련 → 실행 → Yes
   - 시나리오 3: 장애 모의 훈련 → 실행 → Yes
 - 시나리오 2 로그만 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다. 비교와 AI 요약만 하고, 로컬 로그·트레이스에 기록합니다.
 

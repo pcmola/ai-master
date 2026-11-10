@@ -19,7 +19,9 @@ data/scenario2/
     expected_diff.json  정답 차이 목록
 
 사용 예:
-    python test/scenario2/setup_env.py            # 꺼진 VM 켜기 + 표·정답 재생성 + 문서 초기화(시나리오 실행 전마다)
+    python test/scenario2/setup_env.py            # 꺼진 VM 켜기 + 표·정답 재생성 + 문서 초기화(아래 둘을 한 번에)
+    python test/scenario2/setup_env.py --servers  # 서버 환경 점검: 꺼진 VM 켜기 + 사전 조건 점검(문서·정답은 그대로, 허브 '서버 환경 점검')
+    python test/scenario2/setup_env.py --seed     # 불일치 모의 훈련: VM 은 켜지 않고 표·정답 재생성 + 문서를 '현행화 전'으로(허브 버튼)
     python test/scenario2/setup_env.py --check    # 점검만(아무것도 바꾸지 않음)
     python test/scenario2/setup_env.py --restore  # 원상 복구: 문서를 실제 Azure VM 과 같은 정상 표로(VM 시작·정답 변경 없음)
 """
@@ -213,7 +215,11 @@ def main() -> int:
     p.add_argument("--check", action="store_true", help="점검만 하고 문서·정답은 바꾸지 않음")
     p.add_argument("--restore", action="store_true",
                    help="원상 복구: Wiki 테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌림")
+    p.add_argument("--servers", action="store_true", help="서버 환경 점검: 꺼진 VM 켜기 + 사전 조건 점검만(문서·정답은 그대로)")
+    p.add_argument("--seed", action="store_true", help="불일치 모의 훈련: VM 은 켜지 않고 '현행화 전' 표·정답 재생성 + 문서 초기화")
     args = p.parse_args()
+    if args.servers and args.seed:  # 둘 다 주면 옵션 없이 실행한 것과 같다
+        args.servers = args.seed = False
 
     if args.restore:  # 시나리오 3 의 원상 복구처럼 '정상' 상태로. 차이를 심는 일은 '테스트 환경 준비'가 한다
         print("시나리오 2 원상 복구: Wiki 테스트 문서를 실제 Azure VM 과 같은 표로 되돌립니다")
@@ -230,10 +236,11 @@ def main() -> int:
         print("결과:", "원상 복구 완료 (다시 시험하려면 '테스트 환경 준비'로 차이를 심으세요)" if ok else "원상 복구 실패")
         return 0 if ok else 1
 
-    print("시나리오 2 테스트 환경 점검")
+    print("시나리오 2 " + ("서버 환경 점검" if args.servers else "불일치 모의 훈련 (Wiki 문서를 '현행화 전'으로)" if args.seed
+                           else "테스트 환경 점검"))
     OUT.mkdir(parents=True, exist_ok=True)
     listed = None
-    if not args.check:
+    if not args.check and not args.seed:
         listed = start_vms()
         if listed is None:
             print("결과: 준비 안 됨 (VM 시작 실패)")
@@ -244,6 +251,12 @@ def main() -> int:
     except Exception as exc:
         print(f"  [실패] Azure VM 조회: {exc}")
         vms = None
+    if args.servers:  # 문서·정답은 건드리지 않는다
+        results = [check_azure(vms), check_devops(), check_approval()]
+        print("결과:", "서버 환경 정상" if all(results) else "문제 있음 (위 [실패] 항목 확인)")
+        return 0 if all(results) else 1
+    if args.seed and vms and any(v.get("state") != "운영" for v in vms):
+        print("  [안내] 꺼진 Proxy VM 이 있습니다. 표는 지금 상태로 만듭니다(먼저 '서버 환경 점검'으로 켜는 것을 권장).")
     if not args.check and vms:  # VM 값이 바뀌었을 수 있으니 매번 표·정답을 다시 만든다
         for name in ("azure_vms.json", "seed.json", "expected_diff.json"):
             (OUT / name).unlink(missing_ok=True)
