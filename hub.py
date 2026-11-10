@@ -1,11 +1,11 @@
 """Local hub: one page to start, stop and watch the ai-master local web servers.
 
     python hub.py                # http://ai-master.local (hosts 등록 시), 없으면 http://127.0.0.1:8764
-                                 # 이미 떠 있는 허브가 있으면 그 허브만 끄고 새로 띄우고, 서버는 모두 다시 시작한다
-                                 # (코드를 고친 뒤 허브만 다시 켜면 서버에도 반영되게)
+                                 # 이미 떠 있는 허브가 있으면 그 허브만 끄고 새로 띄운다.
+                                 # 떠 있는 서버는 그대로 두고, 꺼져 있는 서버만 시작한다
+    python hub.py --restart-all  # 서버를 모두 다시 시작(서버 코드를 고친 뒤 반영할 때)
     python hub.py --keep         # 이미 떠 있는 허브가 있으면 끄지 않고 종료
-    python hub.py --start-all    # 서버를 다시 시작하지 않고, 꺼져 있는 서버만 시작
-    python hub.py --no-restart   # 서버를 건드리지 않음(떠 있는 그대로)
+    python hub.py --no-restart   # 서버를 전혀 건드리지 않음(꺼진 서버도 시작하지 않음)
     python hub.py --no-browser
 
 - 서버는 창 없이 띄우고 출력은 data/logs/<key>.log 에 남긴다. 허브를 꺼도 서버는 계속 돈다.
@@ -1052,7 +1052,7 @@ function openServer(key){const s=servers.find(x=>x.key===key);
 function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHeight*(/^https:\/\/dev\.azure\.com\//.test(url)?0.44:0.4)),l=screen.availLeft||0,t=screen.availTop||0;
   const win=window.open(url,name,`popup,width=${w},height=${h},left=${l},top=${t}`);if(win)win.opener=null;return win}
 // 시나리오 1: 오른쪽에 Wiki 검색 화면, 그 아래에 Wiki 검색 서버 로그. 이미 열려 있으면 진행 중인 화면을 그대로 둔다.
-function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;const f=document.getElementById('s1frame'),u=s.url+'/';
+function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;const f=document.getElementById('s1frame'),u=s.url+'/?embed=1';
   if(f.dataset.src!==u){f.src=u;f.dataset.src=u}document.getElementById('s1view').hidden=false;showLogHere('wiki-search','시나리오 1 · Wiki 검색 서버 로그',true)}
 // 누르는 즉시 같은 카드의 실행 버튼을 끈다(상태를 다시 읽기 전 두 번째 클릭이 '이미 실행 중' 팝업을 띄우던 문제).
 const JOB_BTNS={scenario2:['s2setup','s2run','s2restore'],scenario3:['s3inject','s3run','s3restore','s3nsg']};
@@ -1199,12 +1199,12 @@ def main():
         log(f"  [{s['key']}]   {describe(s)}")
     threading.Thread(target=watch, daemon=True).start()
     threading.Thread(target=pipeline_watch, daemon=True).start()
-    if "--start-all" in flags:
-        log("꺼져 있는 서버를 시작합니다 (--start-all)")
-        dispatch("all", "start")
-    elif "--no-restart" not in flags:  # 기본: 모두 다시 시작(--restart-all 은 예전 옵션, 같은 동작)
-        log("모든 서버를 다시 시작합니다 (기본 동작, 건드리지 않으려면 --no-restart)")
+    if "--restart-all" in flags:
+        log("모든 서버를 다시 시작합니다 (--restart-all)")
         dispatch("all", "restart")
+    elif "--no-restart" not in flags:  # 기본: 떠 있는 서버는 그대로, 꺼진 서버만 시작(--start-all 은 예전 옵션, 같은 동작)
+        log("꺼져 있는 서버를 시작합니다 (기본 동작, 서버 코드를 고쳤으면 --restart-all)")
+        dispatch("all", "start")
     if "--no-browser" not in flags:
         open_chrome(
             server.url + "/#servers",
