@@ -222,7 +222,18 @@ def hub(page):
     shot(page, "hub-scenarios.png")
     # Wiki 기반 가이드 생성: 오른쪽 위 Wiki 검색 화면 + 아래 Wiki 검색 서버 로그(가장 최근 질의 1건의 실행 계획)
     pick(page, "#s1run", "#s1frame")
-    page.wait_for_timeout(2500)
+    # 오른쪽 위 Wiki 검색 화면이 비어 보이지 않게, 같은 질의를 넣고 포워드 유형을 고른다(wiki() 가 만든 캐시라 LLM 호출 없음).
+    frame = page.frame_locator("#s1frame")
+    frame.locator("#q").fill("프록시 설정 가이드 알려줘")
+    frame.locator("#go").click()
+    frame.locator("#ask .opt").first.wait_for(timeout=60000)
+    frame.locator("#ask .opt").filter(has_text="포워드").first.click()
+    frame.locator("#tools").wait_for(state="visible", timeout=300000)
+    page.wait_for_timeout(4000)  # 아래 서버 로그에 이번 질의의 실행 계획이 올라올 때까지
+    for f in page.frames:  # 다른 출처의 iframe 이라 바깥 페이지의 가리기가 닿지 않는다 → 프레임 안에서 따로 가린다
+        if "wiki-search" in f.url:
+            f.evaluate(REDACTOR)
+    page.evaluate(REDACTOR)
     plan_panel(page)
     shot(page, "hub-scenario1-log.png")
 
