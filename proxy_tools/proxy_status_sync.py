@@ -784,7 +784,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
         page = updated_page(text, wiki, azure, diffs, when, f"[#{task_id}]({dv.task_url(task_id)})")
         commit = write_wiki(page, f"Proxy 현황 현행화: 변경 {len(diffs)}건 (Task #{task_id})", PUSH)
         s.set(commit=commit, rows=len(azure))
-    status(result="applied", commit=commit, pushed=PUSH)
+    status(result="applied", commit=commit, pushed=PUSH, wiki_url=viewer)
     print(f"Wiki 현행화 커밋 {commit}" + (" · push 완료" if PUSH else " (로컬 커밋, SCENARIO2_PUSH=1 이면 Azure DevOps Wiki 에 반영)"))
     step(f"Wiki 표 {len(azure)}행으로 현행화, 변경 이력 추가 (커밋 {commit}" + (", push 완료)" if PUSH else ", 로컬)"),
          "ok", ("수정된 문서 열기", viewer))

@@ -521,6 +521,18 @@ def config_drift(at: str) -> list[str]:
         return drifted
 
 
+def outcome(**kw) -> None:
+    """이번 Health Check 결과(data/health/latest.json)에 대응 결과(승인·Task·PR·링크)를 더한다.
+    허브 점검표 아래에 Teams 결과 카드와 같은 버튼(Task·PR·VM 배포·이력 Wiki)을 띄우는 데 쓴다."""
+    import proxy_health
+    try:
+        d = json.loads(proxy_health.RESULT_FILE.read_text(encoding="utf-8"))
+        d.setdefault("outcome", {}).update(kw)
+        proxy_health.RESULT_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+    except (OSError, ValueError):
+        pass
+
+
 def run(args) -> int:
     when = now()
     with span("trigger", mode="dry-run" if args.dry_run else "teams", trigger=args.trigger, window_min=WINDOW_MIN):
@@ -622,7 +634,9 @@ def run(args) -> int:
                      if fix["applicable"] else "수정안: 자동 수정안 없음(수동 조치)")
     links = [(f"사례: {c['title']}", c["link"]) for c in cases[:2]]
     plan_step("승인")
+    outcome(approval="wait", headline=headline)
     decision, ap = ask_approval(headline, items, links, when)
+    outcome(approval="yes" if decision else "no" if decision is False else "timeout")
     step = ap.step
     try:
         if not decision:
@@ -648,6 +662,7 @@ def run(args) -> int:
         with span("task_create") as s:
             task, parent = create_task(dv, when, headline, body)
             s.set(task=task, pbi=parent["pbi"])
+        outcome(task=task, task_url=dv.task_url(task))
         print(f"Task #{task}: {dv.task_url(task)}")
         step(f"Task #{task} {parent['title']}", "ok", ("Task 열기", dv.task_url(task)))
 
@@ -657,6 +672,7 @@ def run(args) -> int:
             with span("pull_request", file=fix["file"]) as s:
                 pr = create_pr(dv, fix, task, when)
                 s.set(pr=pr["id"], branch=pr["branch"], commit=pr["commit"])
+            outcome(pr=pr["id"], pr_url=pr["url"], deploy_url=dv.pipeline_url(DEPLOY_PIPELINE))
             print(f"PR !{pr['id']}: {pr['url']}")
             step(f"수정 PR !{pr['id']} (브랜치 {pr['branch']}, 병합·배포는 검토 후)", "ok", ("PR 열기", pr["url"]))
             dv.add_comment(task, f"<p>수정 PR: <a href=\"{html.escape(pr['url'])}\">!{pr['id']}</a> "
@@ -667,6 +683,7 @@ def run(args) -> int:
         step("장애 대응 이력 Wiki 갱신 중…")
         write_history(history_entry(when, incidents, tri, fix, cases, task, pr, dv.task_url(task)), when, task)
         wiki_url = dv.wiki_url(HISTORY_PAGE)
+        outcome(wiki_url=wiki_url, done=True)
         step("장애 대응 이력 Wiki 에 이번 건을 더했습니다", "ok", ("이력 Wiki", wiki_url))
         print(f"장애 대응 이력: {wiki_url}")
 
@@ -692,6 +709,7 @@ def run(args) -> int:
                                             else "Task 에서 수동 조치하세요."), links)
         return 0
     except Exception as exc:
+        outcome(error=str(exc)[:200])
         ap.step(f"실패: {exc}", "fail")
         ap.finish(f"처리 중 오류가 났습니다: {exc}", ok=False)
         if os.environ.get("TEAMS_WEBHOOK_URL"):
