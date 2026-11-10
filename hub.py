@@ -1149,7 +1149,8 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   // 원상 복구는 로그로 보아 필요할 때만 켠다(테스트 환경 준비·장애 모의 훈련 뒤). 꺼진 이유는 툴팁에.
   const rs=jobs._restore||{};[['s2restore','scenario2',run,'test/scenario2/setup_env.py --restore: 테스트 문서를 실제 VM 과 같은 정상 표로'],
     ['s3restore','scenario3',run3,'심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인 (proxy_fault_inject.py restore)']].forEach(([id,k,busy,tip])=>{
-    const b=document.getElementById(id),x=rs[k]||{};b.disabled=busy||!x.need;b.title=tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});
+    const b=document.getElementById(id),x=rs[k]||{};b.disabled=busy||!x.need;
+    b.title=(busy&&x.need?'다른 작업이 실행 중이라 끝난 뒤에 누를 수 있습니다(같은 시나리오 작업은 동시에 돌리지 않음) · ':'')+tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
   const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
     :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 심어진 장애: ${esc(f.active.join(', '))} → 시험 후 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted" title="병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구">(VM 은 배포해야 반영)</span>');
