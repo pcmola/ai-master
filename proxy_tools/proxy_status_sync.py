@@ -72,6 +72,7 @@ COMPARE = {"private_ip": "사설 IP", "public_ip": "공인 IP", "state": "상태
            "location": "LOCATION", "resource_group": "RESOURCE GROUP"}  # Proxy(용도) 칸은 사람이 관리한다
 LOCATIONS = {"koreacentral": "Korea Central", "eastus": "East US"}
 EXPECTED = DATA_DIR / "scenario2" / "expected_diff.json"
+TRIGGER = "manual"  # --trigger: manual(허브·명령줄) | auto(점검 배치 가정). Teams 카드에 '점검 방식'으로 남긴다
 STATUS_FILE = DATA_DIR / "scenario2" / "latest.json"  # 허브 '프록시 현황 점검' 화면의 비교표가 읽는다
 _status: dict = {}
 
@@ -412,7 +413,8 @@ def ask_approval(diffs: list[dict], when: str, timeout: float, links: list[tuple
                     + f"\n\n버튼은 이 알림을 보낸 PC({os.environ.get('COMPUTERNAME', '-')})에서 눌러야 합니다. "
                       f"{int(timeout // 60)}분 안에 답이 없으면 취소됩니다.",
                     f"[Proxy 현황] 변경 {len(diffs)}건 · 승인 요청",
-                    facts=[("리소스 그룹", RESOURCE_GROUP), ("감지 시각", when), ("Wiki 문서", wiki_fact(links))]
+                    facts=[("점검 방식", "수동 점검(허브)" if TRIGGER == "manual" else "자동 점검(점검 배치)"),
+                           ("리소스 그룹", RESOURCE_GROUP), ("감지 시각", when), ("Wiki 문서", wiki_fact(links))]
                           + [("", label) for label, url in links if not url],
                     buttons=[("Yes · 현행화", yes_url), ("No · 기록만", no_url), ("자세히 보기", page_url)]
                             + [(label.split(" (")[0], url) for label, url in links if url]))
@@ -659,7 +661,7 @@ def run(args) -> int:
     alert = stopped_alert(azure)  # 실제 운영 가정: Proxy VM 은 항상 켜져 있어야 한다
     row = lambda r: {k: r.get(k) for k in ("name", "state", "size", "private_ip", "location")}
     _status.clear()
-    status(at=datetime.now().isoformat(timespec="seconds"), page=WIKI_PAGE.stem, dry_run=bool(args.dry_run),
+    status(at=datetime.now().isoformat(timespec="seconds"), page=WIKI_PAGE.stem, dry_run=bool(args.dry_run), trigger=TRIGGER,
            wiki=[row(r) for r in wiki], azure=[row(r) for r in azure], diffs=diffs, labels=COMPARE, alert=alert,
            score=score(diffs) if diffs and verify_target() else None, result="compared" if diffs else "same")
     if alert:
@@ -855,10 +857,14 @@ def main() -> int:
 
 def _main() -> int:
     p = argparse.ArgumentParser(description="시나리오 2: Proxy 현황 Wiki 현행화")
-    p.add_argument("--dry-run", action="store_true", help="1~4단계만 하고 할 일을 출력(아무것도 바꾸지 않음)")
+    p.add_argument("--dry-run", action="store_true", help="점검·분석까지만 하고 할 일을 출력(아무것도 바꾸지 않음)")
+    p.add_argument("--trigger", choices=["manual", "auto"], default="manual",
+                   help="실행 방식 기록: manual(허브 버튼·명령줄, 기본) | auto(점검 배치의 주기 실행 가정, 구성하지 않음)")
     args = p.parse_args()
     try:
-        with trace("scenario2", "proxy_status_sync", resource_group=RESOURCE_GROUP, dry_run=args.dry_run) as t:
+        global TRIGGER
+        TRIGGER = args.trigger
+        with trace("scenario2", "proxy_status_sync", resource_group=RESOURCE_GROUP, dry_run=args.dry_run, trigger=args.trigger) as t:
             code = run(args)
             t.set(exit=code)
             return code

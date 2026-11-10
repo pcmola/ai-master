@@ -579,6 +579,37 @@ def clear_guide_cache() -> dict:
     return {"removed": count}
 
 
+def approval_waiting(jobs: dict) -> str | None:
+    """시나리오 2·3 중 지금 승인을 기다리는 것(승인 서버가 떠 있고 아직 결정 전). 없으면 None."""
+    running = [k for k in ("scenario2", "scenario3") if jobs.get(k, {}).get("state") == "running"]
+    if not running or not approval_up():
+        return None
+    import urllib.request
+    try:
+        with urllib.request.urlopen(APPROVAL_URL + "/status", timeout=2) as res:
+            state = json.loads(res.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return running[0] if state.get("decision") is None else None
+
+
+def approval_decide(answer: str) -> dict:
+    """허브 화면의 승인 버튼: 승인 서버에 결정을 넘긴다. Teams 버튼과 같은 곳이라 먼저 누른 쪽만 반영된다."""
+    import urllib.error
+    import urllib.request
+    if answer not in ("yes", "no"):
+        return {"error": "answer 는 yes|no"}
+    req = urllib.request.Request(APPROVAL_URL + "/decide", data=json.dumps({"answer": answer, "exclude": []}).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            return {"ok": True}
+    except urllib.error.HTTPError as exc:
+        return {"error": "이미 처리된 승인 요청입니다(Teams 에서 먼저 눌렀거나 시간 초과)." if exc.code == 409 else f"승인 서버 오류 {exc.code}"}
+    except OSError as exc:
+        return {"error": f"승인 서버에 연결하지 못했습니다: {exc}"}
+
+
 def approval_up() -> bool:
     import socket
     ip = APPROVAL_URL.split("//", 1)[1].split(":")[0]
@@ -660,7 +691,8 @@ def restore_needed(key: str) -> dict:
     with open(log, "rb") as f:
         f.seek(max(0, log.stat().st_size - 1024 * 1024))
         rows = f.read().decode("utf-8", errors="replace").splitlines()
-    need, why, pending = False, "기록 없음", None
+    need, why, pending, at = False, "기록 없음", None, None
+    stamp = lambda line: (m.group(0).replace(" ", "T") if (m := re.match(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", line)) else None)
     for r in rows:
         m = _JOB_START.match(r)
         if m:
@@ -673,14 +705,15 @@ def restore_needed(key: str) -> dict:
                 pending = None
         elif "===== 종료: 코드 0," in r and pending:
             need = pending == "setup"
+            at = stamp(r)
             why = {"scenario2": {"setup": "불일치 모의 훈련 후 아직 반영 전", "restore": "원상 복구 완료"},
                    "scenario3": {"setup": "장애 모의 훈련 후 아직 복구 전", "restore": "원상 복구 완료"}}[key][pending]
             pending = None
         elif key == "scenario2" and ((" wiki_update " in r and "commit=" in r) or "Wiki 와 Azure 가 같음" in r):
             need, why = False, "실행으로 Wiki 가 실제 VM 과 같아짐"
         elif key == "scenario3" and "===== 파이프라인 #" in r and "종료: succeeded" in r:
-            need, why = False, "VM 배포 파이프라인 성공(수정 반영)"
-    return {"need": need, "why": why}
+            need, why, at = False, "VM 배포 파이프라인 성공(수정 반영)", stamp(r)
+    return {"need": need, "why": why, "at": at}  # at: 마지막으로 상태가 바뀐(복구·배포·모의 훈련) 시각
 
 
 _TRACE_LINE = re.compile(r"(?:(\d{4}-\d{2}-\d{2}) )?(\d{2}:\d{2}:\d{2}) \[([0-9a-f]{6,})\] (.*)")
@@ -885,8 +918,9 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/jobs":
             jobs = job_status()
             # 시나리오 3 이 승인을 기다리는 동안 승인 서버 주소를 알려 화면이 승인 창을 띄우게 한다
-            waiting = jobs.get("scenario3", {}).get("state") == "running" and approval_up()
+            waiting = approval_waiting(jobs)
             self.send_json({**jobs, "_fault": fault_state(), "_approval": APPROVAL_URL + "/" if waiting else None,
+                            "_approval_wait": waiting,
                             "_pipeline": PIPELINE_STATE or None,
                             "_restore": {k: restore_needed(k) for k in ("scenario2", "scenario3")}})
         else:
@@ -894,7 +928,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/action", "/api/job", "/api/guide-cache/clear"):
+        if path not in ("/api/action", "/api/job", "/api/guide-cache/clear", "/api/approval"):
             self.send_error(404)
             return
         client = self.client_address[0]
@@ -915,6 +949,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             result = run_job(job, body.get("options") or {})
             log(f"요청 {client}: 작업 {job} {body.get('options') or {}} → {result}")
+            self.send_json(result, 409 if "error" in result else 200)
+            return
+        if path == "/api/approval":
+            result = approval_decide(str(body.get("answer")))
+            log(f"요청 {client}: 허브 화면 승인 {body.get('answer')} → {result}")
             self.send_json(result, 409 if "error" in result else 200)
             return
         if path == "/api/guide-cache/clear":
@@ -964,13 +1003,13 @@ button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-c
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
-.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:20px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 40px);min-height:520px}.brand{background:var(--top);color:#fff;border-radius:10px;padding:16px 18px;display:grid;gap:2px}.brand h1{font-size:17px;margin:0;font-weight:700;line-height:1.35}.brand .time:empty{display:none}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:90px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}#s1state:empty{display:none}.drilltag{display:inline-block;background:#f59e0b;color:#fff;font-weight:700;font-size:12px;border-radius:6px;padding:0 7px;margin-right:4px}.s1desc{margin:0;padding:10px 18px;color:var(--muted);font-size:13px;flex:none;border-bottom:1px solid var(--line)}.drill{display:inline-flex;align-items:stretch;border:1px solid #f59e0b;border-radius:8px;overflow:hidden;background:#fffbeb;margin-right:4px}.drill button{border:0;border-radius:0;background:#f59e0b;color:#fff;font-weight:700;padding:5px 10px}.drill button:hover:not(:disabled),button.drillbtn:hover:not(:disabled){background:#d97706}button.drillbtn{background:#f59e0b;border-color:#f59e0b;color:#fff;font-weight:700}.drill select{font:inherit;font-size:13px;border:0;border-left:1px solid #f59e0b;background:transparent;color:var(--ink);padding:4px 6px;max-width:220px;cursor:pointer}#s2result table,#s3health table{border-collapse:collapse;font-size:13px;width:100%;max-width:820px}#s2result th,#s2result td,#s3health th,#s3health td{padding:5px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}#s2result th,#s3health th{color:var(--muted);font-weight:600;font-size:12px}#s2result .hok,#s3health .hok{color:var(--ok);font-weight:700}#s2result .hfail,#s3health .hfail{color:var(--bad);font-weight:700}#s2result .hskip,#s3health .hskip{color:var(--muted)}#s2result .hsum,#s3health .hsum{font-size:13px;margin:2px 0 6px}#s2result .hbad,#s3health .hbad{font-size:12px;color:var(--bad);margin-top:6px;display:grid;gap:2px;white-space:normal}.splitter{display:none;flex:none;height:12px;margin:-14px 0;cursor:row-resize;align-items:center;justify-content:center;touch-action:none;z-index:1}.splitter i{width:56px;height:4px;border-radius:2px;background:var(--line)}.splitter:hover i,body.dragging .splitter i{background:var(--blue)}body:not(.nosel):not(.nolog):not(.logmode) .splitter{display:flex}body.dragging{cursor:row-resize;user-select:none}body.dragging iframe{pointer-events:none}.scview>.sc{flex:1 1 auto;min-height:0;overflow:auto}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode):not(.splitset) .sclog{flex:0 0 auto}body.sel1:not(.logmode):not(.splitset) #s1view{flex:1 1 0}body.sel1:not(.logmode):not(.splitset) .sclog #slog{flex:none;height:168px!important;min-height:0}body.sel1.splitset:not(.logmode) .sclog{flex:1 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:20px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 40px);min-height:520px}.brand{background:var(--top);color:#fff;border-radius:10px;padding:16px 18px;display:grid;gap:2px}.brand h1{font-size:17px;margin:0;font-weight:700;line-height:1.35}.brand .time:empty{display:none}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:90px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}#s1state:empty{display:none}.apbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:2px solid #ea580c;background:#fff7ed;border-radius:8px;padding:8px 12px;font-size:13px}.apbar b{color:#c2410c}.apbar .muted{margin-right:auto}.drilltag{display:inline-block;background:#f59e0b;color:#fff;font-weight:700;font-size:12px;border-radius:6px;padding:0 7px;margin-right:4px}.s1desc{margin:0;padding:10px 18px;color:var(--muted);font-size:13px;flex:none;border-bottom:1px solid var(--line)}.drill{display:inline-flex;align-items:stretch;border:1px solid #f59e0b;border-radius:8px;overflow:hidden;background:#fffbeb;margin-right:4px}.drill button{border:0;border-radius:0;background:#f59e0b;color:#fff;font-weight:700;padding:5px 10px}.drill button:hover:not(:disabled),button.drillbtn:hover:not(:disabled){background:#d97706}button.drillbtn{background:#f59e0b;border-color:#f59e0b;color:#fff;font-weight:700}.drill select{font:inherit;font-size:13px;border:0;border-left:1px solid #f59e0b;background:transparent;color:var(--ink);padding:4px 6px;max-width:220px;cursor:pointer}#s2result table,#s3health table{border-collapse:collapse;font-size:13px;width:100%;max-width:820px}#s2result th,#s2result td,#s3health th,#s3health td{padding:5px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}#s2result th,#s3health th{color:var(--muted);font-weight:600;font-size:12px}#s2result .hok,#s3health .hok{color:var(--ok);font-weight:700}#s2result .hfail,#s3health .hfail{color:var(--bad);font-weight:700}#s2result .hskip,#s3health .hskip{color:var(--muted)}#s2result .hsum,#s3health .hsum{font-size:13px;margin:2px 0 6px}#s2result .hbad,#s3health .hbad{font-size:12px;color:var(--bad);margin-top:6px;display:grid;gap:2px;white-space:normal}.splitter{display:none;flex:none;height:12px;margin:-14px 0;cursor:row-resize;align-items:center;justify-content:center;touch-action:none;z-index:1}.splitter i{width:56px;height:4px;border-radius:2px;background:var(--line)}.splitter:hover i,body.dragging .splitter i{background:var(--blue)}body:not(.nosel):not(.nolog):not(.logmode) .splitter{display:flex}body.dragging{cursor:row-resize;user-select:none}body.dragging iframe{pointer-events:none}.scview>.sc{flex:1 1 auto;min-height:0;overflow:auto}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode):not(.splitset) .sclog{flex:0 0 auto}body.sel1:not(.logmode):not(.splitset) #s1view{flex:1 1 0}body.sel1:not(.logmode):not(.splitset) .sclog #slog{flex:none;height:168px!important;min-height:0}body.sel1.splitset:not(.logmode) .sclog{flex:1 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
 .sc .opts{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}.sc .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sc button.main{background:var(--blue);border-color:var(--blue);color:#fff}.jobstate{font-size:13px}
-.s2links{font-size:13px;border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px}.s2links a{color:var(--blue);text-decoration:none}
+.s2links{font-size:13px;display:grid;gap:6px}.s2links a{color:var(--blue);text-decoration:none}
 .s2links .head{display:flex;gap:12px;align-items:center;flex-wrap:nowrap}.s2links .head>span{white-space:nowrap}.s2links .head>span.az{min-width:0;overflow:hidden;text-overflow:ellipsis}.s2links .head button{padding:2px 8px;flex:none}.sc>*,.s2links>*{min-width:0}
 @media(max-width:1250px){.s2links .head{flex-wrap:wrap}}@media(max-width:1400px){.sc.s3 .row{flex-wrap:wrap!important}}.s2links a,.s2links button{white-space:nowrap}
 .jobstate.running{color:var(--warn)}.jobstate.ok{color:var(--ok)}.jobstate.fail{color:var(--bad)}
@@ -1000,16 +1039,16 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div class="scright">
 <div class="card scview" id="s1view" hidden><div class="tabs"><span class="name" title="질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 아래 화면에서 합니다. 서버 로그는 맨 아래에 나옵니다.">Wiki 기반 가이드 생성</span><span class="jobstate" id="s1cache" style="margin-left:auto"></span><button onclick="if(!openTop(this.dataset.url,'devops'))window.open(this.dataset.url,'_blank','noopener')" data-url="https://dev.azure.com/ai-master/AI%20Master/_wiki/wikis/AI-Master.wiki/1/AI-Master-%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8" title="Azure DevOps Wiki(AI-Master 프로젝트 첫 페이지)를 새 창으로 엽니다">Azure Wiki 바로 가기</button><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div><p class="s1desc">Wiki 문서를 의미 검색해 근거를 찾고, AI가 근거와 출처를 단 가이드를 만듭니다. 질의 입력부터 미리보기·수정 요청·Wiki 등록까지 아래 화면에서 합니다.</p><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
 <div class="card scview" id="s2view" hidden><div class="tabs"><span class="name">프록시 현황 점검</span><span style="margin-left:auto"></span><button id="s2servers" onclick="runJob('scenario2-servers')" title="test/scenario2/setup_env.py --servers: 꺼진 Proxy VM 을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검(문서·정답은 그대로)">서버 환경 점검</button><button id="s2setup" class="drillbtn" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py --seed: 실제 VM 으로 일부러 틀린 '현행화 전' 표와 정답을 만들어 Wiki 테스트 문서에 씀(VM 은 켜지 않음)">불일치 모의 훈련</button><button id="s2restore" onclick="restoreJob('scenario2-restore','테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로).')" disabled>원상 복구</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
-<div class="sc"><p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
+<div class="sc"><p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 승인(이 화면 또는 Teams) 후 Task·Wiki를 반영합니다. 점검 배치가 주기적으로 돌며 차이를 Teams로 알린다고 가정합니다(배치는 구성하지 않음).</p><div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div>
 <div class="row"><button class="main" id="s2run" onclick="runJob('scenario2')">실행</button><span class="jobstate" id="s2state"></span></div>
-<div id="s2result"></div>
-<div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div></div>
+<div id="s2ap"></div><div id="s2result"></div>
+</div></div>
 <div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">프록시 Health Check</span><span style="margin-left:auto"></span><span class="drill" title="장애 모의 훈련: 고른 종류의 잘못된 설정을 배포합니다"><button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포만 함(점검은 Health Check 실행으로) (proxy_fault_inject.py apply)">장애 모의 훈련</button><select id="s3fault" title="일부러 넣을 장애 종류">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
 <option value="bad-dns">잘못된 DNS 서버</option></select></span><button id="s3restore" onclick="restoreJob('scenario3-restore','심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다.')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button><button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="회선이 바뀌어 VM 에 접속이 안 될 때(SSH Connection timed out) 누르세요. Proxy VM 방화벽(NSG) 허용 목록에 이 PC 의 지금 공인 IP 를 넣고 예전 IP 는 지웁니다 (sync_nsg_ip.py)">내 IP 허용</button><button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
-<div class="sc s3"><p>Wiki <b>Proxy Health Check 기준</b> 문서의 허용·차단 목적지로 VM 마다 실제 접속해 봅니다. 이상이 있으면 원인을 분석하고 Teams 승인 후 Task·수정 PR·이력 Wiki를 남깁니다(VM 반영은 PR 병합 뒤 <b>VM 배포</b> 파이프라인).</p>
+<div class="sc s3"><p>Wiki <b>Proxy Health Check 기준</b> 문서의 허용·차단 목적지로 VM 마다 실제 접속해 봅니다. 이상이 있으면 원인을 분석하고 승인(이 화면 또는 Teams) 후 Task·수정 PR·이력 Wiki를 남깁니다(VM 반영은 PR 병합 뒤 <b>VM 배포</b> 파이프라인).</p>
 <div class="row"><button class="main" id="s3run" onclick="runJob('scenario3')" title="Health Check(Wiki 기준 목적지 실제 접속) → 최근 로그 탐지 → 이상이면 원인 분석·Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">Health Check 실행</button></div>
-<div id="s3health"></div>
+<div id="s3ap"></div><div id="s3health"></div>
 <div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
 <div class="jobstate" id="s3state"></div></div></div>
 <div class="card s1empty">Azure DevOps 기반 AI 운영 자동화</div>
@@ -1116,6 +1155,10 @@ async function runJob(job,options={}){slogFollow=true;const lk=JOBS_LOG[job];(JO
   let d;try{d=await (await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})})).json()}
   catch(e){d={error:'허브에 요청하지 못했습니다: '+e.message}}
   if(d.error){await refreshJobs();alert(d.error);return}setTimeout(refreshJobs,300)}
+async function decide(answer){if(answer==='no'&&!confirm('반영하지 않고 기록만 남깁니다. 계속할까요?'))return;
+  let d;try{d=await (await fetch('/api/approval',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({answer})})).json()}
+  catch(e){d={error:'허브에 요청하지 못했습니다: '+e.message}}
+  if(d.error)alert(d.error);setTimeout(refreshJobs,300)}
 // 원상 복구: 같은 시나리오 작업이 실행 중이면 '멈추고 원상 복구할까요?'로 한 번만 묻고, 허브가 그 작업을 멈춘 뒤 복구한다.
 function restoreJob(job,msg){const lk=JOBS_LOG[job],cur=Object.keys(JOBS_LOG).find(j=>JOBS_LOG[j]===lk&&jobs[j]&&jobs[j].state==='running');
   if(cur){if(confirm(`지금 '${jobs[cur].title.replace(/^시나리오 \d · /,'')}' 이(가) 실행 중입니다. 멈추고 원상 복구할까요?
@@ -1132,11 +1175,14 @@ function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,
 let healthKey='';
 async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json()}catch(e){return}
   const box=document.getElementById('s3health'),run=jobs.scenario3&&jobs.scenario3.state==='running';
-  const key=(h&&h.finished||'')+run;if(key===healthKey)return;healthKey=key;
+  const key=JSON.stringify([h&&h.finished,run,(jobs._restore||{}).scenario3]);if(key===healthKey)return;healthKey=key;
   if(!h||!h.vms){box.innerHTML='<div class="muted">아직 점검하지 않았습니다. "Health Check 실행"을 누르세요.</div>';return}
   const IT=[['vm','VM 상태'],['service','서비스'],['allow','허용 목적지 접속'],['deny','차단 목적지 접속']],M={ok:['✓ 정상','hok'],fail:['✗ 이상','hfail'],skip:['–','hskip']};
   const n=h.failed.length,t=(h.at||'').replace('T',' ').slice(5,16);
-  box.innerHTML=`<div class="hsum">${run?'<span class="jobstate running">● 점검 중 (아래는 지난 결과)</span> ':''}<b class="${n?'hfail':'hok'}">${n?'이상 '+n+'건':'모두 정상'}</b> <span class="muted">· ${esc(t)} ${h.trigger==='auto'?'자동':'수동'} 점검 · 기준: Wiki Proxy Health Check 기준</span></div>`
+  // 점검 뒤에 원상 복구·VM 배포가 끝났으면 이 결과는 옛 상태다 → 다시 점검하라고 알린다
+  const rs3=(jobs._restore||{}).scenario3||{},after=!rs3.need&&rs3.at&&new Date(rs3.at)>new Date(h.finished||h.at)?new Date(rs3.at):null;
+  box.innerHTML=(after&&!run?`<div class="hsum"><span class="drilltag">다시 점검 필요</span> ${after.toTimeString().slice(0,5)} 원상 복구·배포 뒤 아직 점검하지 않았습니다. 아래는 그 전 결과입니다 → <b>Health Check 실행</b>으로 확인하세요.</div>`:'')
+    +`<div class="hsum">${run?'<span class="jobstate running">● 점검 중 (아래는 지난 결과)</span> ':''}<b class="${n?'hfail':'hok'}">${n?'이상 '+n+'건':'모두 정상'}</b> <span class="muted">· ${esc(t)} ${h.trigger==='auto'?'자동':'수동'} 점검 · 기준: Wiki Proxy Health Check 기준</span></div>`
     +'<table><tr><th>VM</th>'+IT.map(([,x])=>`<th>${x}</th>`).join('')+'</tr>'
     +h.vms.map(v=>{const c=Object.fromEntries(v.checks.map(x=>[x.item,x]));return`<tr><td>${esc(v.name)} <span class="muted">${esc(v.kind)}</span></td>`
       +IT.map(([k])=>{const x=c[k]||{status:'skip',detail:''},m=M[x.status]||M.skip;return`<td class="${m[1]}" title="${esc(x.detail)}">${m[0]}</td>`}).join('')+'</tr>'}).join('')+'</table>'
@@ -1153,7 +1199,7 @@ async function loadS2Result(){let r;try{r=await (await fetch('/api/s2result')).j
   const AP={wait:'<span class="jobstate running">승인 대기 중</span>',yes:'승인: Yes',no:'승인: No',timeout:'승인: 시간 초과'};
   const RS={applied:'<b class="hok">Wiki 반영 완료</b>',declined:'반영 안 함',manual:'문서 수동 반영 요청',error:'<b class="hfail">처리 실패</b>','dry-run':'분석만(dry-run)'};
   let h=`<div class="hsum">${run?'<span class="jobstate running">● 실행 중 (아래는 지난 결과)</span> ':''}<b class="${n?'hfail':'hok'}">${n?'차이 '+n+'건':'Wiki와 Azure가 같음'}</b>`
-    +` <span class="muted">· ${esc(t)} 점검</span>`+(r.approval?' · '+(AP[r.approval]||''):'')
+    +` <span class="muted">· ${esc(t)} 점검</span>`+(r.approval?' · '+(r.approval==='wait'&&!run?'<b class="hfail">승인 전에 중단됨</b>':AP[r.approval]||''):'')
     +(r.task?` → <a href="${esc(r.task_url)}" onclick="return !openTop(this.href,'devops')">Task #${r.task}</a>`:'')+(RS[r.result]?' · '+RS[r.result]:'')+'</div>';
   if(r.score){const sc=r.score,ok=sc.found===sc.planted&&!sc.extra.length;
     h+=`<div class="hsum"><span class="drilltag">모의 훈련 채점</span> 심은 차이 ${sc.planted}건 중 <b class="${ok?'hok':'hfail'}">${sc.found}건 찾음</b>`
@@ -1173,7 +1219,8 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   // 원상 복구는 로그로 보아 필요할 때만 켠다(테스트 환경 준비·장애 모의 훈련 뒤). 꺼진 이유는 툴팁에.
   const rs=jobs._restore||{};[['s2restore','scenario2',run,'test/scenario2/setup_env.py --restore: 테스트 문서를 실제 VM 과 같은 정상 표로'],
     ['s3restore','scenario3',run3,'심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인 (proxy_fault_inject.py restore)']].forEach(([id,k,busy,tip])=>{
-    const b=document.getElementById(id),x=rs[k]||{};b.disabled=!x.need||(busy&&jobs[id==='s2restore'?'scenario2-restore':'scenario3-restore']?.state==='running');
+    const b=document.getElementById(id),x=rs[k]||{};// 시나리오 3 원상 복구는 언제나 누를 수 있다(심은 장애가 없으면 지금 main 을 VM 에 다시 배포해 맞춤). 시나리오 2 는 필요할 때만.
+    b.disabled=(k==='scenario2'&&!x.need)||jobs[k+'-restore']?.state==='running';
     b.title=(busy&&x.need?'지금 실행 중인 작업을 멈추고 원상 복구합니다(누르면 한 번 확인) · ':'')+tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
   const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
@@ -1186,9 +1233,13 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   const quiet=last&&last.state==='finished'&&last.code===0&&!(f.active&&f.active.length)&&(Date.now()-new Date(last.finished||last.started))>10*60*1000;
   document.getElementById('s3state').innerHTML=(!last||quiet?'':(last.state==='running'?'':`<span class="muted">${since(last.started)} 전:</span> `)+jobLine(last))
     +(jobs._approval?` <button style="padding:1px 8px" onclick="openTop('${esc(jobs._approval)}','approval')">승인 화면</button>`:'');
-  // 승인을 기다리기 시작하면 한 번만 자동으로 띄운다(팝업이 막혀 있으면 위 버튼으로 연다)
-  const s3job=jobs.scenario3&&jobs.scenario3.started;
-  if(!LOGMODE&&jobs._approval&&s3job&&approvalShown!==s3job){approvalShown=s3job;openTop(jobs._approval,'approval')}
+  // 승인 대기 중이면 그 시나리오 화면(비교표·점검표 바로 위)에 Yes/No 버튼. Teams 버튼과 먼저 누른 쪽만 반영된다.
+  // (예전에는 승인 화면 창을 자동으로 띄웠다. 이제는 화면 안 버튼으로 하고, 자세한 화면은 '자세히 보기'로 연다)
+  const AW=jobs._approval_wait;[['s2ap','scenario2','✓ 현행화 (Yes)','기록만 (No)'],['s3ap','scenario3','✓ 조치 (Yes)','조치 안 함 (No)']].forEach(([id,k,y,n])=>{
+    const box=document.getElementById(id),html=AW===k?`<div class="apbar"><b>● 승인 대기 중</b> <span class="muted">Teams 에도 보냈습니다. 먼저 누른 쪽이 반영됩니다.</span>`
+      +`<button class="main" onclick="decide('yes')">${y}</button><button onclick="decide('no')">${n}</button>`
+      +`<button onclick="openTop('${esc(jobs._approval||'')}','approval')" title="${k==='scenario2'?'프록시 아님 선택(이름으로만 추정한 VM)은 이 화면에서 합니다':'승인 화면을 새 창으로'}">자세히 보기</button></div>`:'';
+    if(box.dataset.h!==html){box.dataset.h=html;box.innerHTML=html}});
   document.getElementById('s2state').innerHTML=[jobLine(jobs['scenario2']),jobLine(jobs['scenario2-servers']),jobLine(jobs['scenario2-setup']),jobLine(jobs['scenario2-restore'])].filter(Boolean).join(' <span class="muted">·</span> ')||'<span class="muted">아직 실행하지 않았습니다.</span>';
   const ws=wikiSearch(),ok=ws&&ws.state==='running';document.getElementById('s1run').disabled=!ok;
   // 서버 상태(/api/status)를 아직 못 받았으면 '꺼짐'이 아니라 '확인 중'(새로 고침 직후 잠깐 빨간 글자가 보이던 문제)
