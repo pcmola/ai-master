@@ -33,7 +33,7 @@ from common.paths import DATA_DIR, PROJECT_ROOT  # noqa: E402
 from common.server import favicon, local_server, open_chrome, site_url  # noqa: E402
 
 LOG_DIR = DATA_DIR / "logs"
-HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "AI Master: Azure DevOps 기반 AI 운영 자동화 허브"
+HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "Azure DevOps 기반 AI 운영"
 LOG_ROTATE_BYTES = 2 * 1024 * 1024
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 DETACH = NO_WINDOW | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -932,7 +932,7 @@ button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-c
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
-.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:260px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:24px}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:260px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -986,7 +986,7 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button></div>
 <div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
 <div class="jobstate" id="s3state"></div></div></div>
-<div class="card s1empty">왼쪽에서 시나리오를 고르면 여기에 그 화면이, 아래에 로그가 나옵니다.</div>
+<div class="card s1empty">Azure DevOps 기반 AI 운영 자동화</div>
 <div class="card sclog"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(pageLog,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
 <button id="sall" onclick="unclearLog(pageLog,loadSLog)" hidden>전체 보기</button></div>
@@ -1008,7 +1008,7 @@ async function act(key,action){
 // (그동안 표의 '실행 중'은 옛 정보). 요청이 매달려도 알 수 있게 응답과 따로 1초마다 본다.
 let lastOk=Date.now(),lastOkText='';
 function staleCheck(){const el=document.getElementById('time');const stale=Date.now()-lastOk>10000;el.classList.toggle('stale',stale);
-  el.textContent=stale?'허브 응답 없음'+(lastOkText?' (마지막 확인 '+lastOkText+')':''):(lastOkText?'서버 상태 확인 '+lastOkText:'')}
+  el.textContent=stale?'허브 응답 없음'+(lastOkText?' (마지막 확인 '+lastOkText+')':''):''}
 async function refresh(){
   try{const r=await fetch('/api/status');const d=await r.json();if(d.error)throw new Error(d.error);
     servers=d.servers;lastOk=Date.now();lastOkText=d.time.slice(11);staleCheck();applyLogStart(d.log_start);
