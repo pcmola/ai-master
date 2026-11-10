@@ -591,11 +591,11 @@ def write_wiki(text: str, message: str, push: bool) -> str:
 
 # ---------------------------------------------------------------- main
 
-PLAN = [("read", "Wiki 현황 표 읽기·Azure Proxy VM 조회 (형식이 다르면 LLM 파싱 + 원문 대조)"),
-        ("compare", "Wiki ↔ Azure 비교 (규칙) → (AI) 차이 요약"),
-        ("approval", "Teams 승인 요청 (Yes/No·프록시 아님 선택)"),
-        ("apply", "Azure DevOps Task 생성·Wiki 표 현행화"),
-        ("report", "Task 완료·Teams 결과 알림")]
+# 허브 실행 계획에 보이는 단계는 4개(점검 → 분석 → 승인 → 조치). 시나리오 3 과 같은 틀. 세부 처리는 로그 줄에 남는다.
+PLAN = [("점검", "Wiki 현황 표 읽기·Azure Proxy VM 조회 → 규칙 비교 (형식이 다르면 LLM 파싱 + 원문 대조)"),
+        ("분석", "(AI) 차이 요약 (참고용)"),
+        ("승인", "Teams Yes/No·프록시 아님 선택"),
+        ("조치", "Task 생성·Wiki 표 현행화·Task 완료·결과 알림")]
 
 
 def preflight(args) -> None:
@@ -621,7 +621,7 @@ def run(args) -> int:
     with span("trigger", mode="dry-run" if args.dry_run else "teams", push=PUSH):
         pass
     preflight(args)
-    plan_step("read")
+    plan_step("점검")
     think("Tool Call", f"wiki.read({WIKI_PAGE.name}) → 표 파서")
     with span("wiki_read", page=WIKI_PAGE.name) as s:
         if not WIKI_PAGE.is_file():
@@ -638,9 +638,8 @@ def run(args) -> int:
     think("Observation", f"Wiki 현황 VM {len(wiki)}대 ({'규칙' if parsed_by == 'rule' else 'LLM'} 파싱)")
     if parsed_by == "llm":
         if not args.dry_run:
-            replan("LLM 으로 읽은 문서는 자동 수정하지 않음", drop=["apply"],
-                   add=[("manual_request", "Azure DevOps Task 생성·문서 수동 반영 요청")], before="report")
-        print(f"Wiki 문서를 LLM 으로 읽었습니다(정해진 표 형식이 아님): VM {len(wiki)}대. 이 문서는 4단계에서 자동으로 고치지 않습니다.")
+            replan("LLM 으로 읽은 문서는 자동 수정하지 않음 → 조치는 Task·문서 수동 반영 요청으로")
+        print(f"Wiki 문서를 LLM 으로 읽었습니다(정해진 표 형식이 아님): VM {len(wiki)}대. 이 문서는 조치 단계에서 자동으로 고치지 않습니다.")
     think("Tool Call", f"az vm list -d -g {RESOURCE_GROUP} (태그 {os.environ.get('SCENARIO2_TAG', 'role=proxy')}, 이름 규칙 {NAME_PATTERN})")
     with span("azure_read", resource_group=RESOURCE_GROUP, pattern=NAME_PATTERN) as s:
         azure = proxy_vms()
@@ -651,7 +650,6 @@ def run(args) -> int:
     if guessed:
         think("Decision", f"태그 없이 이름으로만 추정한 VM {len(guessed)}대 → 승인 때 프록시 여부를 함께 확인")
         print(f"프록시로 추정한 VM {len(guessed)}대(이름 규칙, 태그 없음): {', '.join(guessed)} → 승인 때 한 번 확인합니다.")
-    plan_step("compare")
     with span("compare") as s:
         diffs = compare(wiki, azure)
         s.set(diffs=len(diffs), summary=[describe(d) for d in diffs][:6])
@@ -667,13 +665,14 @@ def run(args) -> int:
     if alert:
         print(f"\n{alert}")
     if not diffs:
-        replan("Wiki 와 Azure 가 같음 → 요약·승인·반영 단계 생략", drop=[n for n, _ in PLAN] + ["manual_request"])
+        replan("Wiki 와 Azure 가 같음 → 요약·승인·반영 단계 생략", drop=[n for n, _ in PLAN])
         print("Wiki 와 Azure 가 같습니다. 종료합니다.")
         if alert and not args.dry_run and os.environ.get("TEAMS_WEBHOOK_URL"):
             from teams_tools import teams_notify
             with span("teams_notify", kind="stopped_alert"):  # 문서는 맞아도 VM 이 꺼져 있으면 알린다
                 teams_notify.send(alert, "[Proxy 현황] 이상 징후", facts=[("리소스 그룹", RESOURCE_GROUP), ("감지 시각", when)])
         return 0
+    plan_step("분석")
     ai = ai_summary(diffs, wiki, azure)
     think("Reflection", f"차이 {len(diffs)}건은 규칙 비교 결과(근거), AI 는 요약만 담당"
                         + (" · 중지 VM 이상 징후를 먼저 알림" if alert else "")
@@ -689,7 +688,7 @@ def run(args) -> int:
 
     dv = devops()
     links = wiki_links(dv)
-    plan_step("approval")
+    plan_step("승인")
     status(result="approval", approval="wait")
     decision, ap = ask_approval(diffs, when, APPROVAL_TIMEOUT, links, ai, alert, guessed)
     status(approval="yes" if decision else "no" if decision is False else "timeout")
@@ -727,7 +726,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
     viewer = links[0][1]  # 로컬 뷰어 링크(wiki_links 첫 항목)
     if not decision:
         reason = "거절(No)" if decision is False else "시간 초과"
-        replan(f"승인 {reason} → 반영 단계 생략", drop=["apply", "manual_request", "report"])
+        replan(f"승인 {reason} → 반영 단계 생략", drop=["조치"])
         status(result="declined")
         print(f"승인되지 않아 종료합니다: {reason}. 기록은 data/traces/scenario2-*.jsonl 에 남았습니다.")
         if os.environ.get("TEAMS_WEBHOOK_URL"):
@@ -740,7 +739,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
             ap.finish(f"{reason}: 아무것도 바꾸지 않았습니다. Wiki 문서와 Task 는 그대로입니다.", [("Wiki 문서 보기", viewer)])
         return 1
 
-    plan_step("manual_request" if parsed_by == "llm" else "apply")
+    plan_step("조치")
     step("Azure DevOps 백로그(Feature·PBI) 확인 중…")
     with span("backlog") as s:
         parent = backlog(dv, when)
@@ -787,7 +786,6 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
     print(f"Wiki 현행화 커밋 {commit}" + (" · push 완료" if PUSH else " (로컬 커밋, SCENARIO2_PUSH=1 이면 Azure DevOps Wiki 에 반영)"))
     step(f"Wiki 표 {len(azure)}행으로 현행화, 변경 이력 추가 (커밋 {commit}" + (", push 완료)" if PUSH else ", 로컬)"),
          "ok", ("수정된 문서 열기", viewer))
-    plan_step("report")
     step("Task 완료 처리와 Teams 결과 알림 중…")
 
     with span("report") as s:

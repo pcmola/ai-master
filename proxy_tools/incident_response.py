@@ -173,7 +173,7 @@ def access_hint(failed: list[dict]) -> None:
     allowed = ", ".join(sorted({s for r in stale for s in r["src"]}))
     think("Observation", f"이 PC 공인 IP {want} ≠ NSG SSH 허용 IP {allowed} ({len(stale)}개 NSG)")
     print(f"원인 추정: 이 PC 의 공인 IP {want} 가 NSG SSH 허용 IP {allowed} 와 다릅니다 "
-          f"→ 허브 'IP 맞추기'(python proxy_tools/sync_nsg_ip.py) 후 다시 실행")
+          f"→ 허브 '내 IP 허용'(python proxy_tools/sync_nsg_ip.py) 후 다시 실행")
 
 
 def sample_lines(rows: list[dict], n: int = 25) -> list[str]:
@@ -437,19 +437,17 @@ def write_history(entry: str, when: str, task: int | None):
 
 # ---------------------------------------------------------------- main
 
-PLAN = [("health", "Health Check: Wiki 기준 목적지로 실제 접속 (VM·서비스·허용/차단)"),
-        ("collect", f"프록시 VM 로그 수집·규칙 탐지 (최근 {WINDOW_MIN}분)"),
-        ("analyze", "(AI) 장애 요약·원인 후보 → Wiki 유사 사례·가이드 검색 (RAG)"),
-        ("fix", "proxy-config 변경 이력 확인 → (AI) 원인 커밋·수정안 → 규칙 검증 (실패 시 자기 수정)"),
-        ("approval", "Teams 승인 요청 (Yes/No)"),
-        ("apply", "Azure DevOps Task·수정 PR 생성 (tests/validate.py 통과 필수)"),
-        ("wiki_history", "장애 대응 이력 Wiki 갱신·결과 알림")]
+# 허브 실행 계획에 보이는 단계는 4개(점검 → 분석 → 승인 → 조치). 세부 처리는 로그 줄(span·think)에 그대로 남는다.
+PLAN = [("점검", f"Health Check(Wiki 기준 목적지 실제 접속) + 로그 규칙 탐지 (최근 {WINDOW_MIN}분)"),
+        ("분석", "(AI) 장애 요약 → Wiki 유사 사례 → 원인 커밋·수정안 → 규칙 검증"),
+        ("승인", "Teams Yes/No"),
+        ("조치", "Task·수정 PR·장애 대응 이력 Wiki·결과 알림")]
 
 
 def preflight(args) -> None:
     """계획 수립과 시뮬레이션: 실행 조건(dry-run)으로 단계를 정하고, 각 단계의 전제를 실행 전에 확인한다."""
     plan("프록시 장애 감지 → 원인 분석 → 수정안 → 승인 후 조치" + (" (dry-run: 수정안까지)" if args.dry_run else ""),
-         PLAN[:4] if args.dry_run else PLAN)
+         PLAN[:2] if args.dry_run else PLAN)
     llm_ok = bool(os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY")
                   or os.environ.get("OPENAI_API_KEY"))
     repo_ok = (CONFIG_REPO / ".git").exists()
@@ -528,10 +526,9 @@ def run(args) -> int:
     with span("trigger", mode="dry-run" if args.dry_run else "teams", trigger=args.trigger, window_min=WINDOW_MIN):
         pass
     preflight(args)
-    plan_step("health")
+    plan_step("점검")
     import proxy_health
     hc = proxy_health.run_checks(args.trigger)
-    plan_step("collect")
     results = collect()
     failed = [r for r in results if "error" in r]
     results = [r for r in results if "error" not in r]
@@ -571,7 +568,7 @@ def run(args) -> int:
         return 0
     think("Decision", f"장애 의심 VM {len(incidents)}대 ({', '.join(i['vm']['name'] for i in incidents)}) → 원인 분석 진행")
 
-    plan_step("analyze")
+    plan_step("분석")
     tri = triage(incidents)
     if tri:
         print(f"\nAI 1차 분석 (참고용): {tri.get('summary')}")
@@ -588,7 +585,6 @@ def run(args) -> int:
         query, cases = rule_query, similar(rule_query)
     print(f"\n유사 사례·가이드 (검색어: {query}):" + "".join(f"\n  - {c['title']}" for c in cases))
 
-    plan_step("fix")
     src = read_source()
     fix = propose_fix(incidents, tri, cases, src)
     if fix:
@@ -604,8 +600,7 @@ def run(args) -> int:
     if fix and fix.get("confidence") != "high":
         think("Reflection", f"신뢰도 {fix.get('confidence')} → 자동 병합하지 않고 승인·PR 검토에서 사람이 원인을 확인해야 함")
     if not applicable and not args.dry_run:
-        replan("자동 수정안 없음 → PR 단계 제외", drop=["apply"], add=[("task_create", "Azure DevOps Task 생성")],
-               before="wiki_history")
+        replan("자동 수정안 없음 → 조치는 Task 수동 조치로(수정 PR 없음)")
     if args.dry_run:
         print("[dry-run] Teams 승인 → Task 생성 → " + ("수정 PR 생성 → " if fix and fix["applicable"] else "")
               + "장애 대응 이력 Wiki → 결과 알림 (아무것도 바꾸지 않음)")
@@ -626,13 +621,13 @@ def run(args) -> int:
         items.append(f"수정안: {fix['file']} `{fix['before'].strip()}` → `{fix['after'].strip()}` ({fix.get('fix_summary')})"
                      if fix["applicable"] else "수정안: 자동 수정안 없음(수동 조치)")
     links = [(f"사례: {c['title']}", c["link"]) for c in cases[:2]]
-    plan_step("approval")
+    plan_step("승인")
     decision, ap = ask_approval(headline, items, links, when)
     step = ap.step
     try:
         if not decision:
             reason = "거절(No)" if decision is False else "시간 초과"
-            replan(f"승인 {reason} → 조치 단계 생략, 기록만 남김", drop=["apply", "task_create", "wiki_history"])
+            replan(f"승인 {reason} → 조치 단계 생략, 기록만 남김", drop=["조치"])
             if os.environ.get("TEAMS_WEBHOOK_URL"):
                 from teams_tools import teams_notify
                 teams_notify.send(f"{headline} 장애는 {reason}로 조치하지 않았습니다.", "[프록시 장애] 조치 안 함",
@@ -642,7 +637,7 @@ def run(args) -> int:
             return 1
 
         think("Decision", "승인(Yes) → 조치 단계 실행")
-        plan_step("apply" if fix and fix["applicable"] else "task_create")
+        plan_step("조치")
         step("Task 생성 중…")
         cases_html = "".join(f"<li>{html.escape(c['title'])} — {html.escape(c['path'])}</li>" for c in cases)
         body = ("<p>" + html.escape((tri or {}).get("summary", "")) + "</p><ul>"
@@ -669,7 +664,6 @@ def run(args) -> int:
         else:
             step("자동 수정안이 없어 PR 은 만들지 않았습니다(Task 에서 수동 조치)", "info")
 
-        plan_step("wiki_history")
         step("장애 대응 이력 Wiki 갱신 중…")
         write_history(history_entry(when, incidents, tri, fix, cases, task, pr, dv.task_url(task)), when, task)
         wiki_url = dv.wiki_url(HISTORY_PAGE)
