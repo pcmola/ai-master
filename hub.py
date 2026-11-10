@@ -1190,7 +1190,7 @@ async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json(
   const key=JSON.stringify([h&&h.finished,h&&h.outcome,run,(jobs._restore||{}).scenario3,(jobs['scenario3-fault']||{}).finished]);if(key===healthKey)return;healthKey=key;
   if(!h||!h.vms){box.innerHTML='<div class="muted">아직 점검하지 않았습니다. "Health Check 실행"을 누르세요.</div>';return}
   const IT=[['vm','VM 상태'],['service','서비스'],['allow','허용 목적지 접속'],['deny','차단 목적지 접속']],M={ok:['✓ 정상','hok'],fail:['✗ 이상','hfail'],skip:['–','hskip']};
-  const n=h.failed.length,t=(h.at||'').replace('T',' ').slice(5,16);
+  const n=h.failed.length,t=(h.at||'').replace('T',' ').slice(0,16);
   // 점검 뒤에 장애 모의 훈련·원상 복구·VM 배포가 끝났으면 이 결과는 옛 상태다 → 흐리게 하고 다시 점검하라고 알린다
   const rs3=(jobs._restore||{}).scenario3||{},after=rs3.at&&new Date(rs3.at)>new Date(h.finished||h.at)?new Date(rs3.at):null,stale=after&&!run;
   box.classList.toggle('hstale',!!stale);
@@ -1216,7 +1216,7 @@ async function loadS2Result(){let r;try{r=await (await fetch('/api/s2result')).j
   const rs2=(jobs._restore||{}).scenario2||{};
   const key=JSON.stringify([r&&r.at,r&&r.result,r&&r.approval,r&&r.task,r&&r.wiki_url,run,rs2.at]);if(key===s2Key)return;s2Key=key;
   if(!r||!r.diffs){box.innerHTML='<div class="muted">아직 비교하지 않았습니다. "실행"을 누르면 Wiki 문서와 Azure 실제 VM을 비교합니다.</div>';return}
-  const n=r.diffs.length,t=(r.at||'').replace('T',' ').slice(5,16),L=r.labels||{};
+  const n=r.diffs.length,t=(r.at||'').replace('T',' ').slice(0,16),L=r.labels||{};
   const A=Object.fromEntries((r.azure||[]).map(v=>[v.name,v])),W=Object.fromEntries((r.wiki||[]).map(v=>[v.name,v]));
   const vmtxt=v=>v?[v.state,v.size,v.private_ip].filter(Boolean).join(' · '):'(없음)';
   const AP={wait:'<span class="jobstate running">승인 대기 중</span>',yes:'승인: Yes',no:'승인: No',timeout:'승인: 시간 초과'};
