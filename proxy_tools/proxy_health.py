@@ -36,6 +36,7 @@ BASELINE_PAGE = ("AI-Master-프로젝트/02.-운영/01.-공통/06.-네트워크-
                  "Proxy-Health-Check-기준.md")
 RESULT_FILE = DATA_DIR / "health" / "latest.json"
 SQUID_PORT = int(os.environ.get("PROXY_PORT") or 8080)
+TRIGGER_LABEL = {"manual": "수동 점검", "auto": "자동 점검", "deploy": "배포 뒤 확인 점검"}
 ITEMS = [("vm", "VM 상태"), ("service", "서비스"), ("allow", "허용 목적지 접속"), ("deny", "차단 목적지 접속")]
 
 
@@ -160,7 +161,7 @@ def run_checks(trigger: str = "manual") -> dict:
 
 def print_table(result: dict) -> None:
     mark = {"ok": "정상", "fail": "이상", "skip": "-"}
-    print(f"\nHealth Check ({'수동' if result['trigger'] == 'manual' else '자동'} 점검, {result['at'].replace('T', ' ')})")
+    print(f"\nHealth Check ({TRIGGER_LABEL.get(result['trigger'], result['trigger'])}, {result['at'].replace('T', ' ')})")
     print(f"  {'VM':14}" + "".join(f"{name:12}" for _, name in ITEMS))
     for v in result["vms"]:
         st = {c["item"]: mark[c["status"]] for c in v["checks"]}
@@ -177,7 +178,17 @@ if __name__ == "__main__":
         load_dotenv(ENV_FILE)
     except ImportError:
         pass
+    import argparse
+    ap = argparse.ArgumentParser(description="프록시 Health Check (점검만, 장애 대응 없이)")
+    ap.add_argument("--trigger", choices=list(TRIGGER_LABEL), default="manual",
+                    help="deploy: VM 배포 파이프라인이 끝난 뒤 허브가 자동으로 돌리는 확인 점검")
+    args = ap.parse_args()
+    if args.trigger == "deploy":
+        print("VM 배포 파이프라인이 성공해, 배포된 설정이 기준대로 동작하는지 Health Check 로 확인합니다.")
     t0 = time.monotonic()
-    r = run_checks("manual")
+    r = run_checks(args.trigger)
     print(f"({time.monotonic() - t0:.1f}초)")
+    if args.trigger == "deploy":
+        print("배포 뒤 확인: " + ("모두 정상 ✓ 장애 대응을 마칩니다." if not r["failed"]
+                               else f"이상 {len(r['failed'])}건이 남았습니다 ✗ 허브에서 'Health Check 실행'으로 다시 대응하세요."))
     raise SystemExit(1 if r["failed"] else 0)

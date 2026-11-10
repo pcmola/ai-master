@@ -286,7 +286,7 @@ def pipeline_watch():
         try:
             runs = dv.request("GET", f"/_apis/pipelines/{pid}/runs?api-version=7.1", None).get("value", [])[:3]
             for run in reversed(runs):
-                rid = run["id"]
+                rid, verify = run["id"], False
                 if rid in seen:
                     continue
                 if first and run.get("state") == "completed":
@@ -314,6 +314,15 @@ def pipeline_watch():
                         f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} ===== 파이프라인 #{run.get('name')} 종료: "
                                 f"{run.get('result')} =====\n")
                         seen.add(rid)
+                        verify = run.get("result") == "succeeded" and "문법 확인만" not in pipeline_target(run)
+                        if verify:
+                            f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} 배포가 끝나 Health Check 로 정상인지 확인합니다 (자동)\n")
+                if verify:  # 파일을 닫은 뒤 실행(같은 로그 파일에 이어 쓴다)
+                    r = run_job("scenario3-verify", {})
+                    if "error" in r:
+                        with open(path, "a", encoding="utf-8") as f:
+                            f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} 확인 점검을 시작하지 못했습니다({r['error']}) "
+                                    f"→ 허브에서 'Health Check 실행'으로 확인하세요\n")
             first = False
         except Exception as exc:
             log(f"VM 배포 파이프라인 확인 실패: {type(exc).__name__}: {str(exc)[:160]}")
@@ -374,6 +383,9 @@ JOBS = {
                         "tail": ["--push", "--deploy", "wjy-proxy01"]},
     "scenario3-restore": {"title": "시나리오 3 · 장애 원상 복구", "script": "proxy_tools/proxy_fault_inject.py", "log": "scenario3",
                           "self_log": False, "options": {}, "base": ["restore", "--push", "--deploy", "wjy-proxy01"]},
+    # VM 배포 파이프라인이 성공하면 허브가 자동으로 돌리는 확인 점검(점검만, 장애 대응 없이)
+    "scenario3-verify": {"title": "시나리오 3 · 배포 뒤 Health Check", "script": "proxy_tools/proxy_health.py", "log": "scenario3",
+                         "self_log": False, "options": {}, "base": ["--trigger", "deploy"]},
     # 공인 IP 가 바뀌어 SSH 가 타임아웃 나면: Proxy VM NSG 의 단일 IP 허용 규칙을 이 PC 의 현재 IP 로 교체
     "nsg-ip": {"title": "내 IP 허용 (NSG)", "script": "proxy_tools/sync_nsg_ip.py", "log": "scenario3",
                "self_log": False, "options": {}},
@@ -1165,7 +1177,7 @@ function restoreJob(job,msg){const lk=JOBS_LOG[job],cur=Object.keys(JOBS_LOG).fi
 
 ${msg}`))runJob(job,{force:true});return}
   if(confirm(msg+' 계속할까요?'))runJob(job)}
-const JOBS_LOG={scenario2:'scenario2','scenario2-servers':'scenario2','scenario2-setup':'scenario2','scenario2-restore':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','nsg-ip':'scenario3'};
+const JOBS_LOG={scenario2:'scenario2','scenario2-servers':'scenario2','scenario2-setup':'scenario2','scenario2-restore':'scenario2',scenario3:'scenario3','scenario3-fault':'scenario3','scenario3-restore':'scenario3','scenario3-verify':'scenario3','nsg-ip':'scenario3'};
 // 카드 안 상태 줄: 카드 제목과 겹치는 '시나리오 N · '는 빼고 PID·인자는 마우스를 올리면 보이게(노트북 폭에서 줄이 넘치던 문제).
 function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,16),arg=j.args.length?' '+j.args.join(' '):'';
   const name=esc(j.title.replace(/^시나리오 \d · /,'')),tip=esc(`PID ${j.pid} · ${j.started.replace('T',' ')} 시작${arg}`);
@@ -1174,7 +1186,7 @@ function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,
 // 시나리오 3 Health Check 점검표: data/health/latest.json(마지막 점검, 수동·자동 공통). 칸에 마우스를 올리면 자세한 결과.
 let healthKey='';
 async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json()}catch(e){return}
-  const box=document.getElementById('s3health'),run=jobs.scenario3&&jobs.scenario3.state==='running';
+  const box=document.getElementById('s3health'),run=['scenario3','scenario3-verify'].some(k=>jobs[k]&&jobs[k].state==='running');
   const key=JSON.stringify([h&&h.finished,h&&h.outcome,run,(jobs._restore||{}).scenario3]);if(key===healthKey)return;healthKey=key;
   if(!h||!h.vms){box.innerHTML='<div class="muted">아직 점검하지 않았습니다. "Health Check 실행"을 누르세요.</div>';return}
   const IT=[['vm','VM 상태'],['service','서비스'],['allow','허용 목적지 접속'],['deny','차단 목적지 접속']],M={ok:['✓ 정상','hok'],fail:['✗ 이상','hfail'],skip:['–','hskip']};
@@ -1182,7 +1194,7 @@ async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json(
   // 점검 뒤에 원상 복구·VM 배포가 끝났으면 이 결과는 옛 상태다 → 다시 점검하라고 알린다
   const rs3=(jobs._restore||{}).scenario3||{},after=!rs3.need&&rs3.at&&new Date(rs3.at)>new Date(h.finished||h.at)?new Date(rs3.at):null;
   box.innerHTML=(after&&!run?`<div class="hsum"><span class="drilltag">다시 점검 필요</span> ${after.toTimeString().slice(0,5)} 원상 복구·배포 뒤 아직 점검하지 않았습니다. 아래는 그 전 결과입니다 → <b>Health Check 실행</b>으로 확인하세요.</div>`:'')
-    +`<div class="hsum">${run?'<span class="jobstate running">● 점검 중 (아래는 지난 결과)</span> ':''}<b class="${n?'hfail':'hok'}">${n?'이상 '+n+'건':'모두 정상'}</b> <span class="muted">· ${esc(t)} ${h.trigger==='auto'?'자동':'수동'} 점검 · 기준: Wiki Proxy Health Check 기준</span></div>`
+    +`<div class="hsum">${run?'<span class="jobstate running">● 점검 중 (아래는 지난 결과)</span> ':''}<b class="${n?'hfail':'hok'}">${n?'이상 '+n+'건':'모두 정상'}</b> <span class="muted">· ${esc(t)} ${{auto:'자동 점검',deploy:'VM 배포 뒤 확인 점검',manual:'수동 점검'}[h.trigger]||'점검'} · 기준: Wiki Proxy Health Check 기준</span></div>`
     +'<table><tr><th>VM</th>'+IT.map(([,x])=>`<th>${x}</th>`).join('')+'</tr>'
     +h.vms.map(v=>{const c=Object.fromEntries(v.checks.map(x=>[x.item,x]));return`<tr><td>${esc(v.name)} <span class="muted">${esc(v.kind)}</span></td>`
       +IT.map(([k])=>{const x=c[k]||{status:'skip',detail:''},m=M[x.status]||M.skip;return`<td class="${m[1]}" title="${esc(x.detail)}">${m[0]}</td>`}).join('')+'</tr>'}).join('')+'</table>'
@@ -1221,7 +1233,7 @@ async function loadS2Result(){let r;try{r=await (await fetch('/api/s2result')).j
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
   loadHealth();loadS2Result();
   const run=['scenario2','scenario2-servers','scenario2-setup','scenario2-restore'].some(k=>jobs[k]&&jobs[k].state==='running');['s2run','s2servers','s2setup'].forEach(id=>document.getElementById(id).disabled=run);
-  const s3=['scenario3','scenario3-fault','scenario3-restore','nsg-ip'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
+  const s3=['scenario3','scenario3-fault','scenario3-restore','scenario3-verify','nsg-ip'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
   ['s3run','s3inject','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
   // 원상 복구는 로그로 보아 필요할 때만 켠다(테스트 환경 준비·장애 모의 훈련 뒤). 꺼진 이유는 툴팁에.
   const rs=jobs._restore||{};[['s2restore','scenario2',run,'test/scenario2/setup_env.py --restore: 테스트 문서를 실제 VM 과 같은 정상 표로'],

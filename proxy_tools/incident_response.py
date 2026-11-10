@@ -11,7 +11,7 @@
    llm_triage     (AI) 탐지 결과와 로그 표본으로 장애 요약·원인 후보·Wiki 검색어를 만든다
 3. similar        Wiki 에서 비슷한 장애 사례·관련 가이드를 찾는다(시나리오 1 의 검색 엔진, RAG)
 4. source         proxy-config 저장소를 최신으로 받아 최근 커밋 diff 와 현재 설정을 읽고,
-   llm_fix        (AI) 원인 커밋·설정 줄을 특정하고 수정안(파일, 바꿀 줄 → 새 줄)을 만든다.
+   llm_fix        (AI) 원인이 된 설정 변경(커밋)·설정 줄을 특정하고 수정안(파일, 바꿀 줄 → 새 줄)을 만든다.
                   수정안은 '바꿀 줄이 파일에 정확히 한 번 있는지' 규칙으로 검증하고, 아니면 수동 조치로 돌린다
 5. approval       Teams 카드(로컬 승인 화면)로 "조치할까요?" Yes/No. No·시간 초과는 기록하고 끝낸다
 6. task_create    Epic → Feature '[공통] 프록시 장애 대응' → 그 달 PBI → 'NN. [프록시 장애] …' Task
@@ -371,7 +371,7 @@ def create_pr(dv, fix: dict, task_id: int, when: str) -> dict:
         git(CONFIG_REPO, "checkout", "-q", "--", ".")
         git(CONFIG_REPO, "switch", "-q", "main")
     body = (f"## 장애 조치\n\n{fix['cause']}\n\n- 수정: {fix['fix_summary']}\n- 영향·확인: {fix['impact']}\n"
-            f"- 원인 커밋: {fix.get('suspect_commit') or '-'}\n- AI 신뢰도: {fix.get('confidence')}\n\n"
+            f"- 원인이 된 설정 변경: 커밋 {fix.get('suspect_commit') or '-'}\n- AI 신뢰도: {fix.get('confidence')}\n\n"
             "병합 후 `scripts/deploy.sh <VM_IP>` 로 배포하고 `scripts/traffic.sh <VM_IP>` 로 확인하세요.\n\n"
             "등록: incident_response.py (시나리오 3)")
     pr = dv.request("POST", f"/_apis/git/repositories/{CONFIG_REPO_NAME}/pullrequests?api-version=7.1",
@@ -439,7 +439,7 @@ def write_history(entry: str, when: str, task: int | None):
 
 # 허브 실행 계획에 보이는 단계는 4개(점검 → 분석 → 승인 → 조치). 세부 처리는 로그 줄(span·think)에 그대로 남는다.
 PLAN = [("점검", f"Health Check(Wiki 기준 목적지 실제 접속) + 로그 규칙 탐지 (최근 {WINDOW_MIN}분)"),
-        ("분석", "(AI) 장애 요약 → Wiki 유사 사례 → 원인 커밋·수정안 → 규칙 검증"),
+        ("분석", "(AI) 장애 요약 → Wiki 유사 사례 → 원인이 된 설정 변경·수정안 → 규칙 검증"),
         ("승인", "Teams Yes/No"),
         ("조치", "Task·수정 PR·장애 대응 이력 Wiki·결과 알림")]
 
@@ -600,13 +600,13 @@ def run(args) -> int:
     src = read_source()
     fix = propose_fix(incidents, tri, cases, src)
     if fix:
-        print(f"\n원인: {fix.get('cause')}  (원인 커밋 {fix.get('suspect_commit') or '-'}, 신뢰도 {fix.get('confidence')})")
+        print(f"\n원인: {fix.get('cause')}  (원인이 된 설정 변경: 커밋 {fix.get('suspect_commit') or '-'}, 신뢰도 {fix.get('confidence')})")
         if fix["applicable"]:
             print(f"수정안: {fix['file']}\n  - {fix['before'].strip()}\n  + {fix['after'].strip()}\n  {fix.get('fix_summary')}")
         else:
             print("자동 수정안 없음 → Task 에 수동 조치로 남깁니다.")
     applicable = bool(fix and fix["applicable"])
-    think("Reflection", (f"원인 커밋 {fix.get('suspect_commit') or '-'} · 신뢰도 {fix.get('confidence')} · " if fix else "원인 분석 실패 · ")
+    think("Reflection", (f"원인이 된 설정 변경: 커밋 {fix.get('suspect_commit') or '-'} · 신뢰도 {fix.get('confidence')} · " if fix else "원인 분석 실패 · ")
           + ("규칙 검증 통과 → 자동 수정 PR 경로" if applicable else "자동 수정 불가 → Task 수동 조치 경로")
           + f" · 근거 Wiki {len(cases)}건")
     if fix and fix.get("confidence") != "high":
@@ -629,7 +629,7 @@ def run(args) -> int:
     items += [f"[{f['severity']}] {i['vm']['name']}: {f['title']} — {f['detail']}"
               for i in incidents for f in i["findings"] if f["severity"] in SEVERE]
     if fix:
-        items.append(f"원인: {fix.get('cause')} (원인 커밋 {fix.get('suspect_commit') or '-'})")
+        items.append(f"원인: {fix.get('cause')} (원인이 된 설정 변경: 커밋 {fix.get('suspect_commit') or '-'})")
         items.append(f"수정안: {fix['file']} `{fix['before'].strip()}` → `{fix['after'].strip()}` ({fix.get('fix_summary')})"
                      if fix["applicable"] else "수정안: 자동 수정안 없음(수동 조치)")
     links = [(f"사례: {c['title']}", c["link"]) for c in cases[:2]]

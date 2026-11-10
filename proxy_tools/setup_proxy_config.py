@@ -1,6 +1,6 @@
 """Create the proxy-config repo (Squid settings for scenario 3) in your Azure DevOps project from the seed in this folder.
 
-proxy-config 는 ai-master 와 별개인 Azure Repos 저장소다(시나리오 3 이 원인 커밋을 찾고 수정 PR 을 만드는 곳).
+proxy-config 는 ai-master 와 별개인 Azure Repos 저장소다(시나리오 3 이 원인이 된 설정 변경(커밋)을 찾고 수정 PR 을 만드는 곳).
 ai-master 만 받은 사람도 시나리오 3 을 쓸 수 있도록, proxy_tools/proxy-config-seed/ 로 저장소를 만들고 로컬에 받는다.
 
 1. PROXY_CONFIG_DIR(기본 ../proxy-config)에 이미 Git 저장소가 있으면 아무것도 하지 않는다.

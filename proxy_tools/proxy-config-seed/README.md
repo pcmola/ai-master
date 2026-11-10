@@ -49,6 +49,6 @@ Windows에서는 Git Bash에서 실행합니다. SSH 키(`~/.ssh/id_rsa`)로 `az
 
 - 접속 로그 이상 탐지는 ai-master의 `proxy_tools/proxy_log_detect.py detect --host <IP>`로 합니다.
 - `squid -k parse`와 `validate.py`는 문법·형식만 봅니다. 도메인 철자, 허용 IP, DNS 서버가 틀려도 통과하므로 배포 후에는 반드시 `traffic.sh`로 확인합니다.
-- 원인이 이 저장소의 변경이면 `fix/<Task 번호>-<요약>` 브랜치에서 고치고, PR 설명에 Task 번호와 원인 커밋을 적습니다.
+- 원인이 이 저장소의 변경이면 `fix/<Task 번호>-<요약>` 브랜치에서 고치고, PR 설명에 Task 번호와 원인이 된 설정 변경(커밋)을 적습니다.
 
 그림 원본은 `docs/*.mmd`(Mermaid)입니다. 고친 뒤 `npx -p @mermaid-js/mermaid-cli mmdc -i docs/architecture.mmd -o docs/architecture.png -b white -s 2` 로 다시 그립니다(Azure Repos 는 README 안의 Mermaid 를 그리지 않아 그림 파일로 넣음).

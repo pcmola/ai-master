@@ -320,7 +320,7 @@ flowchart TD
     t(["1. 트리거<br/>수동(허브)·자동(가정)"]) --> hc["Health Check<br/>Wiki 기준 목적지로 실제 접속<br/>VM·서비스·허용/차단"]
     hc --> d["2. 로그 수집·감지<br/>SSH 로그 수집, 규칙 탐지<br/>+ AI 1차 분석"]
     d --> sim["3. 유사 장애 검색<br/>Wiki 사례(RAG)"]
-    sim --> src["4. 설정 저장소 확인<br/>원인 커밋·수정안(AI)<br/>+ 규칙 검증"]
+    sim --> src["4. 설정 저장소 확인<br/>원인이 된 설정 변경·수정안(AI)<br/>+ 규칙 검증"]
     src --> ap{"5. Teams 조치 승인<br/>Yes / No"}
     ap -- "Yes" --> task["6. 장애 조치 Task"]
     task --> pr["7. 수정 브랜치·PR"]
@@ -342,7 +342,7 @@ flowchart TD
 | 점검 | 1.5 Health Check | 기준 대비 실제 동작 점검 | `proxy_health.py`: Wiki 기준 문서의 허용 목적지(통과 기대)·차단 목적지(403 기대)로 VM마다 실제 접속, VM 전원·컨테이너 상태도 확인. 결과는 `data/health/latest.json`과 허브 점검표. 점검 접속이 VM 로그에도 남아 2단계 탐지의 근거가 됨. 로그에 흔적이 없는 이상(예: 서비스 중지)도 high 탐지로 더해 대응 절차로 보냄 |
 | 점검 | 2. 로그 수집·장애 감지 | 서버 로그 수집, 오류 패턴 탐지, 원인 후보 도출(LLM) | 프록시 VM(Squid·NGINX) 접속 로그를 SSH로 읽어 최근 `SCENARIO3_WINDOW_MIN`(기본 60)분만 규칙 탐지(차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트 등). high·medium이 없으면 "이상 없음"으로 종료. `llm_triage`가 요약·원인 후보·Wiki 검색어를 만듦 |
 | 분석 | 3. 유사 장애 검색 | Wiki 장애 사례(RAG), 해결 방법 조회 | 시나리오 1 검색 엔진(혼합 검색)으로 상위 문서 4개, AI가 만든 문서는 근거에서 제외 |
-| 분석 | 4. DevOps 소스 확인 | 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | proxy-config를 최신으로 받아 최근 커밋 diff·현재 설정을 `llm_fix`에 넘김 → 원인 커밋, 수정안(파일·바꿀 줄·새 줄), 영향. 수정안은 "바꿀 줄이 파일에 정확히 한 번 있는지" 규칙으로 검증하고 아니면 수동 조치로 돌림 |
+| 분석 | 4. DevOps 소스 확인 | 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | proxy-config를 최신으로 받아 최근 커밋 diff·현재 설정을 `llm_fix`에 넘김 → 원인이 된 설정 변경(커밋), 수정안(파일·바꿀 줄·새 줄), 영향. 수정안은 "바꿀 줄이 파일에 정확히 한 번 있는지" 규칙으로 검증하고 아니면 수동 조치로 돌림 |
 | 승인 | 5. Teams 조치 승인 요청 | 원인·수정안 요약(LLM), "조치할까요?" Yes/No | 시나리오 2의 Teams 카드·로컬 승인 서버·진행 화면 재사용. No·시간 초과는 알리고 종료 |
 | 조치 | 6. 장애 조치 Task 생성 | 장애 내용·원인 기록, 담당자 | Epic → Feature `[공통] 프록시 장애 대응` → 그 달 PBI → `NN. [프록시 장애] …` Task, 담당자는 PAT 소유자. PR 병합 때 "연결된 작업 항목 완료"를 고르면 Done |
 | 조치 | 7. 소스 수정 및 PR | 브랜치 생성·AI 수정, Pull Request, Task와 PR 연결 | `fix/incident-…` 브랜치에 수정안 커밋(`tests/validate.py` 통과 필수) → push → main으로 가는 PR(Task 연결). 병합·배포는 사람이 검토 후 |
@@ -370,13 +370,13 @@ NGINX VM을 고르면 리버스 프록시 로그를 봅니다.
 - 로그 위 실행 계획 패널(빨간 테두리)에 단계별 진행과 결과가 나옵니다. 지금은 4단계(점검 → 분석 → 승인 → 조치)이고, 그림은 Health Check를 넣기 전(6단계) 화면입니다.
 - 그림의 "원상 복구"는 회색이지만, 지금은 언제나 누를 수 있습니다(심은 장애가 없으면 main을 다시 배포해 맞춤).
 
-로그의 `◆ Planning`은 4단계 계획입니다. 점검(Health Check·로그 탐지) → 분석(AI 요약·사례 검색·원인 커밋·수정안) → 승인 → 조치(Task·PR·이력 Wiki) 순서입니다. `◆ Simulation`은 실행 전 점검과 예상 분기입니다.
+로그의 `◆ Planning`은 4단계 계획입니다. 점검(Health Check·로그 탐지) → 분석(AI 요약·사례 검색·원인이 된 설정 변경·수정안) → 승인 → 조치(Task·PR·이력 Wiki) 순서입니다. `◆ Simulation`은 실행 전 점검과 예상 분기입니다.
 
 ![시나리오 3 - 허브의 실제 실행 로그](docs/images/scenario3-run.png)
 
 **③ Teams 조치 승인 요청**
 
-AI 분석, 탐지 3건, 원인 커밋, 수정안, 비슷한 장애 사례 링크가 들어갑니다.
+AI 분석, 탐지 3건, 원인이 된 설정 변경, 수정안, 비슷한 장애 사례 링크가 들어갑니다.
 
 ![시나리오 3 - Teams 조치 승인 요청 카드](docs/images/teams-scenario3-approval.png)
 
@@ -401,7 +401,7 @@ AI 분석, 탐지 3건, 원인 커밋, 수정안, 비슷한 장애 사례 링크
 
 **⑦ 수정 PR (병합 전)**
 
-PR 설명에 원인 커밋, 수정 내용, 확인 방법이 들어가고 Task가 연결됩니다.
+PR 설명에 원인이 된 설정 변경, 수정 내용, 확인 방법이 들어가고 Task가 연결됩니다.
 
 ![시나리오 3 - 수정 PR 개요](docs/images/devops-scenario3-pr.png)
 
@@ -929,6 +929,10 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 - 크롬이 팝업을 막으면 그 버튼으로 열거나, 주소창에서 `ai-master.local` 팝업을 허용합니다.
 - 화면에는 현재 심어진 장애(원격 main 기준, 30초마다 확인)와 최근 실행 1건이 나옵니다.
 - **proxy-config VM 배포** 파이프라인 실행도 10초마다 읽어 화면에 상태를 보여 줍니다.
+- 파이프라인이 **성공으로 끝나면 허브가 Health Check를 자동으로 한 번 더 돌려** 정상인지 확인합니다(문법 확인만 한 실행은 제외).
+  - 점검표에는 "VM 배포 뒤 확인 점검"으로, 로그에는 "배포 뒤 확인: 모두 정상 ✓ 장애 대응을 마칩니다" 또는 "이상 N건이 남았습니다 ✗"로 남습니다.
+  - 확인 점검은 점검만 하고 Teams 승인·Task는 만들지 않습니다(`proxy_health.py --trigger deploy`).
+  - 이때 다른 시나리오 3 작업이 실행 중이면 로그에 "확인 점검을 시작하지 못했습니다"를 남깁니다. 그때는 **Health Check 실행**으로 확인합니다.
 - 배포 로그는 `scenario3.log`에 `[pipeline]` 줄로 이어 붙입니다. 허브를 켜기 전에 끝난 실행은 빼고 붙입니다.
 
 사용량·비용 모니터는 ai-monitor의 허브(<http://ai-monitor.local>)에서 관리합니다.
@@ -1401,8 +1405,8 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
 
 **전 과정 시험 절차**:
   1. 화면 머리에서 장애 종류를 고르고 **장애 모의 훈련**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포만 함(시험 접속은 Health Check가 함, `proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
-  2. **Health Check 실행** → 점검표에서 wjy-proxy01이 "이상"(예: 허용 목적지 `www.data.go.kr` 403) → 원인 분석 → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
-  3. 끝나면 PR을 병합하고 VM에 배포합니다. PR 병합만으로는 VM에 반영되지 않습니다(소스 병합과 VM 배포를 따로 함).
+  2. **Health Check 실행** → 점검표에서 wjy-proxy01이 "이상"(예: 허용 목적지 `www.data.go.kr` 403) → 원인 분석 → Teams 승인 → 원인이 된 설정 변경을 되돌리는 수정 PR까지 생김.
+  3. 끝나면 PR을 병합하고 VM에 배포합니다. PR 병합만으로는 VM에 반영되지 않습니다(소스 병합과 VM 배포를 따로 함). 파이프라인이 성공하면 허브가 Health Check를 자동으로 다시 돌려, 점검표가 모두 정상인지 확인합니다.
      - Azure DevOps **Pipelines** › **proxy-config VM 배포** › **Run pipeline**: 배포 대상 VM(`targetVMs`, 기본값 `wjy-proxy01`)에 main을 배포합니다.
        - 칸을 비우면 실행 중인 squid VM 모두에 배포합니다.
        - proxy-config의 `azure-pipelines.yml`이고, 서비스 연결은 `proxy-vm-deploy`입니다. `az vm run-command`를 써서 SSH 키·NSG를 바꾸지 않습니다.
@@ -1426,7 +1430,7 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
 
 - 2026-10-24 (분석만): 최근 60분 로그가 없어 "이상 없음", 범위를 넓히면 wjy-proxy02의 도메인 스캔·차단 반복, wjy-proxy03의 미허용 클라이언트를 감지했고 LLM은 "설정 정책대로 막힌 것이라 고칠 설정 없음"으로 판단해 수동 조치로 돌렸습니다(`--dry-run`).
 - 2026-10-25 (전 과정): 허용 도메인 오타(`.data.go.kr` → `.date.go.kr`)를 wjy-proxy01에 배포해 시험했습니다.
-  - 흐름: 감지(허용 도메인이 차단됨·차단 반복) → AI가 원인 커밋 `f7e50de`와 한 줄 수정안을 찾음 → Teams 승인 → Task #2508(PBI #2507) → proxy-config PR !1 → 장애 대응 이력 Wiki·Teams 결과 카드.
+  - 흐름: 감지(허용 도메인이 차단됨·차단 반복) → AI가 원인이 된 설정 변경(커밋 `f7e50de`)과 한 줄 수정안을 찾음 → Teams 승인 → Task #2508(PBI #2507) → proxy-config PR !1 → 장애 대응 이력 Wiki·Teams 결과 카드.
   - PR을 병합(Task Done)하고 배포해 `traffic.sh` ok=20 fail=0으로 정상화했습니다.
   - 이때 나온 문제(Wiki push 경고 섞임, CRLF 비교, Teams 링크에 조사 포함)는 고쳤습니다.
 
