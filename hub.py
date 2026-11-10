@@ -367,8 +367,8 @@ JOBS = {
                   "options": {}},
     "scenario3": {"title": "시나리오 3 · Health Check", "script": "proxy_tools/incident_response.py", "log": "scenario3",
                   "self_log": True, "options": {"dry_run": "--dry-run"}},
-    # 시험용: proxy-config 에 잘못된 설정을 넣어 wjy-proxy01 에 배포(장애 재현), 그리고 되돌리기
-    "scenario3-fault": {"title": "시나리오 3 · 장애 재현(시험용)", "script": "proxy_tools/proxy_fault_inject.py", "log": "scenario3",
+    # 시험용: proxy-config 에 잘못된 설정을 넣어 wjy-proxy01 에 배포(장애 모의 훈련), 그리고 되돌리기
+    "scenario3-fault": {"title": "시나리오 3 · 장애 모의 훈련(시험용)", "script": "proxy_tools/proxy_fault_inject.py", "log": "scenario3",
                         "self_log": False, "options": {}, "base": ["apply"],
                         "choice": ["whitelist-typo", "client-acl-typo", "bad-dns"],
                         "tail": ["--push", "--deploy", "wjy-proxy01"]},
@@ -466,7 +466,7 @@ def _fetch_proxy_config(fi):
 
 def fault_state() -> dict:
     """시나리오 3 시험용 장애가 proxy-config 원격 main(origin/main)에 심어져 있는지.
-    로컬 사본은 장애 재현·원상 복구 때만 최신화되므로, Azure DevOps 에서 수정 PR 을 병합해도 로컬은 장애 그대로였다
+    로컬 사본은 장애 모의 훈련·원상 복구 때만 최신화되므로, Azure DevOps 에서 수정 PR 을 병합해도 로컬은 장애 그대로였다
     (2026-10-31). 그래서 30초마다 뒤에서 git fetch 하고 origin/main 내용을 본다(화면 갱신은 2초라 기다리지 않음)."""
     try:
         sys.path.insert(0, str(PROJECT_ROOT / "proxy_tools"))
@@ -632,7 +632,7 @@ _JOB_START = re.compile(r"===== \S+ \S+ 시작: (.*) =====")
 def restore_needed(key: str) -> dict:
     """로그를 처음부터 따라가며 지금 원상 복구가 필요한지 판단한다(허브 '원상 복구' 버튼을 켜고 끄는 데 씀).
     시나리오 2: 테스트 환경 준비 성공 → 필요. 원상 복구 성공, 실행으로 Wiki 반영(wiki_update), 'Wiki 와 Azure 가 같음' → 불필요.
-    시나리오 3: 장애 재현 성공 → 필요. 원상 복구 성공, VM 배포 파이프라인 성공(수정 PR 병합 후 배포) → 불필요.
+    시나리오 3: 장애 모의 훈련 성공 → 필요. 원상 복구 성공, VM 배포 파이프라인 성공(수정 PR 병합 후 배포) → 불필요.
     판단할 기록이 없으면 불필요로 본다."""
     log = LOG_DIR / f"{key}.log"
     if not log.is_file():
@@ -654,7 +654,7 @@ def restore_needed(key: str) -> dict:
         elif "===== 종료: 코드 0," in r and pending:
             need = pending == "setup"
             why = {"scenario2": {"setup": "테스트 환경 준비 후 아직 반영 전", "restore": "원상 복구 완료"},
-                   "scenario3": {"setup": "장애 재현 후 아직 복구 전", "restore": "원상 복구 완료"}}[key][pending]
+                   "scenario3": {"setup": "장애 모의 훈련 후 아직 복구 전", "restore": "원상 복구 완료"}}[key][pending]
             pending = None
         elif key == "scenario2" and ((" wiki_update " in r and "commit=" in r) or "Wiki 와 Azure 가 같음" in r):
             need, why = False, "실행으로 Wiki 가 실제 VM 과 같아짐"
@@ -980,7 +980,7 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div></div>
 <div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">프록시 Health Check</span><span style="margin-left:auto"></span><span class="muted" style="font-size:12px;margin-right:2px">시험:</span><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);max-width:230px">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
-<option value="bad-dns">잘못된 DNS 서버</option></select><button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포만 함(점검은 Health Check 실행으로) (proxy_fault_inject.py apply)">장애 재현</button><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button><button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">IP 맞추기</button><button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
+<option value="bad-dns">잘못된 DNS 서버</option></select><button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포만 함(점검은 Health Check 실행으로) (proxy_fault_inject.py apply)">장애 모의 훈련</button><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button><button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">IP 맞추기</button><button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
 <div class="sc s3"><p>Wiki <b>Proxy Health Check 기준</b> 문서의 허용·차단 목적지로 VM 마다 실제 접속해 봅니다. 이상이 있으면 원인을 분석하고 Teams 승인 후 Task·수정 PR·이력 Wiki를 남깁니다(VM 반영은 PR 병합 뒤 <b>VM 배포</b> 파이프라인).</p>
 <div class="row"><button class="main" id="s3run" onclick="runJob('scenario3')" title="Health Check(Wiki 기준 목적지 실제 접속) → 최근 로그 탐지 → 이상이면 원인 분석·Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">Health Check 실행</button></div>
 <div id="s3health"></div>
@@ -1108,7 +1108,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   const run=['scenario2','scenario2-setup','scenario2-restore'].some(k=>jobs[k]&&jobs[k].state==='running');['s2run','s2setup'].forEach(id=>document.getElementById(id).disabled=run);
   const s3=['scenario3','scenario3-fault','scenario3-restore','nsg-ip'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
   ['s3run','s3inject','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
-  // 원상 복구는 로그로 보아 필요할 때만 켠다(테스트 환경 준비·장애 재현 뒤). 꺼진 이유는 툴팁에.
+  // 원상 복구는 로그로 보아 필요할 때만 켠다(테스트 환경 준비·장애 모의 훈련 뒤). 꺼진 이유는 툴팁에.
   const rs=jobs._restore||{};[['s2restore','scenario2',run,'test/scenario2/setup_env.py --restore: 테스트 문서를 실제 VM 과 같은 정상 표로'],
     ['s3restore','scenario3',run3,'심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인 (proxy_fault_inject.py restore)']].forEach(([id,k,busy,tip])=>{
     const b=document.getElementById(id),x=rs[k]||{};b.disabled=busy||!x.need;b.title=tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});

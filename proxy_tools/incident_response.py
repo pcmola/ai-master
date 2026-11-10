@@ -27,7 +27,7 @@
 설정(.env): AZURE_DEVOPS_*, AZURE_OPENAI_*·OPENAI_MODEL, TEAMS_WEBHOOK_URL, PROXY_CONFIG_DIR(기본 ../proxy-config),
             SCENARIO3_WINDOW_MIN(기본 60), SCENARIO3_TIMEOUT(승인 대기 초, 기본 900), SCENARIO3_EPIC_ID(기본 1),
             SCENARIO3_FEATURE(기본 '[공통] 프록시 장애 대응'), SCENARIO3_PBI(기본 '프록시 장애 대응')
-장애 재현: proxy_tools/proxy_fault_inject.py apply <시나리오> --push --deploy <VM_IP>
+장애 모의 훈련: proxy_tools/proxy_fault_inject.py apply <시나리오> --push --deploy <VM_IP>
 """
 
 from __future__ import annotations

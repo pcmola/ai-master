@@ -1,6 +1,6 @@
 """Proxy VM NSG 의 허용 IP 를 '고정 허용 IP + 이 PC 의 현재 공인 IP' 로 맞춘다.
 
-집 회선·테더링처럼 공인 IP 가 바뀌면 NSG 가 SSH(22)·프록시 포트를 막아, 시나리오 3·장애 재현·로그 뷰어의
+집 회선·테더링처럼 공인 IP 가 바뀌면 NSG 가 SSH(22)·프록시 포트를 막아, 시나리오 3·장애 모의 훈련·로그 뷰어의
 SSH 접속이 'Connection timed out' 으로 실패한다. 이 스크립트는 리소스 그룹의 NSG 에서
 '출발지가 단일 IP(/32)인 인바운드 Allow 규칙'(Allow-SSH, Allow-squid-8080, Allow-nginx 등)만 골라
 출발지를 '.env 의 PROXY_ALLOWED_CLIENTS 에 적힌 단일 IP(집 회선 등, 항상 유지) + 현재 공인 IP/32' 로 맞춘다.

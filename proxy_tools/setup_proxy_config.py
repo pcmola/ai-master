@@ -146,7 +146,7 @@ def main() -> int:
                 raise
             print(f"시드 push 완료 (allowed_clients: {' '.join(cidrs)})")
         print(f"준비 완료: {REPO}")
-        print("이후 시나리오 3·장애 재현의 fetch/push 는 Git 자격 증명(Git Credential Manager)으로 인증합니다.")
+        print("이후 시나리오 3·장애 모의 훈련의 fetch/push 는 Git 자격 증명(Git Credential Manager)으로 인증합니다.")
         return 0
     except (OSError, RuntimeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

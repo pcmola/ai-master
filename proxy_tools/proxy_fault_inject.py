@@ -164,7 +164,7 @@ def restore(push: bool, deploy: str | None):
         path = REPO / s["file"]
         path.write_text(path.read_text(encoding="utf-8").replace(s["after"], s["before"]), encoding="utf-8", newline="\n")
         git("add", "--", s["file"])
-    git("commit", "-q", "-m", f"장애 재현 되돌림: {', '.join(found)}")
+    git("commit", "-q", "-m", f"장애 모의 훈련 되돌림: {', '.join(found)}")
     print(f"커밋: {git('log', '-1', '--format=%h %s')}")
     if push:
         print("push 중…")

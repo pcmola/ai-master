@@ -319,7 +319,7 @@ flowchart TD
     task --> pr["7. 수정 브랜치·PR"]
     pr --> hist(["8. 장애 대응 이력 Wiki<br/>+ Teams 결과"])
     hist -. "이후 별도 수행" .-> review{"사람이 PR 검토<br/>병합·배포·복구 확인"}
-    inj["장애 재현·원상 복구<br/>(허브 시험용 버튼)<br/>proxy_fault_inject.py"] -. "잘못된 설정 배포" .-> hc
+    inj["장애 모의 훈련·원상 복구<br/>(허브 시험용 버튼)<br/>proxy_fault_inject.py"] -. "잘못된 설정 배포" .-> hc
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
     classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
@@ -341,7 +341,7 @@ flowchart TD
 
 시험 방법과 결과는 [8.4 시나리오 3 · 시험](#84-시나리오-3--시험)에 있습니다.
 
-**실행 화면** (2026-10-30 실제 실행: 18:08 장애 재현 → 18:24 복구, 설명할 곳은 빨간 테두리)
+**실행 화면** (2026-10-30 실제 실행: 18:08 장애 모의 훈련 → 18:24 복구, 설명할 곳은 빨간 테두리)
 
 시험 내용: 허용 목록의 `.data.go.kr`을 `.date.go.kr`로 바꾼 설정을 wjy-proxy01에 배포했습니다. 그러면 data.go.kr 접속만 막힙니다.
 
@@ -359,7 +359,7 @@ NGINX VM을 고르면 리버스 프록시 로그를 봅니다.
 **② 허브에서 실행** (2026-11-08 촬영)
 
 - 로그 위 실행 계획 패널(빨간 테두리)에 6단계 진행과 단계별 결과가 나옵니다.
-- "원상 복구"는 장애 재현 뒤에만 켜지고, 이 화면처럼 VM 배포 파이프라인이 성공한 뒤에는 꺼져(회색) 있습니다.
+- "원상 복구"는 장애 모의 훈련 뒤에만 켜지고, 이 화면처럼 VM 배포 파이프라인이 성공한 뒤에는 꺼져(회색) 있습니다.
 
 로그의 `◆ Planning`은 6단계 계획입니다. 로그 수집 → AI 분석·사례 검색 → 설정 확인·수정안 → 승인 → Task·PR → 이력 Wiki 순서입니다. `◆ Simulation`은 실행 전 점검과 예상 분기입니다.
 
@@ -444,7 +444,7 @@ ai-master/
 ├─ test/           API 테스트, 검색 정확도 벤치마크(wiki_search_benchmark.py), 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py)
 └─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git, ai-master 에서는 추적하지 않음)
 
-../proxy-config/   형제 폴더: Squid 설정 저장소(Azure Repos, 별도 Git). 시나리오 3·장애 재현용, proxy_tools/setup_proxy_config.py 로 만들거나 받음
+../proxy-config/   형제 폴더: Squid 설정 저장소(Azure Repos, 별도 Git). 시나리오 3·장애 모의 훈련용, proxy_tools/setup_proxy_config.py 로 만들거나 받음
 ```
 
 ```mermaid
@@ -600,7 +600,7 @@ flowchart LR
    python proxy_tools\setup_proxy_config.py           # 프로젝트에 있으면 받고, 없으면 만들어 첫 커밋 push
    ```
 
-   새로 만들 때는 `proxy_tools/proxy-config-seed/`(실제 IP를 뺀 설정)를 쓰고 허용 클라이언트를 `PROXY_ALLOWED_CLIENTS`로 채웁니다. 저장소를 만들려면 PAT에 **Code (Read, write, & manage)** 범위가 필요합니다. 시드에는 커밋 이력이 없어서, 원인 분석에 쓰는 변경 이력은 장애 재현(`proxy_fault_inject.py`)을 하면서 쌓입니다.
+   새로 만들 때는 `proxy_tools/proxy-config-seed/`(실제 IP를 뺀 설정)를 쓰고 허용 클라이언트를 `PROXY_ALLOWED_CLIENTS`로 채웁니다. 저장소를 만들려면 PAT에 **Code (Read, write, & manage)** 범위가 필요합니다. 시드에는 커밋 이력이 없어서, 원인 분석에 쓰는 변경 이력은 장애 모의 훈련(`proxy_fault_inject.py`)을 하면서 쌓입니다.
 
 ### 3.4 LLM 게이트웨이
 
@@ -888,11 +888,11 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 시나리오 3
 
 - **프록시 Health Check**를 누르면 오른쪽에 아래 버튼과 상태, 그 아래에 `scenario3.log`가 나옵니다.
-- 시험 도구(장애 종류 선택, "장애 재현", "원상 복구", "IP 맞추기", "프록시 로그")는 화면 머리에 있습니다.
+- 시험 도구(장애 종류 선택, "장애 모의 훈련", "원상 복구", "IP 맞추기", "프록시 로그")는 화면 머리에 있습니다.
 - 본문의 **Health Check 실행**은 Health Check → 최근 60분 로그 탐지 → 이상이면 원인 분석·Teams 승인 → Task·수정 PR·이력 Wiki 순서로 진행합니다.
 - 그 아래 점검표에 VM × 항목(VM 상태, 서비스, 허용 목적지 접속, 차단 목적지 접속)의 마지막 결과가 나옵니다. 칸에 마우스를 올리면 자세한 결과가 보이고, 이상 항목은 표 아래에 줄로 나옵니다.
-- 시험 흐름: 장애 재현 → Health Check 실행 → 원상 복구.
-- "원상 복구"는 로그로 보아 장애 재현 뒤에만 켜집니다. 원상 복구나 VM 배포 파이프라인이 성공하면 꺼집니다.
+- 시험 흐름: 장애 모의 훈련 → Health Check 실행 → 원상 복구.
+- "원상 복구"는 로그로 보아 장애 모의 훈련 뒤에만 켜집니다. 원상 복구나 VM 배포 파이프라인이 성공하면 꺼집니다.
 - "IP 맞추기"(`sync_nsg_ip.py`)는 NSG 허용 IP를 이 PC의 현재 IP에 맞추고, "프록시 로그"는 `proxy-log.local`을 새 창으로 엽니다.
 - 실행 중 승인 서버가 뜨면 승인 화면을 새 창으로 한 번 자동으로 띄우고, "승인 화면" 버튼도 보여 줍니다.
 - 크롬이 팝업을 막으면 그 버튼으로 열거나, 주소창에서 `ai-master.local` 팝업을 허용합니다.
@@ -1255,7 +1255,7 @@ curl.exe -H "Host: law.wjy.test" http://<VM_IP>/LSW/main.html   # 리버스 프�
 |---|---|---|---|
 | 1 | 없음(wiki-repo 문서 그대로) | Wiki 등록 시 `00. AI 문서 생성` 아래 문서 | 등록한 문서 삭제 |
 | 2 | 허브 "테스트 환경 준비"(`setup_env.py`) | wiki-repo 테스트 문서(로컬 커밋), 승인 시 Task | 시나리오 2 실행 후 승인(Wiki가 실제 VM과 같아짐) 또는 "원상 복구" |
-| 3 | 허브 "장애 재현"(`proxy_fault_inject.py`) | proxy-config 커밋·VM 설정, 승인 시 Task·PR·이력 Wiki | PR 병합·배포 또는 "원상 복구" |
+| 3 | 허브 "장애 모의 훈련"(`proxy_fault_inject.py`) | proxy-config 커밋·VM 설정, 승인 시 Task·PR·이력 Wiki | PR 병합·배포 또는 "원상 복구" |
 
 ### 8.1 시나리오 1 · 시험
 
@@ -1364,10 +1364,10 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
 
 ### 8.4 시나리오 3 · 시험
 
-허브 "프록시 Health Check" 화면에서 장애 재현 → Health Check 실행 → 원상 복구 순서로 합니다. 세 버튼 모두 실제 저장소·VM·Azure DevOps를 바꿉니다. 아무것도 바꾸지 않고 원인·수정안만 보려면 `python proxy_tools\incident_response.py --dry-run`을 씁니다.
+허브 "프록시 Health Check" 화면에서 장애 모의 훈련 → Health Check 실행 → 원상 복구 순서로 합니다. 세 버튼 모두 실제 저장소·VM·Azure DevOps를 바꿉니다. 아무것도 바꾸지 않고 원인·수정안만 보려면 `python proxy_tools\incident_response.py --dry-run`을 씁니다.
 
 **전 과정 시험 절차**:
-  1. 화면 머리에서 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포만 함(시험 접속은 Health Check가 함, `proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
+  1. 화면 머리에서 장애 종류를 고르고 **장애 모의 훈련**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포만 함(시험 접속은 Health Check가 함, `proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
   2. **Health Check 실행** → 점검표에서 wjy-proxy01이 "이상"(예: 허용 목적지 `www.data.go.kr` 403) → 원인 분석 → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
   3. 끝나면 PR을 병합하고 VM에 배포합니다. PR 병합만으로는 VM에 반영되지 않습니다(소스 병합과 VM 배포를 따로 함).
      - Azure DevOps **Pipelines** › **proxy-config VM 배포** › **Run pipeline**: 배포 대상 VM(`targetVMs`, 기본값 `wjy-proxy01`)에 main을 배포합니다.
@@ -1378,7 +1378,7 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
   - **Health Check 실행**은 시작할 때와 끝날 때 운영 중인 squid VM의 배포된 설정(`/etc/proxy/proxy.conf`, `lists/*`)을 저장소 `origin/main`의 `squid/`와 비교합니다(`config_drift`). 다르면 로그에 `⚠ 경고`와 다른 파일 이름을 남깁니다. 병합한 수정이 배포되지 않은 경우를 잡으려고 넣었습니다(2026-10-31).
   - 경고가 나오면 파이프라인을 그 VM을 배포 대상으로 넣어 실행해 맞춥니다. 허브 **원상 복구**는 wjy-proxy01에만 배포하므로 다른 VM은 맞추지 못합니다.
   - main에 시험용 장애가 심어져 있는 동안에는 비교 기준이 정상이 아닙니다. 그래서 다른 VM이 있어도 경고 대신 관찰 줄만 남깁니다. 장애를 배포하지 않은 VM(예: wjy-proxy02)이 '다름'으로 잡히던 문제 때문입니다(2026-11-08).
-  - 장애 커밋·push는 됐는데 배포(SSH)가 실패했다면 같은 종류로 **장애 재현**을 다시 누릅니다. 같은 장애가 이미 심어져 있으면 커밋 없이 배포만 다시 합니다(다른 종류가 심어져 있으면 거절).
+  - 장애 커밋·push는 됐는데 배포(SSH)가 실패했다면 같은 종류로 **장애 모의 훈련**을 다시 누릅니다. 같은 장애가 이미 심어져 있으면 커밋 없이 배포만 다시 합니다(다른 종류가 심어져 있으면 거절).
   - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
   - 세 VM 모두 SSH가 `connect to host … port 22: Connection timed out`으로 실패하면, VM이 켜져 있어도 이 PC의 공인 IP가 NSG 허용 IP와 다른 경우입니다(회선 변경·테더링).
     - 이때 시나리오 3은 "점검 불가"(종료 코드 2)로 끝나고, 현재 공인 IP와 NSG 허용 IP를 비교한 원인 추정을 로그에 남깁니다.
@@ -1427,7 +1427,7 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 - 보내는 쪽에서 남기는 이유가 있습니다. Teams 채널 이력을 Graph로 읽으려면 관리자 동의 권한(`ChannelMessage.Read.All`)이 필요하기 때문입니다.
 - 그래서 카드 화면을 새로 찍으려면 먼저 시나리오 2와 3을 실제로 한 번씩 실행합니다.
   - 시나리오 2: 테스트 환경 준비 → 실행 → Yes
-  - 시나리오 3: 장애 재현 → 실행 → Yes
+  - 시나리오 3: 장애 모의 훈련 → 실행 → Yes
 - 시나리오 2 로그만 새로 만들려면 촬영 전에 `python proxy_tools/proxy_status_sync.py --dry-run`을 실행합니다. 비교와 AI 요약만 하고, 로컬 로그·트레이스에 기록합니다.
 
 **식별값 가리기**
@@ -1469,7 +1469,7 @@ $pres.Close(); $pp.Quit()
 | `proxy_log_detect.py` | `simulate` / `detect` 하위 명령 | `PROXY_ALLOWED_CLIENTS` |
 | `setup_proxy_config.py` | `--check` | `AZURE_DEVOPS_*`, `PROXY_ALLOWED_CLIENTS`, `PROXY_CONFIG_DIR` |
 | `sync_nsg_ip.py` | `--check`, `--resource-group` | `PROXY_ALLOWED_CLIENTS`(유지할 IP), `SCENARIO2_RESOURCE_GROUP`(기본 WJY-PROXY-RG) |
-| `proxy_fault_inject.py` (장애 재현) | `list` / `status` / `apply` / `restore`, `--push`·`--deploy <VM 이름 또는 IP>` | 외부(저장소·VM)를 바꾸는 동작이라 옵션으로 명시할 때만 함 |
+| `proxy_fault_inject.py` (장애 모의 훈련) | `list` / `status` / `apply` / `restore`, `--push`·`--deploy <VM 이름 또는 IP>` | 외부(저장소·VM)를 바꾸는 동작이라 옵션으로 명시할 때만 함 |
 
 ```powershell
 python wiki_tools\wiki_search.py
