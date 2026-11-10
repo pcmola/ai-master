@@ -148,36 +148,57 @@ def reselect(page):
 
 
 def wiki(page):
-    ready(page, SITES["wiki"] + "/?embed=1")  # 허브 안에서 보이는 화면(위 검은 머리 없음, 가로 꽉 채움)과 같게
-    page.locator("#q").fill("프록시 설정 가이드 알려줘")
-    page.locator("#go").click()
-    page.locator("#ask .opt").first.wait_for(timeout=60000)
-    shot(page, "wiki-search-type.png")
+    """시나리오 1 화면: 허브에서 'Wiki 기반 가이드 생성'을 연 전체 화면(왼쪽 메뉴·오른쪽 Wiki 검색·아래 서버 로그)으로 찍는다.
+    조작은 오른쪽 Wiki 검색 iframe 안에서 한다(다른 출처라 프레임 안에서 따로 가린다)."""
+    ready(page, SITES["hub"])
+    page.evaluate("""async () => { const d = await (await fetch('/api/status')).json();
+      localStorage.setItem('hub.logStartAt', (d.log_start || {}).at || ''); localStorage.setItem('hub.logCleared', '{}'); }""")
+    ready(page, SITES["hub"])
+    page.locator("#s1run").click()
+    page.locator("#s1frame").wait_for(timeout=30000)
+    page.wait_for_function("document.getElementById('s1frame').src.includes('embed')", timeout=30000)
+    f = None
+    for _ in range(60):
+        f = next((x for x in page.frames if "wiki-search" in x.url), None)
+        if f:
+            break
+        page.wait_for_timeout(500)
+    f.wait_for_load_state("networkidle")
+
+    def fshot(name):
+        f.evaluate(REDACTOR)
+        page.wait_for_timeout(1500)  # 아래 서버 로그가 따라올 때까지
+        shot(page, name)
+
+    f.locator("#q").fill("프록시 설정 가이드 알려줘")
+    f.locator("#go").click()
+    f.locator("#ask .opt").first.wait_for(timeout=60000)
+    fshot("wiki-search-type.png")
     # 캐시 저장 전: 캐시가 있으면 '새로 만들기'로 LLM 이 새로 쓰게 한다(이때 캐시에 저장됨). Wiki 등록 버튼은 누르지 않는다.
-    guide(page, "포워드", fresh=True)
-    mark(page, BADGE)
-    shot(page, "wiki-search-guide.png")
-    mark(page)
-    page.locator("#revise").scroll_into_view_if_needed()
-    shot(page, "wiki-search-revise.png")
+    guide(f, "포워드", fresh=True)
+    mark(f, BADGE)
+    fshot("wiki-search-guide.png")
+    mark(f)
+    f.locator("#revise").scroll_into_view_if_needed()
+    fshot("wiki-search-revise.png")
     # 캐시 저장 후: 같은 질의·유형을 다시 고르면 근거 지문이 같아 LLM 없이 저장된 가이드가 나온다.
-    reselect(page)
-    guide(page, "포워드", fresh=False)
-    page.evaluate("window.scrollTo(0, 0)")
-    mark(page, BADGE)
-    shot(page, "wiki-search-cache.png")
+    reselect(f)
+    guide(f, "포워드", fresh=False)
+    f.evaluate("window.scrollTo(0, 0)")
+    mark(f, BADGE)
+    fshot("wiki-search-cache.png")
     # 웹 검색: 리버스 프록시는 위키 근거가 약해(유형 유사도 0.41 < 0.45) 웹 검색 결과를 근거에 보탠다.
-    reselect(page)
-    guide(page, "리버스", fresh=True)
-    page.evaluate("window.scrollTo(0, 0)")
-    mark(page, WEB_CHIP, WEB_NOTE)
-    shot(page, "wiki-search-web.png")
-    links = page.locator("#guide h2").filter(has_text="웹 참고 링크")
+    reselect(f)
+    guide(f, "리버스", fresh=True)
+    f.evaluate("window.scrollTo(0, 0)")
+    mark(f, WEB_CHIP, WEB_NOTE)
+    fshot("wiki-search-web.png")
+    links = f.locator("#guide h2").filter(has_text="웹 참고 링크")
     if links.count():
         links.first.scroll_into_view_if_needed()
-        mark(page, WEB_RESULTS, WEB_LINKS)
-        shot(page, "wiki-search-web-links.png")
-    mark(page)
+        mark(f, WEB_RESULTS, WEB_LINKS)
+        fshot("wiki-search-web-links.png")
+    mark(f)
 
 
 def viewer(page):
