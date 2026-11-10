@@ -43,7 +43,7 @@ except ImportError:
 OUT = ROOT / "docs/images"
 EVIDENCE = ROOT / "data/readme-capture"
 SITES = {
-    "hub": "http://ai-master.local",
+    "hub": os.environ.get("CAPTURE_HUB_URL", "http://ai-master.local"),  # 허브를 다시 켜기 전 새 화면은 시험 서버 주소로
     "wiki": "http://wiki-search.local",
     "viewer": "http://wiki.local",
     "proxy": "http://proxy-log.local",
@@ -200,47 +200,53 @@ def scroll_to_last(page, marker: str):
 
 
 def hub(page):
+    """허브(왼쪽 시나리오 버튼 3개, 오른쪽 위 시나리오 화면, 아래 로그). 고른 시나리오마다 한 장씩 찍는다."""
     ready(page, SITES["hub"])
     # 허브는 처음 열 때 로그를 허브 시작 시점으로 '지우기'한다. 촬영은 지난 실행 로그가 필요하므로 전체 보기 상태로 다시 연다.
     page.evaluate("""async () => { const d = await (await fetch('/api/status')).json();
       localStorage.setItem('hub.logStartAt', (d.log_start || {}).at || ''); localStorage.setItem('hub.logCleared', '{}'); }""")
     ready(page, SITES["hub"])
-    try:  # 시나리오 2 카드 아래 Wiki·Azure 링크(az·DevOps 조회라 처음엔 수 초 걸림)
+    # 프록시 Health Check: 점검표 + 실행 계획 + 로그(전체 배치를 보이는 첫 장)
+    pick(page, "#s3open", "#s3health table")
+    plan_panel(page, mark_it=False)
+    shot(page, "hub-main.png")
+    mark(page, "document.getElementById('s3health')")
+    shot(page, "scenario3-run.png")
+    # 프록시 현황 점검: Wiki·Azure 링크(az·DevOps 조회라 처음엔 수 초) + 비교표 + 실행 계획
+    pick(page, "#s2open", "#s2result table")
+    try:
         page.wait_for_function("!document.getElementById('s2links').textContent.includes('불러오는 중')", timeout=60000)
     except Exception:
         print("s2links: 링크를 못 읽어 불러오는 중 상태로 찍음", flush=True)
-    shot(page, "hub-main.png")
-    # 로그는 별도 창(허브 페이지의 로그 전용 모드 /?log=<키>)이라 그 주소를 같은 탭에서 열어 찍는다.
-    log_window(page, "scenario2", "시나리오 2 로그", "proxy_status_sync")
-    # 마지막 실제 실행(승인까지 한 실행) 시작 줄로 스크롤한다. 그 뒤의 '새로 읽기' 기록 줄은 화면 아래로 밀린다.
-    scroll_to_last(page, "시작: proxy_status_sync.py ")
     plan_panel(page)
     shot(page, "hub-scenarios.png")
-    log_window(page, "scenario3", "시나리오 3 로그", "incident_response")
-    # 실행 시작 직후의 배포 설정 점검 줄 대신 계획(◆ Planning)부터 보이게 한다
-    scroll_to_last(page, "6-step plan generated")
-    plan_panel(page)
-    shot(page, "scenario3-run.png")
-    # 시나리오 1(Wiki 검색 서버) 로그: 로그 위 실행 계획 패널에 가장 최근 질의 1건의 4단계 진행
-    log_window(page, "wiki-search", "시나리오 1 · Wiki 검색 서버 로그", "guide/stream")
-    scroll_to_last(page, "▶ guide/stream")
+    # Wiki 기반 가이드 생성: 오른쪽 위 Wiki 검색 화면 + 아래 Wiki 검색 서버 로그(가장 최근 질의 1건의 실행 계획)
+    pick(page, "#s1run", "#s1frame")
+    page.wait_for_timeout(2500)
     plan_panel(page)
     shot(page, "hub-scenario1-log.png")
 
 
-def log_window(page, key: str, title: str, expect: str):
-    """허브 로그 창(/?log=<key>)을 열고 로그에 expect 가 나올 때까지 기다린다."""
-    from urllib.parse import quote
-    ready(page, f"{SITES['hub'].rstrip('/')}/?log={quote(key)}&t={quote(title)}")
-    page.wait_for_function("(m) => document.querySelector('#slog').textContent.includes(m)", arg=expect, timeout=30000)
+def pick(page, button: str, ready_sel: str):
+    """왼쪽 시나리오 버튼을 누르고 화면·로그가 그려질 때까지 기다린다. 표시 칸(빨간 테두리)은 지운다."""
+    page.evaluate("document.querySelectorAll('.readme-mark').forEach(e => e.remove())")
+    page.locator(button).click()
+    page.locator(ready_sel).first.wait_for(timeout=30000)
+    page.wait_for_function("document.getElementById('slog').textContent.length > 50", timeout=30000)
+    page.wait_for_timeout(1500)
 
 
-def plan_panel(page):
-    """로그 위 실행 계획 패널이 그려질 때까지 기다리고(펼친 상태로) 빨간 테두리를 친다."""
+def plan_panel(page, mark_it: bool = True):
+    """로그 위 실행 계획 패널이 그려질 때까지 기다리고(펼친 상태로) 빨간 테두리를 친다.
+    허브를 켜기 전 실행은 '지난 실행 기록'으로 접혀 있으므로 펼친다."""
+    page.wait_for_function("(() => { const p = document.getElementById('splan'); return p && !p.hidden; })()", timeout=15000)
+    page.evaluate("""() => { const b = [...document.querySelectorAll('#splan .ph button')].find(x => x.textContent.includes('펼치기'));
+      if (b) b.click(); }""")
     page.wait_for_function("(() => { const p = document.getElementById('splan'); return p && !p.hidden && p.querySelector('li'); })()",
                            timeout=15000)
     page.wait_for_timeout(300)
-    mark(page, "document.getElementById('splan')")
+    if mark_it:
+        mark(page, "document.getElementById('splan')")
 
 
 def proxy(page):
