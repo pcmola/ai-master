@@ -556,10 +556,10 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
     option = CLARIFY[key]["options"][variant] if key in CLARIFY and variant in CLARIFY[key]["options"] else None
     plan(f"'{query[:40]}' 통합 가이드 작성" + (f" (유형: {option['label']})" if option else "")
          + (" · 수정 요청 반영" if revise else ""),
-         [("search", "질의 해석 (개념·오타 교정) → Wiki 하이브리드 검색 (키워드 + 임베딩)"),
-          ("sources", "핵심 개념이 있는 문서만 근거로 선별 → 관련 조각만 선택 (RAG)"),
-          ("web", "근거 충분성 판단 → 부족하면 웹 검색으로 보완"),
-          ("llm_generate", "(AI) 근거·출처를 단 가이드 생성" + (" — 기존 가이드 + 수정 요청" if revise else ""))])
+         [("검색", "질의 해석 (개념·오타 교정) → Wiki 하이브리드 검색 (키워드 + 임베딩)"),
+          ("선별", "핵심 개념이 있는 문서만 근거로 선별 → 관련 조각만 선택 (RAG)"),
+          ("보완", "근거 충분성 판단 → 부족하면 웹 검색으로 보완"),
+          ("생성", "(AI) 근거·출처를 단 가이드 생성" + (" — 기존 가이드 + 수정 요청" if revise else ""))])
     llm_ready = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("AZURE_OPENAI_API_KEY")
                      or os.environ.get("OPENAI_API_KEY"))
     simulate([("Wiki 색인", bool(INDEX.docs), f"문서 {len(INDEX.docs):,}건"),
@@ -568,7 +568,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
               ("LLM", llm_ready, "가이드 생성" if llm_ready else "설정 없음 → 템플릿 가이드로 대체"),
               ("웹 검색", bool(web_provider()), f"{WEB_LABEL.get(web_provider())} (근거 약할 때만)"
                if web_provider() else "공급자 없음(WEB_SEARCH_PROVIDER·키 확인) → Wiki 만 사용")])
-    step("search")
+    step("검색")
     concepts, terms, groups, fixes = traced_analyze(query)
     think("Observation", f"개념 {', '.join(concepts) or '없음'} · 고유어 {', '.join(terms[:5]) or '없음'}")
     boost = option["terms"] if option else []
@@ -577,7 +577,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
     think("Tool Call", f"index.hybrid_search(query=\"{search_query[:60]}\", boost={len(boost)})")
     ranked = traced_search(groups, search_query, boost)
 
-    step("sources")
+    step("선별")
     with span("select_sources", candidates=len(ranked)) as sp:
         # 핵심 개념(가장 드문 동의어 묶음)이 실제로 나오는 문서만 가이드 재료로 쓴다.
         core = min(groups, key=lambda g: sum(1 for d in INDEX.docs if any(s in d.low for s in g))) if groups else []
@@ -603,7 +603,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
                    if (c["doc"].path, c["order"]) not in have][:REVISE_EXTRA_CHUNKS]
 
     title = f"{option['label'] if option else query.strip()} 가이드"
-    step("web")
+    step("보완")
     web_reason = web_search_reason(sources, search_query, option)
     # 유형을 골랐으면 그 유형이 속한 개념(예: proxy)을 기준으로 검색어를 만들고 결과를 거른다.
     base = key if option and key in CONCEPTS else None
@@ -620,7 +620,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
         if hit:
             # 단계를 건너뛰고 새로 붙이지 않고, 4단계(가이드 생성) 자리에서 저장된 가이드를 쓴다고 표시한다.
             think("Decision", f"근거 지문이 저장된 가이드와 같음 (처음 생성 {hit['created_at']}) → 저장된 가이드 사용")
-            step("llm_generate", "저장된 가이드 사용 (LLM 생략)")
+            step("생성", "저장된 가이드 사용 (LLM 생략)")
             yield {"type": "meta", "title": title, "model": hit["model"], "web": hit["web"], "web_reason": web_reason,
                    "analysis": {"concepts": [{"id": c, "words": CONCEPTS[c]} for c in concepts], "terms": terms, "fixes": fixes},
                    "highlights": sorted({w for g in groups for w in g} | set(boost), key=len, reverse=True),
@@ -652,7 +652,7 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
 
     markdown = None
     if client:
-        step("llm_generate")
+        step("생성")
         think("Tool Call", f"llm.generate(model={model}, 근거 조각 {len(chunks)}개, 웹 {len(web)}건)")
         gen = llm_guide(client, query, title, option, statements, sources, web, chunks, revise)
         try:
@@ -672,8 +672,8 @@ def guide_events(query: str, key: str | None, variant: str | None, revise: dict 
         yield {"type": "done", "mode": "llm", "model": model, "markdown": revise.get("markdown", ""), "revise_failed": True}
         return
     # LLM 이 없거나 도중에 실패하면 템플릿으로 바꿔 낸다(화면은 받은 글을 이 내용으로 갈아 끼운다)
-    replan("LLM 생성 불가 → 근거 문장 템플릿으로 대체", drop=["llm_generate"], add=[("template", "근거 문장을 분류해 템플릿 가이드 작성")])
-    step("template")
+    replan("LLM 생성 불가 → 근거 문장 템플릿으로 대체", drop=["생성"], add=[("템플릿", "근거 문장을 분류해 템플릿 가이드 작성")])
+    step("템플릿")
     with span("template", reason="LLM 실패" if client else ("근거 없음" if not (statements or web) else "LLM 설정 없음")) as s:
         markdown = template_guide(query, title, option, statements, sources)
         if web:
