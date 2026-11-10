@@ -1149,21 +1149,24 @@ function pickSc(n){curSc=n;const b=document.body;b.classList.remove('nosel','sel
   applySplit();showLogHere(SC_LOG[n][0],SC_LOG[n][1],true);fit()}
 function logToggle(on){document.body.classList.toggle('nolog',!on);document.querySelectorAll('.logon-cb').forEach(c=>c.checked=on);applySplit();if(on)setTimeout(fit,0)}
 // 위 화면과 로그 사이 조절 막대: 끌면 위 화면 높이를 정하고 시나리오별로 브라우저에 기억(오른쪽 열 높이에 대한 비율). 두 번 누르면 기본값.
-const SPLIT_KEY=n=>'hub.split2.'+n;  // 2: 시나리오 1 로그 8줄 기본값으로 바꾸며 예전 저장값을 버림(2026-11-11)
+const SPLIT_KEY=n=>n===1?'hub.split2.1':'hub.split3.23';  // 시나리오 2·3 은 같은 값을 쓴다(로그 높이를 같게, 2026-11-11)  // 2: 시나리오 1 로그 8줄 기본값으로 바꾸며 예전 저장값을 버림(2026-11-11)
 // 시나리오 2·3 은 위 화면이 내용보다 작아지지 않게 한다(안쪽 스크롤바가 생기지 않게). 시나리오 1(Wiki 검색 화면)은 제한 없음.
 function contentH(n){if(n===1)return 90;const v=document.getElementById('s'+n+'view');
   const sc=v.querySelector('.sc'),last=sc.lastElementChild;if(!last)return 90;  // 칸 크기가 아니라 마지막 항목의 아래 끝으로 잰다
   const inner=last.getBoundingClientRect().bottom-sc.getBoundingClientRect().top+sc.scrollTop+parseFloat(getComputedStyle(sc).paddingBottom);
   return v.querySelector('.tabs').offsetHeight+Math.ceil(inner)+2}
+// 시나리오 2·3 위 화면 높이: 두 화면 내용 중 큰 쪽(숨긴 화면은 잠깐 펼쳐 잰다. 같은 동기 실행 안이라 깜빡이지 않음)
+function content23(){return Math.max(...[2,3].map(n=>{const v=document.getElementById('s'+n+'view'),hid=v.hidden;v.hidden=false;const h=contentH(n);v.hidden=hid;return h}))}
 function applySplit(){if(!curSc)return;const v=document.getElementById('s'+curSc+'view');let f=null;
   if(!document.body.classList.contains('nolog'))try{f=parseFloat(localStorage.getItem(SPLIT_KEY(curSc)))}catch(e){}
-  const want=f>0?Math.max(contentH(curSc),Math.round(f*document.querySelector('.scright').clientHeight)):0;
+  const base=curSc===1?contentH(1):content23(),nolog=document.body.classList.contains('nolog');
+  const want=nolog?0:f>0?Math.max(base,Math.round(f*document.querySelector('.scright').clientHeight)):curSc===1?0:base;
   const flex=want?`0 1 ${want}px`:'';if(v.style.flex!==flex)v.style.flex=flex;document.body.classList.toggle('splitset',!!want)}
 (function(){const sp=document.getElementById('split');let y0=0,h0=0,v=null;
   sp.addEventListener('pointerdown',e=>{if(!curSc)return;v=document.getElementById('s'+curSc+'view');y0=e.clientY;h0=v.getBoundingClientRect().height;
     sp.setPointerCapture(e.pointerId);document.body.classList.add('dragging','splitset');e.preventDefault()});
   sp.addEventListener('pointermove',e=>{if(!v)return;const H=document.querySelector('.scright').clientHeight;
-    const h=Math.max(contentH(curSc),Math.min(H-150,h0+e.clientY-y0));v.style.flex=`0 0 ${h}px`});
+    const h=Math.max(curSc===1?contentH(1):content23(),Math.min(H-150,h0+e.clientY-y0));v.style.flex=`0 0 ${h}px`});
   const end=()=>{if(!v)return;const H=document.querySelector('.scright').clientHeight;
     try{localStorage.setItem(SPLIT_KEY(curSc),String(v.getBoundingClientRect().height/H))}catch(e){}v=null;document.body.classList.remove('dragging');fit()};
   sp.addEventListener('pointerup',end);sp.addEventListener('pointercancel',end);
