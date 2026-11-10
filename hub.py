@@ -704,10 +704,16 @@ def restore_needed(key: str) -> dict:
         f.seek(max(0, log.stat().st_size - 1024 * 1024))
         rows = f.read().decode("utf-8", errors="replace").splitlines()
     need, why, pending, at = False, "기록 없음", None, None
-    stamp = lambda line: (m.group(0).replace(" ", "T") if (m := re.match(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", line)) else None)
+    stamp = lambda line: (m.group(0).replace(" ", "T") if (m := re.search(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", line)) else None)
+    started = None  # 지금 따라가는 작업의 시작 시각
+    # 장애 모의 훈련이 끝 줄 없이 끊겼으면(허브 재시작 등) VM 상태를 알 수 없다 → 그 시각 이후 점검이 필요하다고 본다
+    cut = lambda: (True, "장애 모의 훈련이 끝나지 않고 중단됨(VM 상태 모름)", started)
     for r in rows:
         m = _JOB_START.match(r)
         if m:
+            if key == "scenario3" and pending == "setup":
+                need, why, at = cut()
+            started = stamp(r)
             cmd = m.group(1)
             if key == "scenario2" and "setup_env.py" in cmd:  # --servers(서버 환경 점검)는 문서를 바꾸지 않는다
                 pending = "restore" if "--restore" in cmd else None if "--servers" in cmd else "setup"
@@ -715,6 +721,8 @@ def restore_needed(key: str) -> dict:
                 pending = "restore" if " restore" in cmd else "setup" if " apply" in cmd else None
             else:
                 pending = None
+        elif "===== 종료: 코드 " in r and "===== 종료: 코드 0," not in r and pending:
+            pending = None  # 실패로 끝남: 장애 모의 훈련은 VM 이 꺼져 있으면 커밋 전에 멈추므로 상태는 그대로
         elif "===== 종료: 코드 0," in r and pending:
             need = pending == "setup"
             at = stamp(r)
@@ -725,6 +733,9 @@ def restore_needed(key: str) -> dict:
             need, why = False, "실행으로 Wiki 가 실제 VM 과 같아짐"
         elif key == "scenario3" and "===== 파이프라인 #" in r and "종료: succeeded" in r:
             need, why, at = False, "VM 배포 파이프라인 성공(수정 반영)", stamp(r)
+    if key == "scenario3" and pending == "setup" and not any(
+            j["state"] == "running" for k, j in job_status().items() if k == "scenario3-fault"):
+        need, why, at = cut()
     return {"need": need, "why": why, "at": at}  # at: 마지막으로 상태가 바뀐(복구·배포·모의 훈련) 시각
 
 
@@ -1185,7 +1196,7 @@ function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,
   return`<span class="jobstate ${j.code===0?'ok':'fail'}" title="${tip} · 종료 코드 ${j.code}">${j.code===0?'✓':'✗'} ${name} ${j.code===0?'완료':'실패(코드 '+j.code+')'} (${t} 시작)</span>`}
 // 시나리오 3 Health Check 점검표: data/health/latest.json(마지막 점검, 수동·자동 공통). 칸에 마우스를 올리면 자세한 결과.
 let healthKey='';
-let healthOk=false;  // 마지막 Health Check 가 모두 정상이고 지금 결과로 볼 수 있음 → 심어진 장애 줄을 숨긴다
+let healthOk=false;  // 마지막 Health Check 가 모두 정상이고 지금 결과로 볼 수 있음 → '심어진 장애: 없음' 줄을 숨긴다
 async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json()}catch(e){return}
   const box=document.getElementById('s3health'),run=['scenario3','scenario3-verify'].some(k=>jobs[k]&&jobs[k].state==='running');
   const key=JSON.stringify([h&&h.finished,h&&h.outcome,run,(jobs._restore||{}).scenario3,(jobs['scenario3-fault']||{}).finished]);if(key===healthKey)return;healthKey=key;
@@ -1198,7 +1209,7 @@ async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json(
   box.classList.toggle('hstale',!!(stale||run));  // 점검 중이거나 다시 점검이 필요하면 지난 결과는 회색
   // 점검 뒤에 장애 모의 훈련이 실패했으면(VM 꺼짐 등) 장애가 들어가지 않았다고 알린다 → 표는 그대로 유효
   const fj=jobs['scenario3-fault']||{},ffail=!run&&fj.state==='finished'&&fj.code&&fj.args&&fj.args[0]==='apply'&&new Date(fj.finished)>new Date(h.finished||h.at);
-  box.innerHTML=(ffail?`<div class="hsum hnote"><b class="hfail">장애 모의 훈련 실패</b> ${esc((fj.finished||'').slice(11,16))} 장애가 VM에 들어가지 않았습니다(VM 꺼짐 등). 아래 로그를 확인하세요.</div>`:'')+(stale?`<div class="hsum hnote"><span class="drilltag">다시 점검 필요</span> ${after.toTimeString().slice(0,5)} ${rs3.need?'장애 모의 훈련':'원상 복구·배포'} 전 점검 결과입니다 → <b>Health Check 실행</b>으로 다시 점검하세요.</div>`:'')
+  box.innerHTML=(ffail?`<div class="hsum hnote"><b class="hfail">장애 모의 훈련 실패</b> ${esc((fj.finished||'').slice(11,16))} 장애가 VM에 들어가지 않았습니다(VM 꺼짐 등). 아래 로그를 확인하세요.</div>`:'')+(stale?`<div class="hsum hnote"><span class="drilltag">다시 점검 필요</span> ${after.toTimeString().slice(0,5)} ${/중단/.test(rs3.why||'')?'중단된 장애 모의 훈련(VM 상태 모름)':rs3.need?'장애 모의 훈련':'원상 복구·배포'} 전 점검 결과입니다 → <b>Health Check 실행</b>으로 다시 점검하세요.</div>`:'')
     +(run?'<div class="hsum hnote"><span class="jobstate running">● 점검 중 (아래는 지난 결과)</span></div>':'')+`<div class="hsum"><b class="${n?'hfail':'hok'}">${n?'이상 '+n+'건':'모두 정상'}</b> <span class="muted">· ${esc(t)} ${{auto:'자동 점검',deploy:'VM 배포 뒤 확인 점검',manual:'수동 점검'}[h.trigger]||'점검'} · 기준: Wiki Proxy Health Check 기준</span></div>`
     +'<table><tr><th>VM</th>'+IT.map(([,x])=>`<th>${x}</th>`).join('')+'</tr>'
     +h.vms.map(v=>{const c=Object.fromEntries(v.checks.map(x=>[x.item,x]));return`<tr><td>${esc(v.name)} <span class="muted">${esc(v.kind)}</span></td>`
@@ -1254,8 +1265,8 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
     b.disabled=(k==='scenario2'&&!x.need)||jobs[k+'-restore']?.state==='running';
     b.title=(busy&&x.need?'지금 실행 중인 작업을 멈추고 원상 복구합니다(누르면 한 번 확인) · ':'')+tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
-  const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=healthOk?'':f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
-    :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 심어진 장애: ${esc(f.active.join(', '))} → 시험 후 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted" title="병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구">(VM 은 배포해야 반영)</span>');
+  const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
+    :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 심어진 장애: ${esc(f.active.join(', '))} → 시험 후 원상 복구</span>`:healthOk?'':'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted" title="병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구">(VM 은 배포해야 반영)</span>');  // 장애가 남아 있으면 점검이 정상이어도 보인다
   const pl=jobs._pipeline;document.getElementById('s3pipe').innerHTML=!pl?'':pl.state!=='completed'
     ?`<span class="jobstate running">● VM 배포 파이프라인 #${esc(pl.name)} 실행 중</span> <a href="${esc(pl.url||'#')}" onclick="return !openTop(this.href,'pipeline')">Azure DevOps 에서 보기</a> <span class="muted">(로그는 아래 시나리오 3 로그에 [pipeline] 으로)</span>`
     :`<span class="jobstate ${pl.result==='succeeded'?'ok':'fail'}">${pl.result==='succeeded'?'✓':'✗'} VM 배포 파이프라인 #${esc(pl.name)} ${esc(pl.result||'')} (${pl.finished?new Date(pl.finished).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):''} 종료)</span>`;
