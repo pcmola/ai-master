@@ -756,7 +756,7 @@ Copy-Item .env.sample .env
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py·proxy_status_sync.py·proxy_log_viewer.py (요청·실행별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
 | `health/latest.json` | proxy_health.py (시나리오 3 Health Check 마지막 결과. 허브 점검표가 읽음) |
 | `logs/scenario3.log` | incident_response.py (시나리오 3 실행 출력. 허브 화면 아래 로그에서 봄) |
-| `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
+| `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록), proxy_status_sync.py (`latest.json`: 마지막 비교 결과·승인·Task, 허브 비교표가 읽음) |
 
 <sub>[↑ 목차로](#목차)</sub>
 
@@ -867,6 +867,7 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 - 오른쪽 화면 머리의 **로그 보기**를 끄면 아래 로그를 숨깁니다. 세 화면이 함께 쓰고, 허브를 열 때마다 켜진 상태로 시작합니다.
 - 위 화면과 로그 사이의 막대를 끌면 위아래 크기를 바꿉니다. 시나리오마다 브라우저에 기억하고, 막대를 두 번 누르면 기본 비율로 돌아갑니다.
 - 로그 위쪽의 실행 계획 패널에 가장 최근 실행의 단계별 진행이 스크롤 없이 다 나옵니다.
+- 로그는 늘 맨 아래(최신 줄)를 따라갑니다. 직접 위로 올려 읽는 동안만 멈추고, 맨 아래로 내리면 다시 따라갑니다.
 - 로그의 **지우기**는 지금까지의 로그를 화면에서만 숨깁니다. 파일은 그대로이고, **전체 보기**로 되돌립니다.
 
 시나리오 1
@@ -884,6 +885,10 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
   - **서버 환경 점검**(`setup_env.py --servers`): 꺼진 Proxy VM을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검합니다. 문서는 바꾸지 않습니다.
   - **불일치 모의 훈련**(`setup_env.py --seed`): 실제 VM으로 일부러 틀린 '현행화 전' 표와 정답을 만들어 Wiki 테스트 문서에 씁니다. VM은 켜지 않습니다.
 - 모의 훈련 버튼(시나리오 2 불일치 모의 훈련, 시나리오 3 장애 모의 훈련)은 주황색으로 구분합니다.
+- "실행" 아래에 마지막 실행의 **비교표**가 나옵니다(`data/scenario2/latest.json`).
+  - 요약 한 줄: 차이 건수, 점검 시각, 승인 결과(대기·Yes·No·시간 초과), Task 번호, Wiki 반영 여부
+  - 표: 차이 나는 것만 VM·항목·Wiki 문서 값·Azure 실제 값·결과(✗ 변경, ＋ 신규, － 삭제)로. 차이가 없으면 VM 목록을 "✓ 같음"으로
+  - 불일치 모의 훈련 뒤에는 **모의 훈련 채점**(심은 차이 N건 중 몇 건 찾았는지)도 함께 나옵니다.
 - "원상 복구"(`setup_env.py --restore`)는 문서만 실제 VM과 같은 정상 표로 되돌립니다.
 - 원상 복구는 로그로 보아 불일치 모의 훈련 뒤 아직 반영 전일 때만 켜집니다. 실행으로 Wiki가 반영되면 꺼지고, 꺼진 이유는 툴팁에 나옵니다.
 - 버튼 아래 한 줄에 Wiki 현황 문서 링크와 Azure Portal VM 목록 링크(`N/3대 실행 중`)가 있습니다.

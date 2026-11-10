@@ -846,6 +846,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
             else:
                 self.send_body(approval_record_page(token), "text/html; charset=utf-8")
+        elif url.path == "/api/s2result":  # 시나리오 2 마지막 비교 결과(proxy_status_sync.py 가 남김)
+            path = PROJECT_ROOT / "data" / "scenario2" / "latest.json"
+            try:
+                self.send_json(json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {})
+            except (OSError, ValueError) as exc:
+                self.send_json({"error": str(exc)})
         elif url.path == "/api/health":  # 시나리오 3 Health Check 마지막 결과(proxy_health.py 가 남김)
             path = PROJECT_ROOT / "data" / "health" / "latest.json"
             try:
@@ -940,7 +946,7 @@ button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-c
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
-.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:20px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 40px);min-height:520px}.brand{background:var(--top);color:#fff;border-radius:10px;padding:16px 18px;display:grid;gap:2px}.brand h1{font-size:17px;margin:0;font-weight:700;line-height:1.35}.brand .time:empty{display:none}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:90px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}#s1state:empty{display:none}.s1desc{margin:0;padding:10px 18px;color:var(--muted);font-size:13px;flex:none;border-bottom:1px solid var(--line)}.drill{display:inline-flex;align-items:stretch;border:1px solid #f59e0b;border-radius:8px;overflow:hidden;background:#fffbeb;margin-right:4px}.drill button{border:0;border-radius:0;background:#f59e0b;color:#fff;font-weight:700;padding:5px 10px}.drill button:hover:not(:disabled),button.drillbtn:hover:not(:disabled){background:#d97706}button.drillbtn{background:#f59e0b;border-color:#f59e0b;color:#fff;font-weight:700}.drill select{font:inherit;font-size:13px;border:0;border-left:1px solid #f59e0b;background:transparent;color:var(--ink);padding:4px 6px;max-width:220px;cursor:pointer}#s3health table{border-collapse:collapse;font-size:13px;width:100%;max-width:820px}#s3health th,#s3health td{padding:5px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}#s3health th{color:var(--muted);font-weight:600;font-size:12px}#s3health .hok{color:var(--ok);font-weight:700}#s3health .hfail{color:var(--bad);font-weight:700}#s3health .hskip{color:var(--muted)}#s3health .hsum{font-size:13px;margin:2px 0 6px}#s3health .hbad{font-size:12px;color:var(--bad);margin-top:6px;display:grid;gap:2px;white-space:normal}.splitter{display:none;flex:none;height:12px;margin:-14px 0;cursor:row-resize;align-items:center;justify-content:center;touch-action:none;z-index:1}.splitter i{width:56px;height:4px;border-radius:2px;background:var(--line)}.splitter:hover i,body.dragging .splitter i{background:var(--blue)}body:not(.nosel):not(.nolog):not(.logmode) .splitter{display:flex}body.dragging{cursor:row-resize;user-select:none}body.dragging iframe{pointer-events:none}.scview>.sc{flex:1 1 auto;min-height:0;overflow:auto}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:20px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 40px);min-height:520px}.brand{background:var(--top);color:#fff;border-radius:10px;padding:16px 18px;display:grid;gap:2px}.brand h1{font-size:17px;margin:0;font-weight:700;line-height:1.35}.brand .time:empty{display:none}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:90px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}#s1state:empty{display:none}.drilltag{display:inline-block;background:#f59e0b;color:#fff;font-weight:700;font-size:12px;border-radius:6px;padding:0 7px;margin-right:4px}.s1desc{margin:0;padding:10px 18px;color:var(--muted);font-size:13px;flex:none;border-bottom:1px solid var(--line)}.drill{display:inline-flex;align-items:stretch;border:1px solid #f59e0b;border-radius:8px;overflow:hidden;background:#fffbeb;margin-right:4px}.drill button{border:0;border-radius:0;background:#f59e0b;color:#fff;font-weight:700;padding:5px 10px}.drill button:hover:not(:disabled),button.drillbtn:hover:not(:disabled){background:#d97706}button.drillbtn{background:#f59e0b;border-color:#f59e0b;color:#fff;font-weight:700}.drill select{font:inherit;font-size:13px;border:0;border-left:1px solid #f59e0b;background:transparent;color:var(--ink);padding:4px 6px;max-width:220px;cursor:pointer}#s2result table,#s3health table{border-collapse:collapse;font-size:13px;width:100%;max-width:820px}#s2result th,#s2result td,#s3health th,#s3health td{padding:5px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}#s2result th,#s3health th{color:var(--muted);font-weight:600;font-size:12px}#s2result .hok,#s3health .hok{color:var(--ok);font-weight:700}#s2result .hfail,#s3health .hfail{color:var(--bad);font-weight:700}#s2result .hskip,#s3health .hskip{color:var(--muted)}#s2result .hsum,#s3health .hsum{font-size:13px;margin:2px 0 6px}#s2result .hbad,#s3health .hbad{font-size:12px;color:var(--bad);margin-top:6px;display:grid;gap:2px;white-space:normal}.splitter{display:none;flex:none;height:12px;margin:-14px 0;cursor:row-resize;align-items:center;justify-content:center;touch-action:none;z-index:1}.splitter i{width:56px;height:4px;border-radius:2px;background:var(--line)}.splitter:hover i,body.dragging .splitter i{background:var(--blue)}body:not(.nosel):not(.nolog):not(.logmode) .splitter{display:flex}body.dragging{cursor:row-resize;user-select:none}body.dragging iframe{pointer-events:none}.scview>.sc{flex:1 1 auto;min-height:0;overflow:auto}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -955,9 +961,10 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 #splan .ph button{margin-left:auto;padding:1px 8px;font-size:12px}
 #splan .chk{display:flex;gap:6px;flex-wrap:wrap}#splan .chip{border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px;background:var(--soft)}
 #splan .chip.no{color:var(--warn);border-color:var(--warn)}
-#splan ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:auto auto auto 1fr auto;column-gap:10px;row-gap:1px}
+#splan ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:auto auto auto minmax(0,max-content) minmax(0,1fr);column-gap:10px;row-gap:1px}
 #splan li{display:contents}#splan li>span{padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#splan .nm{font-family:Consolas,monospace;font-size:12px}#splan .nt{color:var(--muted);font-size:12px;text-align:right;max-width:46vw}
+#splan li>span.ds.full{grid-column:span 2}
+#splan .nm{font-family:Consolas,monospace;font-size:12px}#splan .nt{color:var(--muted);font-size:12px;text-align:right}
 #splan li.planned>span{color:var(--muted)}#splan li.skipped>span{color:var(--off);text-decoration:line-through}
 #splan li.running>span{color:var(--warn);font-weight:700}#splan li.done .ic{color:var(--ok)}#splan li.error>span{color:var(--bad)}
 @media(max-width:820px){main{padding:12px}}
@@ -977,6 +984,7 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div class="card scview" id="s2view" hidden><div class="tabs"><span class="name">프록시 현황 점검</span><span style="margin-left:auto"></span><button id="s2servers" onclick="runJob('scenario2-servers')" title="test/scenario2/setup_env.py --servers: 꺼진 Proxy VM 을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검(문서·정답은 그대로)">서버 환경 점검</button><button id="s2setup" class="drillbtn" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py --seed: 실제 VM 으로 일부러 틀린 '현행화 전' 표와 정답을 만들어 Wiki 테스트 문서에 씀(VM 은 켜지 않음)">불일치 모의 훈련</button><button id="s2restore" onclick="if(confirm('테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로). 계속할까요?'))runJob('scenario2-restore')" disabled>원상 복구</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
 <div class="sc"><p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button class="main" id="s2run" onclick="runJob('scenario2')">실행</button></div>
+<div id="s2result"></div>
 <div class="jobstate" id="s2state"></div>
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div></div>
 <div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">프록시 Health Check</span><span style="margin-left:auto"></span><span class="drill" title="장애 모의 훈련: 고른 종류의 잘못된 설정을 배포합니다"><button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포만 함(점검은 Health Check 실행으로) (proxy_fault_inject.py apply)">장애 모의 훈련</button><select id="s3fault" title="일부러 넣을 장애 종류">
@@ -1080,7 +1088,7 @@ function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;const f=
   if(f.dataset.src!==u){f.src=u;f.dataset.src=u}pickSc(1)}
 // 누르는 즉시 같은 카드의 실행 버튼을 끈다(상태를 다시 읽기 전 두 번째 클릭이 '이미 실행 중' 팝업을 띄우던 문제).
 const JOB_BTNS={scenario2:['s2servers','s2setup','s2run','s2restore'],scenario3:['s3inject','s3run','s3restore','s3nsg']};
-async function runJob(job,options={}){const lk=JOBS_LOG[job];(JOB_BTNS[lk]||[]).forEach(id=>document.getElementById(id).disabled=true);
+async function runJob(job,options={}){slogFollow=true;const lk=JOBS_LOG[job];(JOB_BTNS[lk]||[]).forEach(id=>document.getElementById(id).disabled=true);
   pickSc(lk==='scenario3'?3:2);
   let d;try{d=await (await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})})).json()}
   catch(e){d={error:'허브에 요청하지 못했습니다: '+e.message}}
@@ -1104,8 +1112,32 @@ async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json(
     +h.vms.map(v=>{const c=Object.fromEntries(v.checks.map(x=>[x.item,x]));return`<tr><td>${esc(v.name)} <span class="muted">${esc(v.kind)}</span></td>`
       +IT.map(([k])=>{const x=c[k]||{status:'skip',detail:''},m=M[x.status]||M.skip;return`<td class="${m[1]}" title="${esc(x.detail)}">${m[0]}</td>`}).join('')+'</tr>'}).join('')+'</table>'
     +(n?'<div class="hbad">'+h.failed.map(f=>`<div>✗ ${esc(f.vm)} · ${esc(f.item)}: ${esc(f.detail)}</div>`).join('')+'</div>':'')}
+// 시나리오 2 비교표: data/scenario2/latest.json(마지막 실행). Wiki 문서와 Azure 실제 값을 차이 나는 것만 줄로.
+let s2Key='';
+async function loadS2Result(){let r;try{r=await (await fetch('/api/s2result')).json()}catch(e){return}
+  const box=document.getElementById('s2result'),run=['scenario2','scenario2-setup'].some(k=>jobs[k]&&jobs[k].state==='running');
+  const key=JSON.stringify([r&&r.at,r&&r.result,r&&r.approval,r&&r.task,run]);if(key===s2Key)return;s2Key=key;
+  if(!r||!r.diffs){box.innerHTML='<div class="muted">아직 비교하지 않았습니다. "실행"을 누르면 Wiki 문서와 Azure 실제 VM을 비교합니다.</div>';return}
+  const n=r.diffs.length,t=(r.at||'').replace('T',' ').slice(5,16),L=r.labels||{};
+  const A=Object.fromEntries((r.azure||[]).map(v=>[v.name,v])),W=Object.fromEntries((r.wiki||[]).map(v=>[v.name,v]));
+  const vmtxt=v=>v?[v.state,v.size,v.private_ip].filter(Boolean).join(' · '):'(없음)';
+  const AP={wait:'<span class="jobstate running">승인 대기 중</span>',yes:'승인: Yes',no:'승인: No',timeout:'승인: 시간 초과'};
+  const RS={applied:'<b class="hok">Wiki 반영 완료</b>',declined:'반영 안 함',manual:'문서 수동 반영 요청',error:'<b class="hfail">처리 실패</b>','dry-run':'분석만(dry-run)'};
+  let h=`<div class="hsum">${run?'<span class="jobstate running">● 실행 중 (아래는 지난 결과)</span> ':''}<b class="${n?'hfail':'hok'}">${n?'차이 '+n+'건':'Wiki와 Azure가 같음'}</b>`
+    +` <span class="muted">· ${esc(t)} 점검</span>`+(r.approval?' · '+(AP[r.approval]||''):'')
+    +(r.task?` → <a href="${esc(r.task_url)}" onclick="return !openTop(this.href,'devops')">Task #${r.task}</a>`:'')+(RS[r.result]?' · '+RS[r.result]:'')+'</div>';
+  if(r.score){const sc=r.score,ok=sc.found===sc.planted&&!sc.extra.length;
+    h+=`<div class="hsum"><span class="drilltag">모의 훈련 채점</span> 심은 차이 ${sc.planted}건 중 <b class="${ok?'hok':'hfail'}">${sc.found}건 찾음</b>`
+      +(sc.extra.length?` · 정답 밖 ${sc.extra.length}건`:'')+(ok?' <span class="hok">✓</span>':'')+'</div>'}
+  if(r.alert)h+=`<div class="hbad">${esc(r.alert)}</div>`;
+  if(n){h+='<table><tr><th>VM</th><th>항목</th><th>Wiki 문서</th><th>Azure 실제</th><th>결과</th></tr>'
+    +r.diffs.map(d=>d.type==='added'?`<tr><td>${esc(d.name)}</td><td>-</td><td class="hskip">(없음)</td><td>${esc(vmtxt(A[d.name]))}</td><td class="hok">＋ 신규</td></tr>`
+      :d.type==='removed'?`<tr><td>${esc(d.name)}</td><td>-</td><td>${esc(vmtxt(W[d.name]))}</td><td class="hskip">(없음)</td><td class="hskip">－ 삭제</td></tr>`
+      :`<tr><td>${esc(d.name)}</td><td>${esc(L[d.field]||d.field)}</td><td class="hfail">${esc(d.wiki)}</td><td>${esc(d.azure)}</td><td class="hfail">✗ 변경</td></tr>`).join('')+'</table>'}
+  else h+='<table><tr><th>VM</th><th>Azure 실제</th><th>결과</th></tr>'+(r.azure||[]).map(v=>`<tr><td>${esc(v.name)}</td><td>${esc(vmtxt(v))}</td><td class="hok">✓ 같음</td></tr>`).join('')+'</table>';
+  box.innerHTML=h}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
-  loadHealth();
+  loadHealth();loadS2Result();
   const run=['scenario2','scenario2-servers','scenario2-setup','scenario2-restore'].some(k=>jobs[k]&&jobs[k].state==='running');['s2run','s2servers','s2setup'].forEach(id=>document.getElementById(id).disabled=run);
   const s3=['scenario3','scenario3-fault','scenario3-restore','nsg-ip'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
   ['s3run','s3inject','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);
@@ -1136,8 +1168,16 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
 const LOGQ=new URLSearchParams(location.search),LOGMODE=!!LOGQ.get('log');
 function showLogHere(key,title,inline){pageLog=key;if(inline){loadSLog();setNames(key,title);return}slogKey=key;setNames(key,title);document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));loadSLog()}
 function setNames(key,title){document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log'}
-async function loadSLog(){if(!pageLog)return;const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
-  pre.textContent=await fetchLog(pageLog);document.getElementById('sall').hidden=!cleared[pageLog];if(atEnd)pre.scrollTop=pre.scrollHeight;loadPlan()}
+// 로그는 늘 맨 아래(최신)를 따라간다. 사용자가 직접 위로 올렸을 때만 멈추고, 다시 맨 아래로 내리면 또 따라간다.
+// (예전에는 '지금 맨 아래인가'로만 봐서, 실행 계획 패널이 커지며 로그 칸이 줄면 따라가기가 풀려 위에 머물렀다)
+let slogFollow=true,slogShown='';
+const slogStick=()=>{const pre=document.getElementById('slog');if(slogFollow)pre.scrollTop=pre.scrollHeight};
+document.getElementById('slog').addEventListener('scroll',e=>{const pre=e.target;slogFollow=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20});
+async function loadSLog(){if(!pageLog)return;const pre=document.getElementById('slog'),key=pageLog;
+  const text=await fetchLog(key);if(key!==pageLog)return;
+  if(slogShown!==key){slogFollow=true;slogShown=key}
+  if(pre.textContent!==text){const f=slogFollow;pre.textContent=text;slogFollow=f}
+  document.getElementById('sall').hidden=!cleared[pageLog];slogStick();requestAnimationFrame(slogStick);loadPlan()}
 // 실행 계획 패널: 로그가 빨리 흘러가도 계획·사전 점검·진행 단계를 로그 위에 고정해 보여 준다(/api/plan 이 로그를 해석).
 let planFold=localStorage.getItem('hub-plan-fold')==='1';
 let oldOpen='';  // 지난 실행 기록을 펼쳐 본 trace id (이 화면에서만)
@@ -1171,13 +1211,13 @@ async function loadPlan(){const box=document.getElementById('splan');const key=p
     h+='<ol>'+p.steps.map((s,i)=>{const t=s.status==='running'?dur(s.started)+'째':(s.started&&s.ended?dur(s.started,s.ended):'');
       const note=s.note||(s.status==='skipped'?'건너뜀(재계획)':'');
       return`<li class="${s.status}"><span class="ic">${icon[s.status]||''}</span><span>${i+1}</span><span class="nm">${esc(s.name)}</span>`
-        +`<span title="${esc(s.desc)}">${esc(s.desc)}</span><span class="nt" title="${esc(note)}">${esc(note)}${note&&t?' · ':''}${t}</span></li>`}).join('')+'</ol>'}
-  box.innerHTML=h;box.hidden=false;fit()}
+        +(note||t?`<span class="ds" title="${esc(s.desc)}">${esc(s.desc)}</span><span class="nt" title="${esc(note)}">${esc(note)}${note&&t?' · ':''}${t}</span>`
+          :`<span class="ds full" title="${esc(s.desc)}">${esc(s.desc)}</span>`)+'</li>'}).join('')+'</ol>'}
+  box.innerHTML=h;box.hidden=false;fit();slogStick()}
 // 로그 창은 화면 아래 끝까지만 늘려 페이지 전체 스크롤이 생기지 않게 한다.
 // 높이를 바꾸기 전에 맨 아래를 보고 있었으면 바꾼 뒤에도 맨 아래에 붙인다(위 실행 계획 패널이 커지면 마지막 줄이 가려지던 문제).
 function fit(){for(const id of ['slog']){const pre=document.getElementById(id);const top=pre.getBoundingClientRect().top;
-  if(top<=0)continue;const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
-  pre.style.height=Math.max(160,innerHeight-top-22)+'px';if(atEnd)pre.scrollTop=pre.scrollHeight}}
+  if(top<=0)continue;pre.style.height=Math.max(160,innerHeight-top-22)+'px';slogStick()}}
 addEventListener('resize',fit);setInterval(fit,500);
 refresh();setInterval(refresh,3000);setInterval(staleCheck,1000);setInterval(refreshJobs,2000);
 if(LOGMODE){document.body.classList.add('logmode');const k=LOGQ.get('log'),tt=LOGQ.get('t')||k;document.title=tt;

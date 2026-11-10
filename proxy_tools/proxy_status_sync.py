@@ -72,6 +72,27 @@ COMPARE = {"private_ip": "사설 IP", "public_ip": "공인 IP", "state": "상태
            "location": "LOCATION", "resource_group": "RESOURCE GROUP"}  # Proxy(용도) 칸은 사람이 관리한다
 LOCATIONS = {"koreacentral": "Korea Central", "eastus": "East US"}
 EXPECTED = DATA_DIR / "scenario2" / "expected_diff.json"
+STATUS_FILE = DATA_DIR / "scenario2" / "latest.json"  # 허브 '프록시 현황 점검' 화면의 비교표가 읽는다
+_status: dict = {}
+
+
+def status(**kw) -> None:
+    """마지막 실행의 비교 결과와 진행 상태(승인·Task·Wiki 반영)를 남긴다. 실패해도 시나리오는 계속한다."""
+    _status.update(kw)
+    try:
+        STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATUS_FILE.write_text(json.dumps(_status, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def score(diffs: list[dict]) -> dict:
+    """불일치 모의 훈련 채점: 심은 차이(정답) 중 몇 건을 찾았는지."""
+    want = json.loads(EXPECTED.read_text(encoding="utf-8"))["differences"]
+    key = lambda d: json.dumps(d, sort_keys=True, ensure_ascii=False)
+    got_k, want_k = {key(d) for d in diffs}, {key(d) for d in want}
+    return {"planted": len(want_k), "found": len(want_k & got_k),
+            "missed": [json.loads(k) for k in sorted(want_k - got_k)], "extra": [json.loads(k) for k in sorted(got_k - want_k)]}
 
 
 # ---------------------------------------------------------------- 2·3 읽기
@@ -638,6 +659,11 @@ def run(args) -> int:
     if verify_target():  # 테스트 문서면 정답과 자동 대조
         verify(diffs)
     alert = stopped_alert(azure)  # 실제 운영 가정: Proxy VM 은 항상 켜져 있어야 한다
+    row = lambda r: {k: r.get(k) for k in ("name", "state", "size", "private_ip", "location")}
+    _status.clear()
+    status(at=datetime.now().isoformat(timespec="seconds"), page=WIKI_PAGE.stem, dry_run=bool(args.dry_run),
+           wiki=[row(r) for r in wiki], azure=[row(r) for r in azure], diffs=diffs, labels=COMPARE, alert=alert,
+           score=score(diffs) if diffs and verify_target() else None, result="compared" if diffs else "same")
     if alert:
         print(f"\n{alert}")
     if not diffs:
@@ -656,6 +682,7 @@ def run(args) -> int:
         print(f"\nAI 요약 ({ai['model']}, 참고용): {ai['summary']}")
     print(f"\n차이 {len(diffs)}건" + "".join(f"\n  - {line}" for line in explained(diffs, ai)))
     if args.dry_run:
+        status(result="dry-run")
         print("[dry-run] Teams 승인 요청 → Task 생성 → " + (f"Wiki 표 {len(azure)}행으로 갱신 → 완료 보고" if parsed_by == "rule"
               else "문서 수동 반영 요청(형식이 달라 자동 수정 안 함)") + " (아무것도 바꾸지 않음)")
         return 0
@@ -663,7 +690,9 @@ def run(args) -> int:
     dv = devops()
     links = wiki_links(dv)
     plan_step("approval")
+    status(result="approval", approval="wait")
     decision, ap = ask_approval(diffs, when, APPROVAL_TIMEOUT, links, ai, alert, guessed)
+    status(approval="yes" if decision else "no" if decision is False else "timeout")
     try:
         if decision:
             think("Decision", "승인(Yes) → " + ("추정 VM 태그 확정 후 " if guessed else "") + "Task·Wiki 반영 단계 실행")
@@ -678,6 +707,7 @@ def run(args) -> int:
                     return 0
         return apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai, parsed_by)
     except Exception as exc:
+        status(result="error", error=str(exc)[:200])
         if ap:
             ap.step(f"실패: {exc}", "fail")
             ap.finish(f"처리 중 오류가 났습니다: {exc}", ok=False)
@@ -698,6 +728,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
     if not decision:
         reason = "거절(No)" if decision is False else "시간 초과"
         replan(f"승인 {reason} → 반영 단계 생략", drop=["apply", "manual_request", "report"])
+        status(result="declined")
         print(f"승인되지 않아 종료합니다: {reason}. 기록은 data/traces/scenario2-*.jsonl 에 남았습니다.")
         if os.environ.get("TEAMS_WEBHOOK_URL"):
             from teams_tools import teams_notify
@@ -727,6 +758,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
         s.set(task_id=task_id, parent_pbi=parent["pbi"], number=parent["next"], assigned_to=owner)
     print(f"Task #{task_id} 생성 (PBI #{parent['pbi']} 아래 {parent['next']:02d}번, 담당 {owner or '-'}): {dv.task_url(task_id)}")
     step(f"Task #{task_id} 생성 ({parent['next']:02d}번, 담당 {owner or '-'})", "ok", (f"Task #{task_id} 열기", dv.task_url(task_id)))
+    status(task=task_id, task_url=dv.task_url(task_id))
     if parsed_by == "llm":  # 형식이 제각각인 문서는 자동으로 고치지 않는다
         with span("wiki_update", skipped="LLM 으로 읽은 문서(정해진 표 형식 아님)"):
             dv.add_comment(task_id, "<p><b>문서 수동 반영 필요</b>: 이 현황 문서는 정해진 표 형식이 아니어서(LLM 으로 읽음) "
@@ -740,6 +772,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
                                   facts=[("Wiki 문서", wiki_fact(links)), ("Task", f"[#{task_id}]({dv.task_url(task_id)})"), ("담당", owner or "-")],
                                   buttons=[("Task 열기", dv.task_url(task_id))])
         print(f"Wiki 문서는 자동으로 고치지 않았습니다(LLM 파싱 문서). Task #{task_id} 에 수동 반영 요청을 남겼습니다.")
+        status(result="manual")
         if ap:
             ap.finish("Task 를 만들었습니다. 이 문서는 형식이 달라 자동으로 고치지 않았으니 Task 를 보고 문서를 고쳐 주세요.",
                       [(f"Task #{task_id} 열기", dv.task_url(task_id)), ("Wiki 문서 보기", viewer)])
@@ -750,6 +783,7 @@ def apply(args, dv, links, decision, ap, text, wiki, azure, diffs, when, ai=None
         page = updated_page(text, wiki, azure, diffs, when, f"[#{task_id}]({dv.task_url(task_id)})")
         commit = write_wiki(page, f"Proxy 현황 현행화: 변경 {len(diffs)}건 (Task #{task_id})", PUSH)
         s.set(commit=commit, rows=len(azure))
+    status(result="applied", commit=commit, pushed=PUSH)
     print(f"Wiki 현행화 커밋 {commit}" + (" · push 완료" if PUSH else " (로컬 커밋, SCENARIO2_PUSH=1 이면 Azure DevOps Wiki 에 반영)"))
     step(f"Wiki 표 {len(azure)}행으로 현행화, 변경 이력 추가 (커밋 {commit}" + (", push 완료)" if PUSH else ", 로컬)"),
          "ok", ("수정된 문서 열기", viewer))
