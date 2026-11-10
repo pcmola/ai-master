@@ -932,7 +932,7 @@ button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-c
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
-.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:260px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}#s1state:empty{display:none}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:90px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}#s1state:empty{display:none}.splitter{display:none;flex:none;height:12px;margin:-14px 0;cursor:row-resize;align-items:center;justify-content:center;touch-action:none;z-index:1}.splitter i{width:56px;height:4px;border-radius:2px;background:var(--line)}.splitter:hover i,body.dragging .splitter i{background:var(--blue)}body:not(.nosel):not(.nolog):not(.logmode) .splitter{display:flex}body.dragging{cursor:row-resize;user-select:none}body.dragging iframe{pointer-events:none}.scview>.sc{flex:1 1 auto;min-height:0;overflow:auto}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -987,6 +987,7 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
 <div class="jobstate" id="s3state"></div></div></div>
 <div class="card s1empty">Azure DevOps 기반 AI 운영 자동화</div>
+<div class="splitter" id="split" title="끌어서 위아래 크기 조절 · 두 번 누르면 원래대로"><i></i></div>
 <div class="card sclog"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(pageLog,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
 <button id="sall" onclick="unclearLog(pageLog,loadSLog)" hidden>전체 보기</button></div>
@@ -1053,12 +1054,27 @@ function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHe
   const win=window.open(url,name,`popup,width=${w},height=${h},left=${l},top=${t}`);if(win)win.opener=null;return win}
 // 시나리오 1: 오른쪽에 Wiki 검색 화면, 그 아래에 Wiki 검색 서버 로그. 이미 열려 있으면 진행 중인 화면을 그대로 둔다.
 // 왼쪽 버튼으로 시나리오를 고르면 오른쪽에 그 화면, 아래에 그 로그. '로그 보기'는 세 화면이 함께 쓰고 열 때마다 켜진 상태로 시작한다.
-const SC_LOG={1:['wiki-search','시나리오 1 · Wiki 검색 서버 로그'],2:['scenario2','시나리오 2 · 프록시 현황 점검 로그'],3:['scenario3','시나리오 3 · 프록시 Health Check 로그']};
+const SC_LOG={1:['wiki-search','Wiki 검색 서버 로그'],2:['scenario2','프록시 현황 점검 로그'],3:['scenario3','프록시 Health Check 로그']};
 let curSc=0;
 function pickSc(n){curSc=n;const b=document.body;b.classList.remove('nosel','sel1','sel2','sel3');b.classList.add('sel'+n);
   [1,2,3].forEach(i=>{document.getElementById('s'+i+'view').hidden=i!==n;document.querySelector('.scgrid [data-sc="'+i+'"]').classList.toggle('on',i===n)});
-  showLogHere(SC_LOG[n][0],SC_LOG[n][1],true);fit()}
-function logToggle(on){document.body.classList.toggle('nolog',!on);document.querySelectorAll('.logon-cb').forEach(c=>c.checked=on);if(on)setTimeout(fit,0)}
+  applySplit();showLogHere(SC_LOG[n][0],SC_LOG[n][1],true);fit()}
+function logToggle(on){document.body.classList.toggle('nolog',!on);document.querySelectorAll('.logon-cb').forEach(c=>c.checked=on);applySplit();if(on)setTimeout(fit,0)}
+// 위 화면과 로그 사이 조절 막대: 끌면 위 화면 높이를 정하고 시나리오별로 브라우저에 기억(오른쪽 열 높이에 대한 비율). 두 번 누르면 기본값.
+const SPLIT_KEY=n=>'hub.split.'+n;
+function applySplit(){if(!curSc)return;const v=document.getElementById('s'+curSc+'view');let f=null;
+  if(!document.body.classList.contains('nolog'))try{f=parseFloat(localStorage.getItem(SPLIT_KEY(curSc)))}catch(e){}
+  v.style.flex=f>0?`0 0 ${Math.round(f*document.querySelector('.scright').clientHeight)}px`:''}
+(function(){const sp=document.getElementById('split');let y0=0,h0=0,v=null;
+  sp.addEventListener('pointerdown',e=>{if(!curSc)return;v=document.getElementById('s'+curSc+'view');y0=e.clientY;h0=v.getBoundingClientRect().height;
+    sp.setPointerCapture(e.pointerId);document.body.classList.add('dragging');e.preventDefault()});
+  sp.addEventListener('pointermove',e=>{if(!v)return;const H=document.querySelector('.scright').clientHeight;
+    const h=Math.max(90,Math.min(H-150,h0+e.clientY-y0));v.style.flex=`0 0 ${h}px`});
+  const end=()=>{if(!v)return;const H=document.querySelector('.scright').clientHeight;
+    try{localStorage.setItem(SPLIT_KEY(curSc),String(v.getBoundingClientRect().height/H))}catch(e){}v=null;document.body.classList.remove('dragging');fit()};
+  sp.addEventListener('pointerup',end);sp.addEventListener('pointercancel',end);
+  sp.addEventListener('dblclick',()=>{try{localStorage.removeItem(SPLIT_KEY(curSc))}catch(e){}applySplit();fit()});
+  addEventListener('resize',applySplit)})();
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;const f=document.getElementById('s1frame'),u=s.url+'/?embed=1';
   if(f.dataset.src!==u){f.src=u;f.dataset.src=u}pickSc(1)}
 // 누르는 즉시 같은 카드의 실행 버튼을 끈다(상태를 다시 읽기 전 두 번째 클릭이 '이미 실행 중' 팝업을 띄우던 문제).
