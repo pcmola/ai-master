@@ -1185,14 +1185,16 @@ function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,
   return`<span class="jobstate ${j.code===0?'ok':'fail'}" title="${tip} · 종료 코드 ${j.code}">${j.code===0?'✓':'✗'} ${name} ${j.code===0?'완료':'실패(코드 '+j.code+')'} (${t} 시작)</span>`}
 // 시나리오 3 Health Check 점검표: data/health/latest.json(마지막 점검, 수동·자동 공통). 칸에 마우스를 올리면 자세한 결과.
 let healthKey='';
+let healthOk=false;  // 마지막 Health Check 가 모두 정상이고 지금 결과로 볼 수 있음 → 심어진 장애 줄을 숨긴다
 async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json()}catch(e){return}
   const box=document.getElementById('s3health'),run=['scenario3','scenario3-verify'].some(k=>jobs[k]&&jobs[k].state==='running');
   const key=JSON.stringify([h&&h.finished,h&&h.outcome,run,(jobs._restore||{}).scenario3,(jobs['scenario3-fault']||{}).finished]);if(key===healthKey)return;healthKey=key;
-  if(!h||!h.vms){box.innerHTML='<div class="muted">아직 점검하지 않았습니다. "Health Check 실행"을 누르세요.</div>';return}
+  if(!h||!h.vms){healthOk=false;box.innerHTML='<div class="muted">아직 점검하지 않았습니다. "Health Check 실행"을 누르세요.</div>';return}
   const IT=[['vm','VM 상태'],['service','서비스'],['allow','허용 목적지 접속'],['deny','차단 목적지 접속']],M={ok:['✓ 정상','hok'],fail:['✗ 이상','hfail'],skip:['–','hskip']};
   const n=h.failed.length,t=(h.at||'').replace('T',' ').slice(0,16);
   // 점검 뒤에 장애 모의 훈련·원상 복구·VM 배포가 끝났으면 이 결과는 옛 상태다 → 흐리게 하고 다시 점검하라고 알린다
   const rs3=(jobs._restore||{}).scenario3||{},after=rs3.at&&new Date(rs3.at)>new Date(h.finished||h.at)?new Date(rs3.at):null,stale=after&&!run;
+  healthOk=!h.failed.length&&!stale&&!run;
   box.classList.toggle('hstale',!!(stale||run));  // 점검 중이거나 다시 점검이 필요하면 지난 결과는 회색
   // 점검 뒤에 장애 모의 훈련이 실패했으면(VM 꺼짐 등) 장애가 들어가지 않았다고 알린다 → 표는 그대로 유효
   const fj=jobs['scenario3-fault']||{},ffail=!run&&fj.state==='finished'&&fj.code&&fj.args&&fj.args[0]==='apply'&&new Date(fj.finished)>new Date(h.finished||h.at);
@@ -1252,7 +1254,7 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
     b.disabled=(k==='scenario2'&&!x.need)||jobs[k+'-restore']?.state==='running';
     b.title=(busy&&x.need?'지금 실행 중인 작업을 멈추고 원상 복구합니다(누르면 한 번 확인) · ':'')+tip+(x.need?' · 지금 필요: ':' · 지금은 필요 없음: ')+(x.why||'')});
   // 지금 상태: 저장소에 심어진 장애(터미널에서 바꾼 것도 반영). 실행 기록은 가장 최근 것 하나만, 몇 분 전인지 함께.
-  const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
+  const f=jobs._fault||{};document.getElementById('s3fault-state').innerHTML=healthOk?'':f.error?`<span class="muted">장애 상태를 읽지 못함: ${esc(f.error)}</span>`
     :(f.active&&f.active.length?`<span class="jobstate fail">⚠ 심어진 장애: ${esc(f.active.join(', '))} → 시험 후 원상 복구</span>`:'<span class="jobstate ok">저장소에 심어진 장애: 없음</span> <span class="muted" title="병합 후에는 Pipelines 의 proxy-config VM 배포 또는 원상 복구">(VM 은 배포해야 반영)</span>');
   const pl=jobs._pipeline;document.getElementById('s3pipe').innerHTML=!pl?'':pl.state!=='completed'
     ?`<span class="jobstate running">● VM 배포 파이프라인 #${esc(pl.name)} 실행 중</span> <a href="${esc(pl.url||'#')}" onclick="return !openTop(this.href,'pipeline')">Azure DevOps 에서 보기</a> <span class="muted">(로그는 아래 시나리오 3 로그에 [pipeline] 으로)</span>`
