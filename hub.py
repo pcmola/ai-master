@@ -932,7 +932,7 @@ button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-c
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
-.scwrap{display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.s1view{display:flex;flex-direction:column;flex:1;min-height:260px}.s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:24px}.s1view:not([hidden])+.s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body:not(.logmode) .s1view[hidden]~.sclog{display:none}body.s1nolog:not(.logmode) .sclog{display:none}.s1logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.s1logtg input{margin:0;cursor:pointer}body:not(.logmode) .s1view{flex:62 1 0}body:not(.logmode) .sclog{flex:38 1 0}body.logmode header,body.logmode .scgrid,body.logmode .s1view,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{max-height:45%;overflow:auto}.scgrid .sc.s3 .row{flex-wrap:wrap!important}.scgrid .s2links .head{flex-wrap:wrap}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}.s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:260px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:24px}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -960,33 +960,33 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div id="err" class="err card" hidden></div>
 <div class="scwrap">
 <div class="scgrid">
-<div class="card sc"><button class="main s1btn" id="s1run" onclick="runS1()" title="시나리오 1 · 프록시 설정 가이드 자동 생성: Wiki 검색 화면을 오른쪽에 엽니다">Wiki 기반 가이드 생성</button>
+<div class="card sc"><button class="s1btn" id="s1run" data-sc="1" onclick="runS1()" title="시나리오 1: Wiki 검색 화면을 오른쪽에 엽니다">Wiki 기반 가이드 생성</button>
 <span class="jobstate" id="s1state"></span></div>
-<div class="card sc"><h2>시나리오 2 · 프록시 현황 Wiki 현행화</h2>
-<p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
+<div class="card sc"><button class="s1btn" id="s2open" data-sc="2" onclick="pickSc(2)" title="시나리오 2: Wiki 현황 문서와 Azure VM 비교·현행화">프록시 현황 점검</button></div>
+<div class="card sc"><button class="s1btn" id="s3open" data-sc="3" onclick="pickSc(3)" title="시나리오 3: 프록시 로그 장애 감지와 자동 조치">프록시 Health Check</button></div>
+</div>
+<div class="scright">
+<div class="card scview" id="s1view" hidden><div class="tabs"><span class="name" title="질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 아래 화면에서 합니다. 서버 로그는 맨 아래에 나옵니다.">Wiki 기반 가이드 생성</span><span class="jobstate" id="s1cache" style="margin-left:auto"></span><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
+<div class="card scview" id="s2view" hidden><div class="tabs"><span class="name">프록시 현황 점검</span><span style="margin-left:auto"></span><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
+<div class="sc"><p>Wiki 현황 문서와 Azure VM을 비교하고, 차이가 있으면 Teams 승인 후 Task·Wiki를 반영합니다. 승인 카드는 Teams 일반 채널로 갑니다.</p>
 <div class="row"><button id="s2setup" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py: 꺼진 Proxy VM을 켜고, 테스트 문서를 '현행화 전'으로 만들고 정답을 다시 만든다">테스트 환경 준비</button>
 <button class="main" id="s2run" onclick="runJob('scenario2')">실행</button>
-<button id="s2restore" onclick="if(confirm('테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로). 계속할까요?'))runJob('scenario2-restore')" disabled>원상 복구</button>
-<button class="slog" data-key="scenario2" onclick="showLog('scenario2','시나리오 2 로그')">로그</button></div>
+<button id="s2restore" onclick="if(confirm('테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로). 계속할까요?'))runJob('scenario2-restore')" disabled>원상 복구</button></div>
 <div class="jobstate" id="s2state"></div>
-<div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div>
-<div class="card sc s3"><h2>시나리오 3 · 장애 감지 및 자동 조치</h2>
-<p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·이력 Wiki를 남깁니다. VM 반영은 PR 병합 뒤 <b>VM 배포</b> 파이프라인으로 합니다. 시험 VM: wjy-proxy01</p>
-<div class="row" style="flex-wrap:nowrap"><b>①</b><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:1;min-width:0">
+<div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div></div>
+<div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">프록시 Health Check</span><span style="margin-left:auto"></span><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
+<div class="sc s3"><p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·이력 Wiki를 남깁니다. VM 반영은 PR 병합 뒤 <b>VM 배포</b> 파이프라인으로 합니다. 시험 VM: wjy-proxy01</p>
+<div class="row" style="flex-wrap:nowrap"><b>①</b><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:0 1 320px;min-width:0">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
 <option value="bad-dns">잘못된 DNS 서버</option></select>
 <button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포하고 시험 접속을 보내 차단 로그를 남김 (proxy_fault_inject.py apply)">장애 재현</button></div>
 <div class="row" style="flex-wrap:nowrap"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
 <b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button>
 <button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">IP 맞추기</button>
-<button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button>
-<button class="slog" data-key="scenario3" onclick="showLog('scenario3','시나리오 3 로그')" style="margin-left:auto">로그</button></div>
+<button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button></div>
 <div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
-<div class="jobstate" id="s3state"></div></div>
-</div>
-<div class="scright">
-<div class="card s1view" id="s1view" hidden><div class="tabs"><span class="name" title="질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 아래 화면에서 합니다. 서버 로그는 맨 아래에 나옵니다.">Wiki 기반 가이드 생성</span><span class="jobstate" id="s1cache" style="margin-left:auto"></span><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button><label class="s1logtg" title="Wiki 검색 서버 로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" id="s1logon" checked onchange="s1LogToggle(this.checked)"> 로그 보기</label></div><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
-<div class="card s1empty">"Wiki 기반 가이드 생성"을 누르면 여기에 Wiki 검색 화면이 열립니다.<br>시나리오 2·3의 "로그"는 별도 창(화면 아래쪽)으로 열립니다.</div>
+<div class="jobstate" id="s3state"></div></div></div>
+<div class="card s1empty">왼쪽에서 시나리오를 고르면 여기에 그 화면이, 아래에 로그가 나옵니다.</div>
 <div class="card sclog"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(pageLog,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
 <button id="sall" onclick="unclearLog(pageLog,loadSLog)" hidden>전체 보기</button></div>
@@ -1052,13 +1052,19 @@ function openServer(key){const s=servers.find(x=>x.key===key);
 function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHeight*(/^https:\/\/dev\.azure\.com\//.test(url)?0.44:0.4)),l=screen.availLeft||0,t=screen.availTop||0;
   const win=window.open(url,name,`popup,width=${w},height=${h},left=${l},top=${t}`);if(win)win.opener=null;return win}
 // 시나리오 1: 오른쪽에 Wiki 검색 화면, 그 아래에 Wiki 검색 서버 로그. 이미 열려 있으면 진행 중인 화면을 그대로 둔다.
-function s1LogToggle(on){document.body.classList.toggle('s1nolog',!on);if(on)fit()}
+// 왼쪽 버튼으로 시나리오를 고르면 오른쪽에 그 화면, 아래에 그 로그. '로그 보기'는 세 화면이 함께 쓰고 열 때마다 켜진 상태로 시작한다.
+const SC_LOG={1:['wiki-search','시나리오 1 · Wiki 검색 서버 로그'],2:['scenario2','시나리오 2 · 프록시 현황 점검 로그'],3:['scenario3','시나리오 3 · 프록시 Health Check 로그']};
+let curSc=0;
+function pickSc(n){curSc=n;const b=document.body;b.classList.remove('nosel','sel1','sel2','sel3');b.classList.add('sel'+n);
+  [1,2,3].forEach(i=>{document.getElementById('s'+i+'view').hidden=i!==n;document.querySelector('.scgrid [data-sc="'+i+'"]').classList.toggle('on',i===n)});
+  showLogHere(SC_LOG[n][0],SC_LOG[n][1],true);fit()}
+function logToggle(on){document.body.classList.toggle('nolog',!on);document.querySelectorAll('.logon-cb').forEach(c=>c.checked=on);if(on)setTimeout(fit,0)}
 function runS1(){const s=wikiSearch();if(!s||s.state!=='running')return;const f=document.getElementById('s1frame'),u=s.url+'/?embed=1';
-  if(f.dataset.src!==u){f.src=u;f.dataset.src=u}document.getElementById('s1view').hidden=false;showLogHere('wiki-search','시나리오 1 · Wiki 검색 서버 로그',true)}
+  if(f.dataset.src!==u){f.src=u;f.dataset.src=u}pickSc(1)}
 // 누르는 즉시 같은 카드의 실행 버튼을 끈다(상태를 다시 읽기 전 두 번째 클릭이 '이미 실행 중' 팝업을 띄우던 문제).
 const JOB_BTNS={scenario2:['s2setup','s2run','s2restore'],scenario3:['s3inject','s3run','s3restore','s3nsg']};
 async function runJob(job,options={}){const lk=JOBS_LOG[job];(JOB_BTNS[lk]||[]).forEach(id=>document.getElementById(id).disabled=true);
-  showLog(lk,{scenario3:'시나리오 3 로그'}[lk]||'시나리오 2 로그');
+  pickSc(lk==='scenario3'?3:2);
   let d;try{d=await (await fetch('/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Hub':'1'},body:JSON.stringify({job,options})})).json()}
   catch(e){d={error:'허브에 요청하지 못했습니다: '+e.message}}
   if(d.error){await refreshJobs();alert(d.error);return}setTimeout(refreshJobs,300)}
@@ -1095,16 +1101,8 @@ async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}ca
   // 서버 상태(/api/status)를 아직 못 받았으면 '꺼짐'이 아니라 '확인 중'(새로 고침 직후 잠깐 빨간 글자가 보이던 문제)
   document.getElementById('s1state').innerHTML=ok?`<span class="muted">${esc(ws.url)}</span>`:!lastOkText?'<span class="muted">서버 상태 확인 중…</span>':'<span class="jobstate fail">Wiki 검색 서버가 꺼져 있습니다.</span> '+(ws&&ws.busy?`<span class="muted">${esc(ws.busy)}…</span>`:`<button style="padding:1px 8px" onclick="act('wiki-search','start')">서버 시작</button>`);
   if(pageLog)loadSLog()}
-// 로그는 별도 창(화면 가로 전체 × 아래쪽 58%, 위쪽 40% 창과 겹치지 않게)으로 연다. 같은 창을 다시 쓰고, 같은 로그면 다시 읽지 않는다.
-// 로그 창은 이 페이지를 ?log=<key> 로 연 '로그 전용 모드'라서 실행 계획 패널·지우기·전체 보기가 그대로 동작한다.
-const LOGQ=new URLSearchParams(location.search),LOGMODE=!!LOGQ.get('log');let logWin=null;
-function showLog(key,title){if(LOGMODE)return showLogHere(key,title);slogKey=key;
-  document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));
-  const url='/?log='+encodeURIComponent(key)+'&t='+encodeURIComponent(title);
-  try{if(logWin&&!logWin.closed&&logWin.location.search===url.slice(1)){logWin.focus();return}}catch(e){}
-  const W=screen.availWidth,H=screen.availHeight,h=Math.round(H*0.58),l=screen.availLeft||0,tp=(screen.availTop||0)+H-h;
-  logWin=window.open(url,'hub-log',`popup,width=${W},height=${h},left=${l},top=${tp}`);
-  if(!logWin)alert('로그 창이 팝업 차단으로 열리지 않았습니다. 이 주소의 팝업을 허용하세요.');else logWin.focus()}
+// 로그는 고른 시나리오 화면 아래에 보인다. ?log=<key> 로 열면 로그만 보이는 '로그 전용 모드'(README 캡처용).
+const LOGQ=new URLSearchParams(location.search),LOGMODE=!!LOGQ.get('log');
 function showLogHere(key,title,inline){pageLog=key;if(inline){loadSLog();setNames(key,title);return}slogKey=key;setNames(key,title);document.querySelectorAll('button.slog').forEach(b=>b.classList.toggle('logon',b.dataset.key===key));loadSLog()}
 function setNames(key,title){document.getElementById('sname').textContent=title;document.getElementById('shint').textContent='data/logs/'+key+'.log'}
 async function loadSLog(){if(!pageLog)return;const pre=document.getElementById('slog');const atEnd=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
@@ -1153,7 +1151,7 @@ addEventListener('resize',fit);setInterval(fit,500);
 refresh();setInterval(refresh,3000);setInterval(staleCheck,1000);setInterval(refreshJobs,2000);
 if(LOGMODE){document.body.classList.add('logmode');const k=LOGQ.get('log'),tt=LOGQ.get('t')||k;document.title=tt;
   showLogHere(k,tt);refreshJobs()}
-else{refreshJobs();loadS2Links()}
+else{document.body.classList.add('nosel');refreshJobs();loadS2Links()}
 </script></body></html>"""
 
 
