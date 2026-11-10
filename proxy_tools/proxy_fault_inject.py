@@ -177,6 +177,9 @@ def restore(push: bool, deploy: str | None):
 def apply(name: str, push: bool, deploy: str | None):
     s = SCENARIOS[name]
     sync_main()
+    if deploy:  # VM 이 꺼져 있으면 커밋·push 전에 멈춘다(배포 안 된 장애 커밋만 main 에 남지 않게, 2026-11-11)
+        print(f"VM 상태 확인: {deploy}…")
+        vm_ip(deploy)
     found = active()
     if found == [name]:  # 커밋·push 는 됐는데 배포(SSH)가 실패한 경우 등: 커밋 없이 배포·시험 트래픽만 다시
         print(f"이미 심어진 장애: {name} ({git('log', '-1', '--format=%h %s', '--', s['file'])}) → 커밋 없이 다시 배포")
