@@ -292,18 +292,26 @@ Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니
 
 ### 1.3 시나리오 3 · 장애 감지 및 자동 조치
 
-프록시 로그에서 장애를 감지하면 LLM이 원인과 수정안을 찾고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 만듭니다.
+먼저 **Health Check**로 프록시 VM이 정상인지 실제로 접속해 봅니다. 이상이 있으면 LLM이 원인과 수정안을 찾고, Teams 승인 후 Task·수정 PR·장애 대응 이력 Wiki를 만듭니다.
+
+- Health Check의 기대값은 Wiki **Proxy Health Check 기준** 문서(`02. 운영 > 01. 공통 > 06. 네트워크 및 Proxy > 02. 기준 정리`)의 허용·차단 목적지 표입니다.
+- 기대값을 proxy-config 설정에서 만들지 않습니다. 설정에 오타가 나면 기대값도 같이 틀려 오타를 못 찾기 때문입니다.
+- 실행 방식은 수동·자동 겸용으로 가정합니다.
+  - 수동: 허브 **Health Check 실행** 버튼. 시연은 이것만 합니다.
+  - 자동: 같은 스크립트를 이 PC의 Windows 작업 스케줄러로 주기 실행(`--trigger auto`)하는 운영 방식입니다. **가정만 하고 구성하지 않았습니다.** 붙일 때는 같은 장애의 중복 알림 막기와 수동·자동 동시 실행 막기가 필요합니다. Teams 승인 버튼이 이 PC의 로컬 승인 서버로 돌아오므로 이 PC에서 돌려야 합니다.
+  - 이상을 찾은 뒤의 Teams 알림·승인·Task·PR·이력 Wiki는 두 방식이 같습니다. Teams 카드에 "점검 방식: 수동 점검"처럼 한 줄 남깁니다.
 
 - 원인과 수정안은 로그, Wiki 사례, 설정 저장소(proxy-config) 변경 이력으로 찾습니다.
 - 원칙은 시나리오 2와 같이 **감지·검증은 규칙, 읽고 판단하는 일은 LLM**입니다.
 - 설정 반영(PR 병합·배포)은 사람이 PR을 검토한 뒤에 합니다.
-- 실행: `python proxy_tools\incident_response.py` (허브 "프록시 Health Check" 화면의 "② 실행". 변경 없이 분석만 하려면 `--dry-run`)
+- 실행: `python proxy_tools\incident_response.py` (허브 "프록시 Health Check" 화면의 "Health Check 실행". 변경 없이 분석만 하려면 `--dry-run`, 점검만 하려면 `python proxy_tools\proxy_health.py`)
 
 ![시나리오 3 한눈에 보기](docs/images/slide-scenario3.png)
 
 ```mermaid
 flowchart TD
-    t(["1. 트리거<br/>직접 실행"]) --> d["2. 로그 수집·감지<br/>SSH 로그 수집, 규칙 탐지<br/>+ AI 1차 분석"]
+    t(["1. 트리거<br/>수동(허브)·자동(가정)"]) --> hc["Health Check<br/>Wiki 기준 목적지로 실제 접속<br/>VM·서비스·허용/차단"]
+    hc --> d["2. 로그 수집·감지<br/>SSH 로그 수집, 규칙 탐지<br/>+ AI 1차 분석"]
     d --> sim["3. 유사 장애 검색<br/>Wiki 사례(RAG)"]
     sim --> src["4. 설정 저장소 확인<br/>원인 커밋·수정안(AI)<br/>+ 규칙 검증"]
     src --> ap{"5. Teams 조치 승인<br/>Yes / No"}
@@ -311,17 +319,18 @@ flowchart TD
     task --> pr["7. 수정 브랜치·PR"]
     pr --> hist(["8. 장애 대응 이력 Wiki<br/>+ Teams 결과"])
     hist -. "이후 별도 수행" .-> review{"사람이 PR 검토<br/>병합·배포·복구 확인"}
-    inj["장애 재현·원상 복구<br/>(허브 시험용 버튼)<br/>proxy_fault_inject.py"] -. "잘못된 설정 주입" .-> d
+    inj["장애 재현·원상 복구<br/>(허브 시험용 버튼)<br/>proxy_fault_inject.py"] -. "잘못된 설정 배포" .-> hc
 
     classDef done fill:#DCFCE7,stroke:#16A34A,color:#14532D
     classDef user fill:#FFEDD5,stroke:#EA580C,stroke-width:2px,color:#7C2D12
-    class t,d,sim,src,inj,task,pr,hist done
+    class t,hc,d,sim,src,inj,task,pr,hist done
     class ap,review user
 ```
 
 | 단계 | 내용 | 구현 방식 |
 |---|---|---|
-| 1. 점검 트리거 | 직접 실행 | 허브 "② 실행" 또는 명령줄(분석만은 `--dry-run`). 스케줄러는 두지 않음 |
+| 1. 점검 트리거 | 수동 실행(자동은 가정) | 허브 "Health Check 실행" 또는 명령줄(분석만은 `--dry-run`). `--trigger manual\|auto`로 실행 방식을 남기고, 자동 주기 실행은 구성하지 않음 |
+| 1.5 Health Check | 기준 대비 실제 동작 점검 | `proxy_health.py`: Wiki 기준 문서의 허용 목적지(통과 기대)·차단 목적지(403 기대)로 VM마다 실제 접속, VM 전원·컨테이너 상태도 확인. 결과는 `data/health/latest.json`과 허브 점검표. 점검 접속이 VM 로그에도 남아 2단계 탐지의 근거가 됨. 로그에 흔적이 없는 이상(예: 서비스 중지)도 high 탐지로 더해 대응 절차로 보냄 |
 | 2. 로그 수집·장애 감지 | 서버 로그 수집, 오류 패턴 탐지, 원인 후보 도출(LLM) | 프록시 VM(Squid·NGINX) 접속 로그를 SSH로 읽어 최근 `SCENARIO3_WINDOW_MIN`(기본 60)분만 규칙 탐지(차단 반복·도메인 스캔·업스트림 장애·미허용 클라이언트 등). high·medium이 없으면 "이상 없음"으로 종료. `llm_triage`가 요약·원인 후보·Wiki 검색어를 만듦 |
 | 3. 유사 장애 검색 | Wiki 장애 사례(RAG), 해결 방법 조회 | 시나리오 1 검색 엔진(혼합 검색)으로 상위 문서 4개, AI가 만든 문서는 근거에서 제외 |
 | 4. DevOps 소스 확인 | 관련 소스 탐색, 원인 코드·설정 특정(LLM), 수정안·영향도(LLM) | proxy-config를 최신으로 받아 최근 커밋 diff·현재 설정을 `llm_fix`에 넘김 → 원인 커밋, 수정안(파일·바꿀 줄·새 줄), 영향. 수정안은 "바꿀 줄이 파일에 정확히 한 번 있는지" 규칙으로 검증하고 아니면 수동 조치로 돌림 |
@@ -516,11 +525,12 @@ flowchart LR
 | | `wiki_recent.py` | Wiki 첫 페이지(프로젝트 메인 Overview › Summary 의 About)에 최근 수정 문서 5개(한국 시각). Wiki 에 push 가 생길 때마다 Azure Pipelines(`pipelines/wiki-recent.yml`)가 실행해 갱신하므로 Azure DevOps 화면에서 직접 고친 문서도 1~2분 안에 반영. 바뀐 것 없으면 커밋 안 함 | - |
 | proxy_tools | `azure_proxy_vm.py` | 저가 Linux 프록시 VM 생성 (Squid/HAProxy/NGINX, podman·docker). Squid 로그는 VM 디스크 `/var/log/proxy`에 남김 | - |
 | | `proxy_log_viewer.py` | 프록시 접속 로그·허용 목록·탐지 결과 화면 (Squid 로그 파일, NGINX는 journald) | <http://proxy-log.local> (8768) |
-| | `incident_response.py` | 시나리오 3: 로그 감지 → AI 분석 → Wiki 사례 → proxy-config 원인·수정안 → Teams 승인 → Task → 수정 PR → 장애 대응 이력 Wiki | - |
+| | `proxy_health.py` | 시나리오 3 Health Check: Wiki 기준 문서의 허용·차단 목적지로 VM마다 실제 접속, VM·컨테이너 상태 확인, 결과를 `data/health/latest.json`에 | - |
+| | `incident_response.py` | 시나리오 3: Health Check → 로그 감지 → AI 분석 → Wiki 사례 → proxy-config 원인·수정안 → Teams 승인 → Task → 수정 PR → 장애 대응 이력 Wiki | - |
 | | `proxy_log_detect.py` | 가상 에러 로그 생성, 로그 이상 탐지 | - |
 | | `setup_proxy_config.py` | 시나리오 3용 proxy-config 저장소 준비: Azure Repos에 있으면 받고, 없으면 `proxy-config-seed/`로 만들어 첫 커밋 push(허용 클라이언트는 `PROXY_ALLOWED_CLIENTS`) | - |
 | | `sync_nsg_ip.py` | Proxy VM NSG의 단일 IP 허용 규칙(SSH·프록시 포트)의 출발지를 `PROXY_ALLOWED_CLIENTS`의 IP(유지) + 이 PC의 현재 공인 IP로 맞춤(그 밖의 예전 IP는 삭제). 공인 IP가 바뀌어 SSH가 `Connection timed out`일 때 | - |
-| | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣고(`apply`) 되돌림(`restore`), 배포·시험 트래픽까지 | - |
+| | `proxy_fault_inject.py` | 장애 대응 테스트용: proxy-config 저장소에 잘못된 설정 커밋을 넣고(`apply`) 되돌림(`restore`). `apply`는 배포만, `restore`는 배포 뒤 시험 트래픽으로 확인 | - |
 | | `proxy_policy_monitor.py` | 프록시 VM 전체(Squid·NGINX) 정책 변경 확인 (읽기 전용, 기준 스냅샷도 바꾸지 않음) | - |
 | | `proxy_policy_publish.py` | 정책 변경 → 승인 → Task 등록 + Wiki '프록시 정책 현황' 갱신 | - |
 | | `proxy_status_sync.py` | 시나리오 2: Wiki Proxy 현황 ↔ Azure VM 비교 → Teams 승인 → Task → Wiki 현행화 → 완료 보고 | - |
@@ -711,7 +721,7 @@ Copy-Item .env.sample .env
 | `TEAMS_CARD_ARCHIVE` | `1` | 보낸 Teams 카드를 `data/teams_cards/`에 JSON으로 남김(README 카드 화면용). `0`이면 끔 |
 | `TEAMS_WINDOW_ARRANGE` | `1` | 카드를 보낸 뒤 Teams 데스크톱 창을 화면 가로 전체 × 위쪽 50%로 옮기고 앞으로 가져옴. `0`이면 끔 |
 | `WINDOW_ARRANGE` | `1` | 창 옮기기 전체 스위치(`common/winlayout.py`). 처리 결과 브라우저 창(제목 `처리 결과`·`승인 접수`)도 옮김. 이 창은 페이지 내용 영역이 화면 높이의 42%가 되게 탭 줄·주소창 높이를 더함. `0`이면 모두 끔 |
-| `FAULT_TRAFFIC_ROUNDS` | `3` | 장애 재현·원상 복구 뒤 보내는 시험 접속 횟수(도메인 4개 × N회, `proxy_fault_inject.py`). 허용 도메인 차단은 1건, DNS 장애는 도메인당 3회부터 잡힘 |
+| `FAULT_TRAFFIC_ROUNDS` | `3` | 원상 복구 뒤 보내는 시험 접속 횟수(도메인 4개 × N회, `proxy_fault_inject.py`). 허용 도메인 차단은 1건, DNS 장애는 도메인당 3회부터 잡힘 |
 | `SCENARIO3_DEPLOY_PIPELINE` | `proxy-config VM 배포` | 시나리오 3 조치 카드의 "② 병합 후 VM 배포" 버튼이 여는 파이프라인 이름(실행 목록 화면, 못 찾으면 Pipelines 첫 화면) |
 
 검색 랭킹의 `hit@3` 수치는 다음 명령으로 재현합니다. 임베딩 API 키가 필요하며, 결과에는 사용한 모델·Wiki 문서 수·각 질의의 정답 순위가 함께 기록됩니다.
@@ -744,6 +754,7 @@ Copy-Item .env.sample .env
 | `logs/<서버>.log` | hub.py (허브에서 시작한 서버의 출력, 2MB 넘으면 `.old.log`로 교체) |
 | `logs/scenario2.log` | proxy_status_sync.py (시나리오 2 실행 출력과 테스트 환경 준비 출력. 허브 화면 아래 로그에서 봄, 2MB 넘으면 `.old.log`) |
 | `traces/<서비스>-YYYYMMDD.jsonl` | wiki_search.py·proxy_status_sync.py·proxy_log_viewer.py (요청·실행별 노드 트레이스, `TRACE_KEEP_DAYS`(기본 14)일 지나면 삭제) |
+| `health/latest.json` | proxy_health.py (시나리오 3 Health Check 마지막 결과. 허브 점검표가 읽음) |
 | `logs/scenario3.log` | incident_response.py (시나리오 3 실행 출력. 허브 화면 아래 로그에서 봄) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록) |
 
@@ -877,8 +888,10 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 시나리오 3
 
 - **프록시 Health Check**를 누르면 오른쪽에 아래 버튼과 상태, 그 아래에 `scenario3.log`가 나옵니다.
-- 한 줄 흐름: ① 장애 종류를 고르고 "장애 재현" → ② "실행" → ③ "원상 복구".
-- "실행"은 최근 60분 로그 점검 → Teams 승인 → Task·수정 PR·이력 Wiki 순서로 진행합니다.
+- 시험 도구(장애 종류 선택, "장애 재현", "원상 복구", "IP 맞추기", "프록시 로그")는 화면 머리에 있습니다.
+- 본문의 **Health Check 실행**은 Health Check → 최근 60분 로그 탐지 → 이상이면 원인 분석·Teams 승인 → Task·수정 PR·이력 Wiki 순서로 진행합니다.
+- 그 아래 점검표에 VM × 항목(VM 상태, 서비스, 허용 목적지 접속, 차단 목적지 접속)의 마지막 결과가 나옵니다. 칸에 마우스를 올리면 자세한 결과가 보이고, 이상 항목은 표 아래에 줄로 나옵니다.
+- 시험 흐름: 장애 재현 → Health Check 실행 → 원상 복구.
 - "원상 복구"는 로그로 보아 장애 재현 뒤에만 켜집니다. 원상 복구나 VM 배포 파이프라인이 성공하면 꺼집니다.
 - "IP 맞추기"(`sync_nsg_ip.py`)는 NSG 허용 IP를 이 PC의 현재 IP에 맞추고, "프록시 로그"는 `proxy-log.local`을 새 창으로 엽니다.
 - 실행 중 승인 서버가 뜨면 승인 화면을 새 창으로 한 번 자동으로 띄우고, "승인 화면" 버튼도 보여 줍니다.
@@ -1351,21 +1364,21 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
 
 ### 8.4 시나리오 3 · 시험
 
-허브 "프록시 Health Check" 화면에서 ①→②→③ 순서로 합니다. 세 버튼 모두 실제 저장소·VM·Azure DevOps를 바꿉니다. 아무것도 바꾸지 않고 원인·수정안만 보려면 `python proxy_tools\incident_response.py --dry-run`을 씁니다.
+허브 "프록시 Health Check" 화면에서 장애 재현 → Health Check 실행 → 원상 복구 순서로 합니다. 세 버튼 모두 실제 저장소·VM·Azure DevOps를 바꿉니다. 아무것도 바꾸지 않고 원인·수정안만 보려면 `python proxy_tools\incident_response.py --dry-run`을 씁니다.
 
 **전 과정 시험 절차**:
-  1. 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포한 뒤 시험 트래픽을 보냄(`proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
-  2. 60분 안에 **② 실행** → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
+  1. 화면 머리에서 장애 종류를 고르고 **장애 재현**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포만 함(시험 접속은 Health Check가 함, `proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
+  2. **Health Check 실행** → 점검표에서 wjy-proxy01이 "이상"(예: 허용 목적지 `www.data.go.kr` 403) → 원인 분석 → Teams 승인 → 원인 커밋을 되돌리는 수정 PR까지 생김.
   3. 끝나면 PR을 병합하고 VM에 배포합니다. PR 병합만으로는 VM에 반영되지 않습니다(소스 병합과 VM 배포를 따로 함).
      - Azure DevOps **Pipelines** › **proxy-config VM 배포** › **Run pipeline**: 배포 대상 VM(`targetVMs`, 기본값 `wjy-proxy01`)에 main을 배포합니다.
        - 칸을 비우면 실행 중인 squid VM 모두에 배포합니다.
        - proxy-config의 `azure-pipelines.yml`이고, 서비스 연결은 `proxy-vm-deploy`입니다. `az vm run-command`를 써서 SSH 키·NSG를 바꾸지 않습니다.
        - 실행할 때 "문법 확인만"을 켜면 설치하지 않습니다.
      - 또는 허브 **원상 복구**(`proxy_fault_inject.py restore --push --deploy wjy-proxy01`): 심어진 장애가 있으면 되돌리는 커밋을 push하고, 없어도 지금 main을 wjy-proxy01에 배포한 뒤 시험 트래픽으로 확인합니다.
-  - **② 실행**은 시작할 때와 끝날 때 운영 중인 squid VM의 배포된 설정(`/etc/proxy/proxy.conf`, `lists/*`)을 저장소 `origin/main`의 `squid/`와 비교합니다(`config_drift`). 다르면 로그에 `⚠ 경고`와 다른 파일 이름을 남깁니다. 병합한 수정이 배포되지 않은 경우를 잡으려고 넣었습니다(2026-10-31).
+  - **Health Check 실행**은 시작할 때와 끝날 때 운영 중인 squid VM의 배포된 설정(`/etc/proxy/proxy.conf`, `lists/*`)을 저장소 `origin/main`의 `squid/`와 비교합니다(`config_drift`). 다르면 로그에 `⚠ 경고`와 다른 파일 이름을 남깁니다. 병합한 수정이 배포되지 않은 경우를 잡으려고 넣었습니다(2026-10-31).
   - 경고가 나오면 파이프라인을 그 VM을 배포 대상으로 넣어 실행해 맞춥니다. 허브 **원상 복구**는 wjy-proxy01에만 배포하므로 다른 VM은 맞추지 못합니다.
   - main에 시험용 장애가 심어져 있는 동안에는 비교 기준이 정상이 아닙니다. 그래서 다른 VM이 있어도 경고 대신 관찰 줄만 남깁니다. 장애를 배포하지 않은 VM(예: wjy-proxy02)이 '다름'으로 잡히던 문제 때문입니다(2026-11-08).
-  - 장애 커밋·push는 됐는데 배포(SSH)가 실패했다면 같은 종류로 **장애 재현**을 다시 누릅니다. 같은 장애가 이미 심어져 있으면 커밋 없이 배포·시험 트래픽만 다시 합니다(다른 종류가 심어져 있으면 거절).
+  - 장애 커밋·push는 됐는데 배포(SSH)가 실패했다면 같은 종류로 **장애 재현**을 다시 누릅니다. 같은 장애가 이미 심어져 있으면 커밋 없이 배포만 다시 합니다(다른 종류가 심어져 있으면 거절).
   - 두 버튼 모두 실제 저장소와 VM을 바꾸므로 누르면 한 번 더 확인합니다. 배포 직전 VM 설정은 `/etc/proxy/backup/<시각>/`에 남습니다(proxy-config `deploy.sh`).
   - 세 VM 모두 SSH가 `connect to host … port 22: Connection timed out`으로 실패하면, VM이 켜져 있어도 이 PC의 공인 IP가 NSG 허용 IP와 다른 경우입니다(회선 변경·테더링).
     - 이때 시나리오 3은 "점검 불가"(종료 코드 2)로 끝나고, 현재 공인 IP와 NSG 허용 IP를 비교한 원인 추정을 로그에 남깁니다.

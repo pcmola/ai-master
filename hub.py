@@ -365,7 +365,7 @@ JOBS = {
     "scenario2": {"title": "시나리오 2 · Wiki 현행화", "script": "proxy_tools/proxy_status_sync.py", "log": "scenario2",
                   "self_log": True,
                   "options": {}},
-    "scenario3": {"title": "시나리오 3 · 장애 감지 및 조치", "script": "proxy_tools/incident_response.py", "log": "scenario3",
+    "scenario3": {"title": "시나리오 3 · Health Check", "script": "proxy_tools/incident_response.py", "log": "scenario3",
                   "self_log": True, "options": {"dry_run": "--dry-run"}},
     # 시험용: proxy-config 에 잘못된 설정을 넣어 wjy-proxy01 에 배포(장애 재현), 그리고 되돌리기
     "scenario3-fault": {"title": "시나리오 3 · 장애 재현(시험용)", "script": "proxy_tools/proxy_fault_inject.py", "log": "scenario3",
@@ -844,6 +844,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
             else:
                 self.send_body(approval_record_page(token), "text/html; charset=utf-8")
+        elif url.path == "/api/health":  # 시나리오 3 Health Check 마지막 결과(proxy_health.py 가 남김)
+            path = PROJECT_ROOT / "data" / "health" / "latest.json"
+            try:
+                self.send_json(json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {})
+            except (OSError, ValueError) as exc:
+                self.send_json({"error": str(exc)})
         elif url.path == "/api/s2links":
             try:
                 self.send_json(s2_links(parse_qs(url.query).get("refresh") == ["1"]))
@@ -932,7 +938,7 @@ button.logon{background:color-mix(in srgb,var(--blue) 14%,var(--panel));border-c
 pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;height:420px;overflow:auto;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
 .err{color:var(--bad);padding:12px}
 [hidden]{display:none!important}
-.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:90px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}#s1state:empty{display:none}.splitter{display:none;flex:none;height:12px;margin:-14px 0;cursor:row-resize;align-items:center;justify-content:center;touch-action:none;z-index:1}.splitter i{width:56px;height:4px;border-radius:2px;background:var(--line)}.splitter:hover i,body.dragging .splitter i{background:var(--blue)}body:not(.nosel):not(.nolog):not(.logmode) .splitter{display:flex}body.dragging{cursor:row-resize;user-select:none}body.dragging iframe{pointer-events:none}.scview>.sc{flex:1 1 auto;min-height:0;overflow:auto}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
+.scwrap{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr);gap:16px;align-items:start}.scgrid{display:grid;gap:16px;align-content:start}.scright{position:sticky;top:12px;display:flex;flex-direction:column;gap:16px;height:calc(100vh - 88px);min-height:520px}.scview{display:flex;flex-direction:column;flex:none}#s1view{flex:44 1 0;min-height:90px}#s1view iframe{flex:1;border:0;width:100%;background:#fff}.sc button.s1btn{font-size:15px;font-weight:700;padding:10px 14px;width:100%}#s1state:empty{display:none}#s3health table{border-collapse:collapse;font-size:13px;width:100%;max-width:820px}#s3health th,#s3health td{padding:5px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}#s3health th{color:var(--muted);font-weight:600;font-size:12px}#s3health .hok{color:var(--ok);font-weight:700}#s3health .hfail{color:var(--bad);font-weight:700}#s3health .hskip{color:var(--muted)}#s3health .hsum{font-size:13px;margin:2px 0 6px}#s3health .hbad{font-size:12px;color:var(--bad);margin-top:6px;display:grid;gap:2px;white-space:normal}.splitter{display:none;flex:none;height:12px;margin:-14px 0;cursor:row-resize;align-items:center;justify-content:center;touch-action:none;z-index:1}.splitter i{width:56px;height:4px;border-radius:2px;background:var(--line)}.splitter:hover i,body.dragging .splitter i{background:var(--blue)}body:not(.nosel):not(.nolog):not(.logmode) .splitter{display:flex}body.dragging{cursor:row-resize;user-select:none}body.dragging iframe{pointer-events:none}.scview>.sc{flex:1 1 auto;min-height:0;overflow:auto}.scgrid button.s1btn.on{background:var(--blue);border-color:var(--blue);color:#fff}.s1empty{flex:1;display:grid;place-items:center;color:var(--muted);font-size:28px;font-weight:700;letter-spacing:-.5px;text-align:center;padding:24px;opacity:.55}body:not(.nosel) .s1empty{display:none}.sclog{display:flex;flex-direction:column;flex:1;min-height:200px}body.nosel:not(.logmode) .sclog,body.nolog:not(.logmode) .sclog{display:none}.logtg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;cursor:pointer;user-select:none;background:#fff}.logtg input{margin:0;cursor:pointer}body.sel1:not(.logmode) .sclog{flex:56 1 0}body.logmode header,body.logmode .scgrid,body.logmode .scview,body.logmode .s1empty{display:none!important}body.logmode main{padding:0}body.logmode .scwrap{display:block}body.logmode .scright{position:static;height:100vh;min-height:0}body.logmode .sclog{border-radius:0;border:0}.sclog #slog{flex:1;height:auto;min-height:120px}.sclog #splan{flex:none}@media(max-width:1000px){.scwrap{grid-template-columns:1fr}.scright{position:static;height:auto}#s1view iframe{height:640px}.sclog #slog{height:420px}}
 .sc{padding:16px 18px;display:grid;gap:10px;align-content:start}.sc h2{font-size:15px;margin:0}.sc p{margin:0;color:var(--muted);font-size:13px}
 .sc.s3{align-self:start;padding:12px 18px;gap:7px}.sc.s3 p{line-height:1.35}.sc.s3 .row{gap:5px}.sc.s3 .row button{white-space:nowrap;padding:4px 6px}
 .sc input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel);color:var(--ink);width:100%}
@@ -972,16 +978,12 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div class="row"><button class="main" id="s2run" onclick="runJob('scenario2')">실행</button></div>
 <div class="jobstate" id="s2state"></div>
 <div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div></div></div>
-<div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">프록시 Health Check</span><span style="margin-left:auto"></span><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
-<div class="sc s3"><p>프록시 로그에서 장애를 찾아 원인·수정안을 만들고, Teams 승인 후 Task·수정 PR·이력 Wiki를 남깁니다. VM 반영은 PR 병합 뒤 <b>VM 배포</b> 파이프라인으로 합니다. 시험 VM: wjy-proxy01</p>
-<div class="row" style="flex-wrap:nowrap"><b>①</b><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);flex:0 1 320px;min-width:0">
+<div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">프록시 Health Check</span><span style="margin-left:auto"></span><span class="muted" style="font-size:12px;margin-right:2px">시험:</span><select id="s3fault" title="일부러 넣을 장애 종류" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--panel);color:var(--ink);max-width:230px">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
-<option value="bad-dns">잘못된 DNS 서버</option></select>
-<button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포하고 시험 접속을 보내 차단 로그를 남김 (proxy_fault_inject.py apply)">장애 재현</button></div>
-<div class="row" style="flex-wrap:nowrap"><b>②</b><button class="main" id="s3run" onclick="runJob('scenario3')" title="최근 60분 로그 점검 → 장애가 있으면 Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">실행</button>
-<b>③</b><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button>
-<button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">IP 맞추기</button>
-<button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button></div>
+<option value="bad-dns">잘못된 DNS 서버</option></select><button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포만 함(점검은 Health Check 실행으로) (proxy_fault_inject.py apply)">장애 재현</button><button id="s3restore" onclick="if(confirm('심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다. 계속할까요?'))runJob('scenario3-restore')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button><button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="SSH 가 Connection timed out 으로 실패할 때: NSG 허용 규칙을 고정 허용 IP + 현재 IP 로 맞춤 (sync_nsg_ip.py)">IP 맞추기</button><button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
+<div class="sc s3"><p>Wiki <b>Proxy Health Check 기준</b> 문서의 허용·차단 목적지로 VM 마다 실제 접속해 봅니다. 이상이 있으면 원인을 분석하고 Teams 승인 후 Task·수정 PR·이력 Wiki를 남깁니다(VM 반영은 PR 병합 뒤 <b>VM 배포</b> 파이프라인).</p>
+<div class="row"><button class="main" id="s3run" onclick="runJob('scenario3')" title="Health Check(Wiki 기준 목적지 실제 접속) → 최근 로그 탐지 → 이상이면 원인 분석·Teams 승인 → Task·수정 PR·이력 Wiki (incident_response.py)">Health Check 실행</button></div>
+<div id="s3health"></div>
 <div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
 <div class="jobstate" id="s3state"></div></div></div>
 <div class="card s1empty">Azure DevOps 기반 AI 운영 자동화</div>
@@ -1088,7 +1090,21 @@ function jobLine(j){if(!j||j.state==='idle')return'';const t=j.started.slice(11,
   const name=esc(j.title.replace(/^시나리오 \d · /,'')),tip=esc(`PID ${j.pid} · ${j.started.replace('T',' ')} 시작${arg}`);
   if(j.state==='running')return`<span class="jobstate running" title="${tip}">● ${name} 실행 중 (${since(j.started)}째)</span>`;
   return`<span class="jobstate ${j.code===0?'ok':'fail'}" title="${tip} · 종료 코드 ${j.code}">${j.code===0?'✓':'✗'} ${name} ${j.code===0?'완료':'실패(코드 '+j.code+')'} (${t} 시작)</span>`}
+// 시나리오 3 Health Check 점검표: data/health/latest.json(마지막 점검, 수동·자동 공통). 칸에 마우스를 올리면 자세한 결과.
+let healthKey='';
+async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json()}catch(e){return}
+  const box=document.getElementById('s3health'),run=jobs.scenario3&&jobs.scenario3.state==='running';
+  const key=(h&&h.finished||'')+run;if(key===healthKey)return;healthKey=key;
+  if(!h||!h.vms){box.innerHTML='<div class="muted">아직 점검하지 않았습니다. "Health Check 실행"을 누르세요.</div>';return}
+  const IT=[['vm','VM 상태'],['service','서비스'],['allow','허용 목적지 접속'],['deny','차단 목적지 접속']],M={ok:['✓ 정상','hok'],fail:['✗ 이상','hfail'],skip:['–','hskip']};
+  const n=h.failed.length,t=(h.at||'').replace('T',' ').slice(5,16);
+  box.innerHTML=`<div class="hsum">${run?'<span class="jobstate running">● 점검 중 (아래는 지난 결과)</span> ':''}<b class="${n?'hfail':'hok'}">${n?'이상 '+n+'건':'모두 정상'}</b> <span class="muted">· ${esc(t)} ${h.trigger==='auto'?'자동':'수동'} 점검 · 기준: Wiki Proxy Health Check 기준</span></div>`
+    +'<table><tr><th>VM</th>'+IT.map(([,x])=>`<th>${x}</th>`).join('')+'</tr>'
+    +h.vms.map(v=>{const c=Object.fromEntries(v.checks.map(x=>[x.item,x]));return`<tr><td>${esc(v.name)} <span class="muted">${esc(v.kind)}</span></td>`
+      +IT.map(([k])=>{const x=c[k]||{status:'skip',detail:''},m=M[x.status]||M.skip;return`<td class="${m[1]}" title="${esc(x.detail)}">${m[0]}</td>`}).join('')+'</tr>'}).join('')+'</table>'
+    +(n?'<div class="hbad">'+h.failed.map(f=>`<div>✗ ${esc(f.vm)} · ${esc(f.item)}: ${esc(f.detail)}</div>`).join('')+'</div>':'')}
 async function refreshJobs(){try{jobs=await (await fetch('/api/jobs')).json()}catch(e){return}
+  loadHealth();
   const run=['scenario2','scenario2-setup','scenario2-restore'].some(k=>jobs[k]&&jobs[k].state==='running');['s2run','s2setup'].forEach(id=>document.getElementById(id).disabled=run);
   const s3=['scenario3','scenario3-fault','scenario3-restore','nsg-ip'],run3=s3.some(k=>jobs[k]&&jobs[k].state==='running');
   ['s3run','s3inject','s3nsg'].forEach(id=>document.getElementById(id).disabled=run3);

@@ -2,7 +2,10 @@
 변경 이력으로 원인을 찾고, 수정안을 Teams 로 승인받아 Task·PR·장애 대응 이력 Wiki 까지 만든다.
 
 단계(노드별 트레이스는 data/traces/scenario3-YYYYMMDD.jsonl 과 콘솔·data/logs/scenario3.log 에 남는다)
-1. trigger        직접 실행(허브 '시나리오 실행' 탭 또는 명령줄)
+1. trigger        직접 실행(허브 '프록시 Health Check' 화면 또는 명령줄). --trigger manual|auto 로 실행 방식을 남긴다
+                  (auto 는 주기 실행을 가정한 자리만 있고 구성하지 않았다)
+   health         Health Check(proxy_health): Wiki 기준 문서의 허용·차단 목적지로 실제 접속해 VM·서비스·접속 결과를 본다.
+                  점검 접속이 VM 로그에도 남으므로 이어지는 collect 가 같은 증상을 근거로 삼는다
 2. collect        프록시 VM 마다 최근 접속 로그를 SSH 로 읽고(proxy_log_viewer), 최근 SCENARIO3_WINDOW_MIN 분 안의
                   기록만 규칙으로 탐지한다(proxy_log_detect). high·medium 이 없으면 '이상 없음'으로 끝낸다
    llm_triage     (AI) 탐지 결과와 로그 표본으로 장애 요약·원인 후보·Wiki 검색어를 만든다
@@ -434,7 +437,8 @@ def write_history(entry: str, when: str, task: int | None):
 
 # ---------------------------------------------------------------- main
 
-PLAN = [("collect", f"프록시 VM 로그 수집·규칙 탐지 (최근 {WINDOW_MIN}분)"),
+PLAN = [("health", "Health Check: Wiki 기준 목적지로 실제 접속 (VM·서비스·허용/차단)"),
+        ("collect", f"프록시 VM 로그 수집·규칙 탐지 (최근 {WINDOW_MIN}분)"),
         ("analyze", "(AI) 장애 요약·원인 후보 → Wiki 유사 사례·가이드 검색 (RAG)"),
         ("fix", "proxy-config 변경 이력 확인 → (AI) 원인 커밋·수정안 → 규칙 검증 (실패 시 자기 수정)"),
         ("approval", "Teams 승인 요청 (Yes/No)"),
@@ -445,7 +449,7 @@ PLAN = [("collect", f"프록시 VM 로그 수집·규칙 탐지 (최근 {WINDOW_
 def preflight(args) -> None:
     """계획 수립과 시뮬레이션: 실행 조건(dry-run)으로 단계를 정하고, 각 단계의 전제를 실행 전에 확인한다."""
     plan("프록시 장애 감지 → 원인 분석 → 수정안 → 승인 후 조치" + (" (dry-run: 수정안까지)" if args.dry_run else ""),
-         PLAN[:3] if args.dry_run else PLAN)
+         PLAN[:4] if args.dry_run else PLAN)
     llm_ok = bool(os.environ.get("AZURE_OPENAI_ENDPOINT") and os.environ.get("AZURE_OPENAI_API_KEY")
                   or os.environ.get("OPENAI_API_KEY"))
     repo_ok = (CONFIG_REPO / ".git").exists()
@@ -521,13 +525,30 @@ def config_drift(at: str) -> list[str]:
 
 def run(args) -> int:
     when = now()
-    with span("trigger", mode="dry-run" if args.dry_run else "teams", window_min=WINDOW_MIN):
+    with span("trigger", mode="dry-run" if args.dry_run else "teams", trigger=args.trigger, window_min=WINDOW_MIN):
         pass
     preflight(args)
+    plan_step("health")
+    import proxy_health
+    hc = proxy_health.run_checks(args.trigger)
     plan_step("collect")
     results = collect()
     failed = [r for r in results if "error" in r]
     results = [r for r in results if "error" not in r]
+    # Health Check 이상은 그 VM 의 high 탐지로 더한다(로그에 흔적이 없는 장애, 예: 서비스 중지도 대응 절차로 가게)
+    stamp = datetime.now().strftime("%m-%d %H:%M:%S")
+    for v in hc["vms"]:
+        bad = [f for f in hc["failed"] if f["vm"] == v["name"]]
+        if not bad:
+            continue
+        hf = [{"severity": "high", "rule": "health_check", "title": f"Health Check 이상: {f['item']}", "detail": f["detail"],
+               "first": stamp, "last": stamp, "count": 1, "samples": []} for f in bad]
+        r = next((r for r in results if r["vm"]["name"] == v["name"]), None)
+        if r:
+            r["findings"] = hf + r["findings"]
+        else:
+            results.append({"vm": {"name": v["name"], "ip": v["ip"], "kind": v["kind"], "state": "운영"}, "rows": [], "findings": hf})
+            failed = [x for x in failed if x["vm"]["name"] != v["name"]]
     incidents = [r for r in results if any(f["severity"] in SEVERE for f in r["findings"])]
     for r in results:
         sev = [f for f in r["findings"] if f["severity"] in SEVERE]
@@ -545,8 +566,8 @@ def run(args) -> int:
         print(f"점검 불가: {len(failed)}대의 로그를 읽지 못했습니다{ok}. 접속 문제를 해결한 뒤 다시 실행하세요.")
         return 2
     if not incidents:
-        replan("high·medium 탐지 없음 → 분석·조치 단계 생략", drop=[n for n, _ in PLAN])
-        print("감지된 장애가 없습니다. 종료합니다.")
+        replan("Health Check 정상·high·medium 탐지 없음 → 분석·조치 단계 생략", drop=[n for n, _ in PLAN])
+        print("Health Check 정상, 감지된 장애가 없습니다. 종료합니다.")
         return 0
     think("Decision", f"장애 의심 VM {len(incidents)}대 ({', '.join(i['vm']['name'] for i in incidents)}) → 원인 분석 진행")
 
@@ -595,7 +616,9 @@ def run(args) -> int:
     dv = devops()
     vms = ", ".join(i["vm"]["name"] for i in incidents)
     headline = f"{vms} " + ", ".join(sorted({f["title"] for i in incidents for f in i["findings"] if f["severity"] in SEVERE}))[:120]
-    items = [f"AI 1차 분석 (참고용): {(tri or {}).get('summary', '분석 실패')}"]
+    items = [f"AI 1차 분석 (참고용): {(tri or {}).get('summary', '분석 실패')}",
+             f"점검 방식: {'수동 점검(허브 Health Check)' if args.trigger == 'manual' else '자동 점검(주기 실행)'}"
+             f" · Health Check 이상 {len(hc['failed'])}건 (기준: Wiki 'Proxy Health Check 기준')"]
     items += [f"[{f['severity']}] {i['vm']['name']}: {f['title']} — {f['detail']}"
               for i in incidents for f in i["findings"] if f["severity"] in SEVERE]
     if fix:
@@ -698,9 +721,11 @@ def main() -> int:
     try:
         p = argparse.ArgumentParser(description="시나리오 3: 프록시 장애 감지 및 자동 조치")
         p.add_argument("--dry-run", action="store_true", help="1–3단계(감지·분석·수정안)만 하고 아무것도 바꾸지 않음")
+        p.add_argument("--trigger", choices=["manual", "auto"], default="manual",
+                       help="실행 방식 기록: manual(허브 버튼·명령줄, 기본) | auto(주기 실행 가정, 구성하지 않음)")
         args = p.parse_args()
         try:
-            with trace("scenario3", "incident_response", dry_run=args.dry_run, window_min=WINDOW_MIN) as t:
+            with trace("scenario3", "incident_response", dry_run=args.dry_run, trigger=args.trigger, window_min=WINDOW_MIN) as t:
                 # 시작할 때: 지난 수정이 배포됐는지(병합 후 배포 누락). 끝날 때: 이번 실행 뒤 VM 과 저장소 상태.
                 config_drift("시작")
                 try:

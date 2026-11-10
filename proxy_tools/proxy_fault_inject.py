@@ -11,7 +11,8 @@
     python proxy_tools/proxy_fault_inject.py status                                 # 지금 심어진 장애가 있는지
     python proxy_tools/proxy_fault_inject.py restore --push --deploy wjy-proxy01     # 심어진 장애 되돌리기(허브 '원상 복구')
 
---deploy 는 proxy-config 의 scripts/deploy.sh 를 --restart 로 실행한 뒤 scripts/traffic.sh 로 로그를 만든다.
+--deploy 는 proxy-config 의 scripts/deploy.sh 를 --restart 로 실행한다. apply 는 배포만 하고(시험 접속은 Health Check 가 함),
+restore 는 배포 뒤 scripts/traffic.sh 로 정상 접속을 확인한다.
 Windows 에서는 Git Bash(bash.exe)가 필요하다.
 """
 
@@ -134,6 +135,10 @@ def deploy_and_check(target: str, expect_fail: bool):
     ip = vm_ip(target)
     print(f"배포: {target} (설정 검증 → 업로드 → Squid 재시작)…")
     bash("scripts/deploy.sh", ip, "--restart")
+    if expect_fail:
+        # 시험 접속은 Health Check 가 Wiki 기준 목적지로 직접 한다(2026-11-10). 여기서는 잘못된 설정을 배포만 한다.
+        print("배포 완료. 이제 허브 '프록시 Health Check' 화면의 'Health Check 실행'으로 점검하세요.")
+        return
     print(f"시험 접속 보내는 중 (도메인 4개 × {TRAFFIC_ROUNDS}회)…")
     try:
         bash("scripts/traffic.sh", ip, str(TRAFFIC_ROUNDS))
