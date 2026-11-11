@@ -33,7 +33,7 @@ from common.paths import DATA_DIR, PROJECT_ROOT  # noqa: E402
 from common.server import favicon, local_server, open_chrome, site_url  # noqa: E402
 
 LOG_DIR = DATA_DIR / "logs"
-HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "Azure DevOps 기반 AI 운영"
+HUB_PORT, HUB_SITE, HUB_TITLE = 8764, "ai-master.local", "AI 운영 자동화"
 LOG_ROTATE_BYTES = 2 * 1024 * 1024
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 DETACH = NO_WINDOW | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -1056,17 +1056,17 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div class="brand"><h1>__TITLE__</h1><span class="time" id="time"></span></div>
 <div class="card sc"><button class="s1btn" id="s1run" data-sc="1" onclick="runS1()" title="Wiki 문서를 의미 검색해 근거·출처를 단 가이드를 만들고 Wiki에 등록합니다">Wiki 기반 가이드 생성</button>
 <span class="jobstate" id="s1state"></span></div>
-<div class="card sc"><button class="s1btn" id="s2open" data-sc="2" onclick="pickSc(2)" title="Wiki 현황 문서와 Azure VM을 비교해, 차이가 있으면 승인 후 Task·Wiki를 현행화합니다 (배치·수동 실행 가능, 배치는 추후 개발)">프록시 현황 점검</button></div>
-<div class="card sc"><button class="s1btn" id="s3open" data-sc="3" onclick="pickSc(3)" title="Wiki Health Check 기준대로 프록시 VM에 실제 접속해 보고, 이상이 있으면 원인 분석·승인 후 Task·수정 PR·이력 Wiki를 남깁니다 (배치·수동 실행 가능, 배치는 추후 개발)">프록시 Health Check</button></div>
+<div class="card sc"><button class="s1btn" id="s2open" data-sc="2" onclick="pickSc(2)" title="Wiki 현황 문서와 Azure VM을 비교해, 차이가 있으면 승인 후 Task·Wiki를 현행화합니다 (배치·수동 실행 가능, 배치는 추후 개발)">Wiki/Azure 현황 비교</button></div>
+<div class="card sc"><button class="s1btn" id="s3open" data-sc="3" onclick="pickSc(3)" title="Wiki Health Check 기준대로 프록시 VM에 실제 접속해 보고, 이상이 있으면 원인 분석·승인 후 Task·수정 PR·이력 Wiki를 남깁니다 (배치·수동 실행 가능, 배치는 추후 개발)">Health Check</button></div>
 </div>
 <div class="scright">
 <div class="card scview" id="s1view" hidden><div class="tabs"><span class="name" title="질의 입력·유형 선택·미리보기·수정 요청·Wiki 등록은 아래 화면에서 합니다. 서버 로그는 맨 아래에 나옵니다.">Wiki 기반 가이드 생성</span><span class="jobstate" id="s1cache" style="margin-left:auto"></span><button onclick="if(!openTop(this.dataset.url,'devops'))window.open(this.dataset.url,'_blank','noopener')" data-url="https://dev.azure.com/ai-master/AI%20Master/_wiki/wikis/AI-Master.wiki/1/AI-Master-%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8" title="Azure DevOps Wiki(AI-Master 프로젝트 첫 페이지)를 새 창으로 엽니다">Azure Wiki 바로 가기</button><button onclick="clearGuideCache()" title="저장된 가이드(data/guide_cache.json)를 모두 지웁니다. 다음 질의부터 LLM이 새로 만듭니다. 직전 내용은 guide_cache.json.bak 으로 남습니다.">캐시 초기화</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div><iframe id="s1frame" title="Wiki 검색" allow="clipboard-read; clipboard-write"></iframe></div>
-<div class="card scview" id="s2view" hidden><div class="tabs"><span class="name">프록시 현황 점검</span><span style="margin-left:auto"></span><button id="s2servers" onclick="runJob('scenario2-servers')" title="test/scenario2/setup_env.py --servers: 꺼진 Proxy VM 을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검(문서·정답은 그대로)">서버 환경 점검</button><button id="s2setup" class="drillbtn" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py --seed: 실제 VM 으로 일부러 틀린 '현행화 전' 표와 정답을 만들어 Wiki 테스트 문서에 씀(VM 은 켜지 않음)">불일치 모의 훈련</button><button id="s2restore" onclick="restoreJob('scenario2-restore','테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로).')" disabled>원상 복구</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
+<div class="card scview" id="s2view" hidden><div class="tabs"><span class="name">Wiki/Azure 현황 비교</span><span style="margin-left:auto"></span><button id="s2servers" onclick="runJob('scenario2-servers')" title="test/scenario2/setup_env.py --servers: 꺼진 Proxy VM 을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검(문서·정답은 그대로)">서버 환경 점검</button><button id="s2setup" class="drillbtn" onclick="runJob('scenario2-setup')" title="test/scenario2/setup_env.py --seed: 실제 VM 으로 일부러 틀린 '현행화 전' 표와 정답을 만들어 Wiki 테스트 문서에 씀(VM 은 켜지 않음)">불일치 모의 훈련</button><button id="s2restore" onclick="restoreJob('scenario2-restore','테스트 문서를 실제 Azure VM 과 같은 정상 표로 되돌립니다(VM·정답은 그대로).')" disabled>원상 복구</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
 <div class="sc"><div class="s2links" id="s2links"><span class="muted">Azure VM·Wiki 링크 불러오는 중…</span></div>
 <div class="row"><button class="main" id="s2run" onclick="runJob('scenario2')" title="Wiki 현황 표와 Azure 실제 VM 을 비교하고, 차이가 있으면 승인을 받아 Task·Wiki 를 반영합니다 (proxy_status_sync.py)">현황 점검 실행</button><span class="jobstate" id="s2state"></span></div>
 <div id="s2ap"></div><div id="s2result"></div>
 </div></div>
-<div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">프록시 Health Check</span><span style="margin-left:auto"></span><span class="drill" title="장애 모의 훈련: 고른 종류의 잘못된 설정을 배포합니다"><button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포만 함(점검은 Health Check 실행으로) (proxy_fault_inject.py apply)">장애 모의 훈련</button><select id="s3fault" title="일부러 넣을 장애 종류">
+<div class="card scview" id="s3view" hidden><div class="tabs"><span class="name">Health Check</span><span style="margin-left:auto"></span><span class="drill" title="장애 모의 훈련: 고른 종류의 잘못된 설정을 배포합니다"><button id="s3inject" onclick="if(confirm('proxy-config 에 잘못된 설정을 커밋·push 하고 wjy-proxy01 에 배포합니다. 실제로 접속이 막힙니다. 계속할까요?'))runJob('scenario3-fault',{choice:document.getElementById('s3fault').value})" title="고른 종류의 잘못된 설정을 일부러 배포만 함(점검은 Health Check 실행으로) (proxy_fault_inject.py apply)">장애 모의 훈련</button><select id="s3fault" title="일부러 넣을 장애 종류">
 <option value="whitelist-typo">허용 도메인 오타 (data → date)</option><option value="client-acl-typo">허용 클라이언트 IP 오타</option>
 <option value="bad-dns">잘못된 DNS 서버</option></select></span><button id="s3restore" onclick="restoreJob('scenario3-restore','심어진 장애가 있으면 되돌리는 커밋을 push 하고, wjy-proxy01 에 지금 main 을 다시 배포합니다.')" title="심은 장애를 되돌리고(없으면 그대로) main 을 배포·확인. 수정 PR 을 병합한 뒤에도 이 버튼으로 배포 (proxy_fault_inject.py restore)">원상 복구</button><button id="s3nsg" onclick="if(confirm('Proxy VM NSG 의 허용 IP(SSH·프록시 포트)를 .env PROXY_ALLOWED_CLIENTS 의 IP + 이 PC 의 현재 공인 IP 로 맞춥니다. 그 밖의 예전 IP 는 지웁니다. 계속할까요?'))runJob('nsg-ip')" title="회선이 바뀌어 VM 에 접속이 안 될 때(SSH Connection timed out) 누르세요. Proxy VM 방화벽(NSG) 허용 목록에 이 PC 의 지금 공인 IP 를 넣고 예전 IP 는 지웁니다 (sync_nsg_ip.py)">내 IP 허용</button><button onclick="openServer('proxy-log')" title="프록시 로그 뷰어(proxy-log.local)를 새 창으로 엽니다">프록시 로그</button><label class="logtg" title="로그를 화면 아래에 보이거나 숨깁니다"><input type="checkbox" class="logon-cb" checked onchange="logToggle(this.checked)"> 로그 보기</label></div>
 <div class="sc s3">
@@ -1074,7 +1074,7 @@ pre{margin:0;background:var(--code);color:var(--codeink);padding:12px 14px;heigh
 <div id="s3ap"></div><div id="s3health"></div>
 <div class="jobstate" id="s3fault-state"></div><div class="jobstate" id="s3pipe"></div>
 <div class="jobstate" id="s3state"></div></div></div>
-<div class="card s1empty">Azure DevOps 기반 AI 운영 자동화</div>
+<div class="card s1empty">AI 운영 자동화</div>
 <div class="splitter" id="split" title="끌어서 위아래 크기 조절 · 두 번 누르면 원래대로"><i></i></div>
 <div class="card sclog"><div class="tabs"><span class="name" id="sname">로그를 고르세요</span><span class="muted" style="margin-left:auto" id="shint"></span>
 <button onclick="clearLog(pageLog,loadSLog)" title="지금까지의 로그를 화면에서 숨긴다(파일은 그대로)">지우기</button>
@@ -1142,7 +1142,7 @@ function openTop(url,name){const w=screen.availWidth,h=Math.round(screen.availHe
   const win=window.open(url,name,`popup,width=${w},height=${h},left=${l},top=${t}`);if(win)win.opener=null;return win}
 // 시나리오 1: 오른쪽에 Wiki 검색 화면, 그 아래에 Wiki 검색 서버 로그. 이미 열려 있으면 진행 중인 화면을 그대로 둔다.
 // 왼쪽 버튼으로 시나리오를 고르면 오른쪽에 그 화면, 아래에 그 로그. '로그 보기'는 세 화면이 함께 쓰고 열 때마다 켜진 상태로 시작한다.
-const SC_LOG={1:['wiki-search','Wiki 검색 서버 로그'],2:['scenario2','프록시 현황 점검 로그'],3:['scenario3','프록시 Health Check 로그']};
+const SC_LOG={1:['wiki-search','Wiki 검색 서버 로그'],2:['scenario2','Wiki/Azure 현황 비교 로그'],3:['scenario3','Health Check 로그']};
 let curSc=0;
 function pickSc(n){curSc=n;const b=document.body;b.classList.remove('nosel','sel1','sel2','sel3');b.classList.add('sel'+n);
   [1,2,3].forEach(i=>{document.getElementById('s'+i+'view').hidden=i!==n;document.querySelector('.scgrid [data-sc="'+i+'"]').classList.toggle('on',i===n)});

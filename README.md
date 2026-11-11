@@ -248,7 +248,7 @@ flowchart TD
 
 **② 허브에서 실행** (2026-11-11 촬영, 수동 실행 화면. 배치는 추후 개발)
 
-- 허브 왼쪽의 "프록시 현황 점검"을 누른 화면입니다. 맨 위에 비교 대상 Wiki 문서와 Azure VM 목록 링크(↻로 다시 읽기)가 있습니다.
+- 허브 왼쪽의 "Wiki/Azure 현황 비교"를 누른 화면입니다. 맨 위에 비교 대상 Wiki 문서와 Azure VM 목록 링크(↻로 다시 읽기)가 있습니다.
 - "현황 점검 실행" 아래에 마지막 실행의 비교표가 나옵니다. 그림은 이미 현행화된 뒤 다시 점검한 실행이라 "Wiki와 Azure가 같음"입니다.
 - 로그 위 실행 계획 패널(빨간 테두리)에 4단계(점검 → 분석 → 승인 → 조치)가 나옵니다. 차이가 없어 점검 뒤 단계는 "건너뜀"입니다.
 - "원상 복구"는 불일치 모의 훈련 뒤에만 켜져, 이 그림에서는 회색입니다.
@@ -261,7 +261,7 @@ flowchart TD
 | `◆ Simulation` | 실행 전 점검 4항목과 예상 분기(차이 없으면 종료, No면 알림만) |
 | `◆ Step`·`◆ Tool Call` | 단계마다 무엇을 호출했고 결과가 무엇인지 |
 
-![시나리오 2 - 허브 프록시 현황 점검 화면과 실행 로그](docs/images/hub-scenarios.png)
+![시나리오 2 - 허브 Wiki/Azure 현황 비교 화면과 실행 로그](docs/images/hub-scenarios.png)
 
 **③ Teams 승인 요청**
 
@@ -319,7 +319,7 @@ Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니
 - 원인과 수정안은 로그, Wiki 사례, 설정 저장소(proxy-config) 변경 이력으로 찾습니다.
 - 원칙은 시나리오 2와 같이 **감지·검증은 규칙, 읽고 판단하는 일은 LLM**입니다.
 - 설정 반영(PR 병합·배포)은 사람이 PR을 검토한 뒤에 합니다.
-- 실행: `python proxy_tools\incident_response.py` (허브 "프록시 Health Check" 화면의 "Health Check 실행". 변경 없이 분석만 하려면 `--dry-run`, 점검만 하려면 `python proxy_tools\proxy_health.py`)
+- 실행: `python proxy_tools\incident_response.py` (허브 "Health Check" 화면의 "Health Check 실행". 변경 없이 분석만 하려면 `--dry-run`, 점검만 하려면 `python proxy_tools\proxy_health.py`)
 
 ![시나리오 3 한눈에 보기](docs/images/slide-scenario3.png)
 
@@ -375,7 +375,7 @@ NGINX VM을 고르면 리버스 프록시 로그를 봅니다.
 
 **② 허브에서 실행** (2026-11-11 촬영, 수동 실행 화면. 배치는 추후 개발)
 
-- 허브 왼쪽의 "프록시 Health Check"를 누른 화면입니다. 머리에 시험 도구(주황 장애 모의 훈련 묶음, 원상 복구, 내 IP 허용, 프록시 로그)가 있습니다.
+- 허브 왼쪽의 "Health Check"를 누른 화면입니다. 머리에 시험 도구(주황 장애 모의 훈련 묶음, 원상 복구, 내 IP 허용, 프록시 로그)가 있습니다.
 - 점검표(빨간 테두리)는 마지막 Health Check 결과입니다. 원상 복구 뒤 수동으로 점검해 모두 정상입니다.
 - wjy-proxy03(nginx)은 정해 둔 이름만 전달하는 리버스 프록시라 차단 목적지 점검은 해당 없음(–)입니다.
 - 로그 위 실행 계획은 이 점검 실행입니다. 점검에서 이상이 없어 분석·승인·조치는 "건너뜀"입니다.
@@ -881,8 +881,8 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 
 - 새 창은 화면 가로 전체 × 위쪽 40%로 엽니다. 주소가 Azure DevOps(`dev.azure.com`)인 창만 44%입니다.
 - 버튼을 누르면 같은 카드의 실행 버튼이 바로 꺼져, 두 번 실행되지 않습니다. 버튼 설명은 툴팁에 있습니다.
-- 위쪽 머리글 줄은 없습니다. 왼쪽 맨 위에 제목(Azure DevOps 기반 AI 운영)이 있고, 오른쪽 본문은 화면 맨 위부터 아래까지 꽉 채웁니다.
-- 왼쪽에 시나리오 버튼 3개(**Wiki 기반 가이드 생성**, **프록시 현황 점검**, **프록시 Health Check**)가 위아래로 놓입니다.
+- 위쪽 머리글 줄은 없습니다. 왼쪽 맨 위에 제목(AI 운영 자동화)이 있고, 오른쪽 본문은 화면 맨 위부터 아래까지 꽉 채웁니다.
+- 왼쪽에 시나리오 버튼 3개(**Wiki 기반 가이드 생성**, **Wiki/Azure 현황 비교**, **Health Check**)가 위아래로 놓입니다.
 - 버튼을 누르면 오른쪽 위에 그 시나리오 화면, 아래에 그 로그가 나옵니다. 고른 버튼은 파랗게 표시됩니다.
 - 창 폭이 1000px보다 좁으면 오른쪽이 버튼 아래로 내려갑니다.
 - 오른쪽 화면 머리의 **로그 보기**를 끄면 아래 로그를 숨깁니다. 세 화면이 함께 쓰고, 허브를 열 때마다 켜진 상태로 시작합니다.
@@ -911,7 +911,7 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 
 시나리오 2
 
-- **프록시 현황 점검**을 누르면 오른쪽에 아래 버튼과 상태, 그 아래에 `scenario2.log`가 나옵니다.
+- **Wiki/Azure 현황 비교**를 누르면 오른쪽에 아래 버튼과 상태, 그 아래에 `scenario2.log`가 나옵니다.
 - "서버 환경 점검", "불일치 모의 훈련", "원상 복구"는 화면 머리(로그 보기 왼쪽)에, "현황 점검 실행"은 설명 아래에 있습니다.
 - 시험 흐름: "서버 환경 점검" → "불일치 모의 훈련" → "현황 점검 실행".
   - **서버 환경 점검**(`setup_env.py --servers`): 꺼진 Proxy VM을 켜고 az 로그인·VM 3대 이상·Azure DevOps PAT·승인 화면을 점검합니다. 문서는 바꾸지 않습니다.
@@ -931,12 +931,12 @@ Teams 승인 카드의 Yes·No·자세히 보기 버튼은 허브(`/approval/dec
 
 시나리오 3
 
-- **프록시 Health Check**를 누르면 오른쪽에 아래 버튼과 상태, 그 아래에 `scenario3.log`가 나옵니다.
+- **Health Check**를 누르면 오른쪽에 아래 버튼과 상태, 그 아래에 `scenario3.log`가 나옵니다.
 - 시험 도구는 화면 머리에 있습니다. 주황색 묶음 하나가 **장애 모의 훈련** 버튼과 장애 종류 선택이고, 그 옆에 "원상 복구", "내 IP 허용", "프록시 로그"가 있습니다.
 - 본문의 **Health Check 실행**은 Health Check → 최근 60분 로그 탐지 → 이상이면 원인 분석·Teams 승인 → Task·수정 PR·이력 Wiki 순서로 진행합니다.
 - 그 아래 점검표에 VM × 항목(VM 상태, 서비스, 허용 목적지 접속, 차단 목적지 접속)의 마지막 결과가 나옵니다. 칸에 마우스를 올리면 자세한 결과가 보이고, 이상 항목은 표 아래에 줄로 나옵니다.
 - 시험 흐름: 장애 모의 훈련 → Health Check 실행 → 원상 복구.
-- 프록시 Health Check의 "원상 복구"는 언제나 누를 수 있습니다. 심은 장애가 없으면 지금 main을 wjy-proxy01에 다시 배포해 맞춥니다.
+- Health Check의 "원상 복구"는 언제나 누를 수 있습니다. 심은 장애가 없으면 지금 main을 wjy-proxy01에 다시 배포해 맞춥니다.
 - 점검 결과가 원상 복구·VM 배포보다 오래됐으면 점검표 위에 "다시 점검 필요"가 나옵니다. **Health Check 실행**으로 다시 확인합니다.
 - "원상 복구"는 Health Check 등 다른 작업이 실행 중이어도 누를 수 있습니다. "멈추고 원상 복구할까요?"를 한 번 묻고, 허브가 실행 중인 작업을 멈춘 뒤(로그에 `===== 중지` 줄) 복구합니다. 시나리오 2의 원상 복구도 같습니다.
 - "내 IP 허용"(`sync_nsg_ip.py`)는 NSG 허용 IP를 이 PC의 현재 IP에 맞추고, "프록시 로그"는 `proxy-log.local`을 새 창으로 엽니다.
@@ -1411,12 +1411,12 @@ python proxy_tools\proxy_status_sync.py --dry-run    # 읽기·비교·요약까
   - 끝나면 "Wiki 문서가 수정되었습니다. 열어 둔 문서 창은 새로고침(F5) 하세요"와 **수정된 Wiki 문서 열기**·**Task 열기** 버튼을 보여 줍니다.
   - 승인 화면·Teams 카드·Task에는 로컬 Wiki 뷰어 링크가 있습니다. 문서가 Azure DevOps Wiki에 push되어 있을 때만 그 링크도 붙습니다.
 - Teams 카드의 버튼은 `http://127.0.0.1:8771/decide?...&token=…`을 엽니다. **알림을 보낸 PC에서** 눌러야 하고, token은 요청마다 새로 만들어 다른 요청의 버튼으로는 결정되지 않습니다. Teams 안에서 응답을 받아 이 PC로 돌려주려면 Power Automate 프리미엄(HTTP 액션)이 필요해서 이 방식을 씁니다.
-- 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브 "프록시 현황 점검" 화면 아래 로그로 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
+- 실행 출력은 콘솔과 `data/logs/scenario2.log`(허브 "Wiki/Azure 현황 비교" 화면 아래 로그로 봄)에, 노드별 상세 기록은 `data/traces/scenario2-YYYYMMDD.jsonl`에 남습니다(승인 결과 `decision=yes|no|timeout` 포함).
 - 테스트를 다시 하려면 `python test\scenario2\setup_env.py`로 Wiki 문서를 '현행화 전'으로 되돌립니다.
 
 ### 8.4 시나리오 3 · 시험
 
-허브 "프록시 Health Check" 화면에서 장애 모의 훈련 → Health Check 실행 → 원상 복구 순서로 합니다. 세 버튼 모두 실제 저장소·VM·Azure DevOps를 바꿉니다. 아무것도 바꾸지 않고 원인·수정안만 보려면 `python proxy_tools\incident_response.py --dry-run`을 씁니다.
+허브 "Health Check" 화면에서 장애 모의 훈련 → Health Check 실행 → 원상 복구 순서로 합니다. 세 버튼 모두 실제 저장소·VM·Azure DevOps를 바꿉니다. 아무것도 바꾸지 않고 원인·수정안만 보려면 `python proxy_tools\incident_response.py --dry-run`을 씁니다.
 
 **전 과정 시험 절차**:
   1. 화면 머리에서 장애 종류를 고르고 **장애 모의 훈련**: proxy-config에 잘못된 설정을 커밋·push하고 wjy-proxy01에 배포만 함(시험 접속은 Health Check가 함, `proxy_fault_inject.py apply <종류> --push --deploy wjy-proxy01`). 종류는 허용 도메인 오타(`whitelist-typo`), 허용 클라이언트 IP 오타(`client-acl-typo`), 잘못된 DNS 서버(`bad-dns`).
