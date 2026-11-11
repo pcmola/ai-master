@@ -59,20 +59,18 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 
 **전체 아키텍처**
 
-- 로컬 PC의 허브(hub.py)에서 세 시나리오를 실행하고, LLM·Azure DevOps·Teams·Azure 구독과 주고받는 흐름을 한 장에 담았습니다.
-- 점선은 조건부로 쓰거나 사람이 수행하는 연결입니다. Wiki·Task·PR·VM 태그 같은 외부 변경은 모두 사람 승인 뒤에 반영합니다.
+- 사용자(수동)와 배치(향후 확장)가 세 기능을 시작하고, 기능마다 위에서 아래로 단계가 진행됩니다.
+- 상자 색은 단계가 쓰는 시스템입니다. 회색은 Agent, 보라는 Teams, 남색은 Boards, 청록은 Wiki·Repos, 주황은 Pipelines입니다.
+- 점선 상자는 사람이 하는 단계(미리보기 확인, PR 검토·병합)이고, 청록 점선 화살표는 배치 실행입니다.
+- 맨 아래 상자 4개는 공통 구성 요소이고, 아래 표시(가이드·현황·Health)는 그 요소를 쓰는 기능입니다.
 
-[![전체 아키텍처](docs/images/architecture.svg)](docs/images/architecture.png)
+[![전체 아키텍처](docs/images/architecture-overview.png)](docs/images/architecture-overview.png)
 
-그림을 누르면 큰 그림(PNG)이 열립니다.
-
-다이어그램 색: 초록 = 구현 · 주황 = 사용자 판단 · 연보라 = 시작·결과 · 하늘색 = 외부 시스템(Wiki·웹 검색)
+구성 요소 사이의 연결(허브, 로컬 승인 서버, 웹 검색 포함)은 [2. 구성](#2-구성)의 구성 요소 연결도에 있습니다.
 
 ### 1.1 시나리오 1 · 프록시 설정 가이드 자동 생성
 
 명령어 한 줄로 기존 Azure DevOps Wiki를 검색하고, RAG(검색한 Wiki 문서를 근거로 LLM이 작성)로 통합 가이드 문서를 만듭니다. 사용자가 미리보기로 확인한 뒤 Wiki에 등록합니다. 승인 없이 자동 등록하면 LLM이 잘못 쓴 문서가 팀 Wiki에 쌓이므로, 화면의 버튼을 가벼운 승인으로 씁니다. 화면: <http://wiki-search.local>
-
-![시나리오 1 한눈에 보기](docs/images/slide-scenario1.png)
 
 ```mermaid
 flowchart TD
@@ -190,8 +188,6 @@ Wiki의 프록시 현황을 Azure의 실제 VM과 비교하고, 차이가 있으
 - 수동은 허브 **현황 점검 실행**으로 같은 흐름을 돌립니다(`--trigger manual`). 차이가 있으면 화면의 비교표 위에서도 바로 승인할 수 있습니다(Teams에도 보냄).
 - Teams 승인 카드에 "점검 방식: 자동 점검(점검 배치)" 또는 "수동 점검(허브)"이 한 줄 남습니다.
 - 실행: `python proxy_tools\proxy_status_sync.py` (자세한 내용은 [시나리오 2 실행](#83-시나리오-2--실행-proxy_status_syncpy))
-
-![시나리오 2 한눈에 보기](docs/images/slide-scenario2.png)
 
 ```mermaid
 flowchart TD
@@ -321,8 +317,6 @@ Task 생성 → Wiki 갱신 → Task 완료를 마치고 결과 카드가 옵니
 - 설정 반영(PR 병합·배포)은 사람이 PR을 검토한 뒤에 합니다.
 - 실행: `python proxy_tools\incident_response.py` (허브 "Health Check" 화면의 "Health Check 실행". 변경 없이 분석만 하려면 `--dry-run`, 점검만 하려면 `python proxy_tools\proxy_health.py`)
 
-![시나리오 3 한눈에 보기](docs/images/slide-scenario3.png)
-
 ```mermaid
 flowchart TD
     t(["1. 트리거<br/>배치·수동 실행 가능<br/>배치는 추후 개발"]) --> hc["Health Check<br/>Wiki 기준 목적지로 실제 접속<br/>VM·서비스·허용/차단"]
@@ -448,6 +442,15 @@ PR 설명에 원인이 된 설정 변경, 수정 내용, 확인 방법이 들어
 <sub>[↑ 목차로](#목차)</sub>
 
 ## 2. 구성
+
+**구성 요소 연결도**
+
+- 로컬 PC의 허브(hub.py)에서 세 시나리오를 실행하고, LLM·Azure DevOps·Teams·Azure 구독과 주고받는 흐름을 한 장에 담았습니다.
+- 점선은 조건부로 쓰거나 사람이 수행하는 연결입니다. Wiki·Task·PR·VM 태그 같은 외부 변경은 모두 사람 승인 뒤에 반영합니다.
+
+[![구성 요소 연결도](docs/images/architecture.svg)](docs/images/architecture.png)
+
+그림을 누르면 큰 그림(PNG)이 열립니다.
 
 ```
 ai-master/
@@ -1487,19 +1490,6 @@ Google Chrome이 설치되어 있어야 합니다. `--only wiki|viewer|hub|proxy
 - 스크립트는 화면에 보이는 IP·이메일·ID를 가리고 촬영합니다.
 - 확인용 화면 텍스트는 Git에서 제외한 `data/readme-capture/`에 남깁니다.
 - 공유하기 전에는 이미지도 직접 확인합니다.
-
-**시나리오 슬라이드 다시 내보내기**
-
-- 1.1부터 1.3까지의 "한눈에 보기" 그림은 [`docs/slides/`](docs/slides/)의 PPT 원본에서 내보낸 것입니다.
-- 흐름이 바뀌면 PPT와 각 절의 텍스트 흐름도(mermaid)를 함께 고칩니다.
-- 3·4·5번 슬라이드를 2560×1440 PNG로 내보내 `docs/images/slide-scenario1.png`부터 `slide-scenario3.png`까지 덮어씁니다. PowerPoint가 설치된 PC에서는 아래처럼 내보낼 수 있습니다.
-
-```powershell
-$pp = New-Object -ComObject PowerPoint.Application
-$pres = $pp.Presentations.Open((Resolve-Path "docs\slides\AI_운영자동화_시나리오_20261109.pptx").Path, $true, $false, $false)
-3..5 | ForEach-Object { $pres.Slides.Item($_).Export("$PWD\docs\images\slide-scenario$($_ - 2).png", "PNG", 2560, 1440) }
-$pres.Close(); $pp.Quit()
-```
 
 <sub>[↑ 목차로](#목차)</sub>
 
