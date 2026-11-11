@@ -59,9 +59,10 @@ Azure DevOps Wiki에 쌓인 운영 지식과 Azure의 실제 인프라를 LLM으
 
 **전체 아키텍처**
 
-- 사용자(수동)와 배치(향후 확장)가 세 기능을 시작하고, 기능마다 위에서 아래로 단계가 진행됩니다.
-- 상자 색은 단계가 쓰는 시스템입니다. 회색은 Agent, 보라는 Teams, 남색은 Boards, 청록은 Wiki·Repos, 주황은 Pipelines입니다.
-- 점선 상자는 사람이 하는 단계(미리보기 확인, PR 검토·병합)이고, 청록 점선 화살표는 배치 실행입니다.
+- 사용자(수동)와 배치(정기 실행, 향후 확장)가 세 기능을 시작하고, 기능마다 위에서 아래로 단계가 진행됩니다.
+- 상자 색은 단계를 맡는 쪽입니다. 회색은 규칙(코드), 노랑은 LLM, 보라는 Teams, 남색은 Task, 청록은 Wiki·Repos, 주황은 Pipelines입니다.
+- 점선 상자는 사람이 관여하는 단계(미리보기 확인 후 등록, 병합 후 배포)이고, 청록 점선 화살표는 배치 실행입니다.
+- 공통 추론 루프(Plan, Pre-check, Replan, Self-Correction)는 세 기능에 모두 적용하고 실행 기록을 남깁니다.
 - 맨 아래 상자 4개는 공통 구성 요소이고, 아래 표시(가이드·현황·Health)는 그 요소를 쓰는 기능입니다.
 
 [![전체 아키텍처](docs/images/architecture-overview.png)](docs/images/architecture-overview.png)
