@@ -227,13 +227,13 @@ def hub(page):
     page.evaluate("""async () => { const d = await (await fetch('/api/status')).json();
       localStorage.setItem('hub.logStartAt', (d.log_start || {}).at || ''); localStorage.setItem('hub.logCleared', '{}'); }""")
     ready(page, SITES["hub"])
-    # 프록시 Health Check: 점검표 + 실행 계획 + 로그(전체 배치를 보이는 첫 장)
+    # Health Check: 점검표 + 실행 계획 + 로그(전체 배치를 보이는 첫 장)
     pick(page, "#s3open", "#s3health table")
     plan_panel(page, mark_it=False)
     shot(page, "hub-main.png")
     mark(page, "document.getElementById('s3health')")
     shot(page, "scenario3-run.png")
-    # 프록시 현황 점검: Wiki·Azure 링크(az·DevOps 조회라 처음엔 수 초) + 비교표 + 실행 계획
+    # Wiki/Azure 현황 비교: Wiki·Azure 링크(az·DevOps 조회라 처음엔 수 초) + 비교표 + 실행 계획
     pick(page, "#s2open", "#s2result table")
     try:
         page.wait_for_function("!document.getElementById('s2links').textContent.includes('불러오는 중')", timeout=60000)

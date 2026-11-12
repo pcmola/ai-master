@@ -74,7 +74,7 @@ COMPARE = {"public_ip": "공인 IP", "state": "상태", "size": "SIZE",
 LOCATIONS = {"koreacentral": "Korea Central", "eastus": "East US"}
 EXPECTED = DATA_DIR / "scenario2" / "expected_diff.json"
 TRIGGER = "manual"  # --trigger: manual(허브·명령줄) | auto(점검 배치 가정). Teams 카드에 '점검 방식'으로 남긴다
-STATUS_FILE = DATA_DIR / "scenario2" / "latest.json"  # 허브 '프록시 현황 점검' 화면의 비교표가 읽는다
+STATUS_FILE = DATA_DIR / "scenario2" / "latest.json"  # 허브 'Wiki/Azure 현황 비교' 화면의 비교표가 읽는다
 _status: dict = {}
 
 

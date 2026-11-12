@@ -137,7 +137,7 @@ def deploy_and_check(target: str, expect_fail: bool):
     bash("scripts/deploy.sh", ip, "--restart")
     if expect_fail:
         # 시험 접속은 Health Check 가 Wiki 기준 목적지로 직접 한다(2026-11-10). 여기서는 잘못된 설정을 배포만 한다.
-        print("배포 완료. 이제 허브 '프록시 Health Check' 화면의 'Health Check 실행'으로 점검하세요.")
+        print("배포 완료. 이제 허브 'Health Check' 화면의 'Health Check 실행'으로 점검하세요.")
         return
     print(f"시험 접속 보내는 중 (도메인 4개 × {TRAFFIC_ROUNDS}회)…")
     try:

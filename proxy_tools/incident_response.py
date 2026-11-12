@@ -2,7 +2,7 @@
 변경 이력으로 원인을 찾고, 수정안을 Teams 로 승인받아 Task·PR·장애 대응 이력 Wiki 까지 만든다.
 
 단계(노드별 트레이스는 data/traces/scenario3-YYYYMMDD.jsonl 과 콘솔·data/logs/scenario3.log 에 남는다)
-1. trigger        직접 실행(허브 '프록시 Health Check' 화면 또는 명령줄). --trigger manual|auto 로 실행 방식을 남긴다
+1. trigger        직접 실행(허브 'Health Check' 화면 또는 명령줄). --trigger manual|auto 로 실행 방식을 남긴다
                   (auto 는 주기 실행을 가정한 자리만 있고 구성하지 않았다)
    health         Health Check(proxy_health): Wiki 기준 문서의 허용·차단 목적지로 실제 접속해 VM·서비스·접속 결과를 본다.
                   점검 접속이 VM 로그에도 남으므로 이어지는 collect 가 같은 증상을 근거로 삼는다
