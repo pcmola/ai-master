@@ -1208,12 +1208,14 @@ async function loadHealth(){let h;try{h=await (await fetch('/api/health')).json(
   const n=h.failed.length,t=(h.at||'').replace('T',' ').slice(0,16);
   // 점검 뒤에 장애 모의 훈련·원상 복구·VM 배포가 끝났으면 이 결과는 옛 상태다 → 흐리게 하고 다시 점검하라고 알린다
   const rs3=(jobs._restore||{}).scenario3||{},after=rs3.at&&new Date(rs3.at)>new Date(h.finished||h.at)?new Date(rs3.at):null,stale=after&&!run;
-  healthOk=!h.failed.length&&!stale&&!run;
-  box.classList.toggle('hstale',!!(stale||run));  // 점검 중이거나 다시 점검이 필요하면 지난 결과는 회색
+  // 실행 중이라도 이번 실행이 이미 점검을 마쳤으면(점검 시각 ≥ 실행 시작) 표는 이번 결과다 → 회색으로 두지 않는다
+  const rj=['scenario3','scenario3-verify'].map(k=>jobs[k]).find(j=>j&&j.state==='running'),cur=!!(rj&&(h.at||'')>=rj.started),old=run&&!cur;
+  healthOk=!h.failed.length&&!stale&&!old;
+  box.classList.toggle('hstale',!!(stale||old));  // 점검 중(아직 이번 결과 없음)이거나 다시 점검이 필요하면 지난 결과는 회색
   // 점검 뒤에 장애 모의 훈련이 실패했으면(VM 꺼짐 등) 장애가 들어가지 않았다고 알린다 → 표는 그대로 유효
   const fj=jobs['scenario3-fault']||{},ffail=!run&&fj.state==='finished'&&fj.code&&fj.args&&fj.args[0]==='apply'&&new Date(fj.finished)>new Date(h.finished||h.at);
   box.innerHTML=(ffail?`<div class="hsum hnote"><b class="hfail">장애 모의 훈련 실패</b> ${esc((fj.finished||'').slice(11,16))} 장애가 VM에 들어가지 않았습니다(VM 꺼짐 등). 아래 로그를 확인하세요.</div>`:'')+(stale?`<div class="hsum hnote"><span class="drilltag">다시 점검 필요</span> ${after.toTimeString().slice(0,5)} ${/중단/.test(rs3.why||'')?'중단된 장애 모의 훈련(VM 상태 모름)':rs3.need?'장애 모의 훈련':'원상 복구·배포'} 전 점검 결과입니다 → <b>Health Check 실행</b>으로 다시 점검하세요.</div>`:'')
-    +(run?'<div class="hsum hnote"><span class="jobstate running">● 점검 중 (아래는 지난 결과)</span></div>':'')+`<div class="hsum"><b class="${n?'hfail':'hok'}">${n?'이상 '+n+'건':'모두 정상'}</b> <span class="muted">· ${esc(t)} ${{auto:'자동 점검',deploy:'VM 배포 뒤 확인 점검',manual:'수동 점검'}[h.trigger]||'점검'} · 기준: Wiki Proxy Health Check 기준</span></div>`
+    +(run?`<div class="hsum hnote"><span class="jobstate running">${cur?'● 실행 중 (아래는 이번 점검 결과)':'● 점검 중 (아래는 지난 결과)'}</span></div>`:'')+`<div class="hsum"><b class="${n?'hfail':'hok'}">${n?'이상 '+n+'건':'모두 정상'}</b> <span class="muted">· ${esc(t)} ${{auto:'자동 점검',deploy:'VM 배포 뒤 확인 점검',manual:'수동 점검'}[h.trigger]||'점검'} · 기준: Wiki Proxy Health Check 기준</span></div>`
     +'<table><tr><th>VM</th>'+IT.map(([,x])=>`<th>${x}</th>`).join('')+'</tr>'
     +h.vms.map(v=>{const c=Object.fromEntries(v.checks.map(x=>[x.item,x]));return`<tr><td>${esc(v.name)} <span class="muted">${esc(v.kind)}</span></td>`
       +IT.map(([k])=>{const x=c[k]||{status:'skip',detail:''},m=M[x.status]||M.skip;return`<td class="${m[1]}" title="${esc(x.detail)}">${m[0]}</td>`}).join('')+'</tr>'}).join('')+'</table>'
@@ -1239,9 +1241,10 @@ async function loadS2Result(){let r;try{r=await (await fetch('/api/s2result')).j
   const RS={applied:'<b class="hok">Wiki 반영 완료</b>',declined:'반영 안 함',manual:'문서 수동 반영 요청',error:'<b class="hfail">처리 실패</b>','dry-run':'분석만(dry-run)'};
   // 현행화까지 끝난 결과는 '지금 오류'가 아니라 '찾아서 고친 기록'으로 보인다. 점검 뒤 모의 훈련·원상 복구가 있었으면 다시 점검하라고 알린다
   const done=r.result==='applied',stale=rs2.at&&new Date(rs2.at)>new Date(r.at);
-  box.classList.toggle('hstale',!!(stale||run));  // 시나리오 3 과 같이 지난 결과는 흐리게
+  const rj=['scenario2','scenario2-setup'].map(k=>jobs[k]).find(j=>j&&j.state==='running'),cur=!!(rj&&(r.at||'')>=rj.started),old=run&&!cur;
+  box.classList.toggle('hstale',!!(stale||old));  // 시나리오 3 과 같이 지난 결과는 흐리게(이번 실행이 이미 비교를 마쳤으면 그대로)
   let h=(stale&&!run?`<div class="hsum hnote"><span class="drilltag">다시 점검 필요</span> ${new Date(rs2.at).toTimeString().slice(0,5)} ${rs2.need?'불일치 모의 훈련':'원상 복구'} 뒤 아직 점검하지 않았습니다. 아래는 그 전 결과입니다 → <b>현황 점검 실행</b>으로 확인하세요.</div>`:'')
-    +(run?'<div class="hsum hnote"><span class="jobstate running">● 점검 중 (아래는 지난 결과)</span></div>':'')+`<div class="hsum">`
+    +(run?`<div class="hsum hnote"><span class="jobstate running">${cur?'● 실행 중 (아래는 이번 점검 결과)':'● 점검 중 (아래는 지난 결과)'}</span></div>`:'')+`<div class="hsum">`
     +(done?`<b class="hok">차이 ${n}건 → Wiki 현행화 완료</b>${stale?'':' <span class="muted">· 지금은 Wiki와 Azure가 같습니다</span>'}`:`<b class="${n?'hfail':'hok'}">${n?'차이 '+n+'건':'Wiki와 Azure가 같음'}</b>`)
     +` <span class="muted">· ${esc(t)} 점검</span>`+(RS[r.result]&&r.result!=='applied'?' · '+RS[r.result]:'')+'</div>'
     +outcomeRow(r.approval?{approval:r.approval,task:r.task,task_url:r.task_url,wiki_url:r.wiki_url,error:r.error}:null,run,[['수정된 Wiki 문서 열기','wiki_url'],['Task 열기','task_url']],{yes:r.result==='applied'?'Wiki 반영 완료':'현행화',no:'기록만'});
