@@ -209,22 +209,30 @@ def run_action(key: str, action: str):
     s = BY_KEY[key]
     _busy[key] = {"start": "시작 중", "stop": "중지 중", "restart": "재시작 중"}[action]
     began = time.monotonic()
+    outcome = "실패"  # 끝 줄에 성공·실패를 함께 찍어 로그만 보고도 결과를 알 수 있게 한다
     log(f"[{key}] {action} 요청 처리 시작")
     try:
         if action in ("stop", "restart"):
             stop(key)
         if action == "start" and next(x for x in server_status(force=True) if x["key"] == key)["instances"]:
             log(f"[{key}] 이미 실행 중이라 새로 띄우지 않습니다")  # 하나 더 띄우면 중복 실행이 된다
+            outcome = "성공(이미 실행 중)"
             return
         if action in ("start", "restart"):
             start(s)
-            log(f"[{key}] 결과: {describe(wait_running(key))}")
+            now = wait_running(key)
+            log(f"[{key}] 결과: {describe(now)}")
+            outcome = "성공" if now["state"] == "running" else f"실패(상태: {now['state']})"
+        else:
+            left = next(x for x in server_status(force=True) if x["key"] == key)["instances"]
+            outcome = "실패(프로세스가 남아 있음)" if left else "성공"
     except Exception as exc:  # 스레드 안의 오류가 콘솔에 남지 않고 사라지지 않도록
         log(f"[{key}] {action} 실패: {type(exc).__name__}: {exc}")
+        outcome = f"실패({type(exc).__name__})"
     finally:
         _busy.pop(key, None)
         _cache["at"] = 0.0
-        log(f"[{key}] {action} 끝 ({time.monotonic() - began:.1f}초)")
+        log(f"[{key}] {action} 끝: {outcome} ({time.monotonic() - began:.1f}초)")
 
 
 def dispatch(key: str, action: str) -> list[str]:
@@ -981,7 +989,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/guide-cache/clear":
             result = clear_guide_cache()
-            log(f"요청 {client}: 가이드 캐시 초기화 → {result}")
+            if "error" in result:
+                log(f"요청 {client}: 가이드 캐시 초기화 실패: {result['error']}")
+            elif result["removed"]:
+                log(f"요청 {client}: 가이드 캐시 초기화 성공: {result['removed']}건 지움 (직전 내용은 {GUIDE_CACHE.name}.bak)")
+            else:
+                log(f"요청 {client}: 가이드 캐시 초기화 성공: 지울 캐시가 없었음")
             self.send_json(result, 500 if "error" in result else 200)
             return
         key, action = body.get("key"), body.get("action")
