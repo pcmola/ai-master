@@ -41,6 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # 프로젝트 루트(common 패키지)
 from common.paths import DATA_DIR, ENV_FILE, PROJECT_ROOT, WIKI_REPO  # noqa: E402
+from common.wikigit import heal  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -144,6 +145,7 @@ def check_approval() -> bool:
 
 
 def reset_wiki(seed: list[dict], label: str = "현행화 전") -> bool:
+    heal(WIKI_REPO)  # 끊긴 rebase(브랜치 없음)가 남아 있으면 정리하고 쓴다
     text = render_page(seed)
     if WIKI_PAGE.is_file() and WIKI_PAGE.read_text(encoding="utf-8-sig") == text:
         print(f"  [유지] Wiki 테스트 문서가 이미 '{label}' 상태입니다.")

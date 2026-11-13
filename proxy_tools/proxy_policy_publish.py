@@ -34,6 +34,7 @@ from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 sys.path.insert(0, str(Path(__file__).resolve().parent))      # proxy_tools
 from common.paths import ENV_FILE, WIKI_REPO  # noqa: E402
+from common.wikigit import heal  # noqa: E402
 from common.trace import span, trace  # noqa: E402
 from proxy_policy_monitor import STATE_DIR, check_all, describe, print_result, snapshot_path  # noqa: E402
 
@@ -266,6 +267,7 @@ def publish_files(files: dict[Path, str], message: str) -> str | None:
     for text in files.values():  # WIKI_DOCUMENT_RULES: UTF-8, 깨짐 문자열·대체문자 검사
         if "�" in text or "???" in text:
             raise RuntimeError("Wiki 문서 인코딩 검사 실패(대체문자 또는 ??? 포함)")
+    heal(WIKI_REPO)  # 끊긴 rebase(브랜치 없음)가 남아 있으면 정리하고 시작
     branch = git("rev-parse", "--abbrev-ref", "HEAD")
     git("fetch", "-q", "origin", branch)
     base = git("rev-parse", f"origin/{branch}")

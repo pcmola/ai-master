@@ -49,6 +49,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트
 sys.path.insert(0, str(Path(__file__).resolve().parent))      # proxy_tools
 from common.paths import DATA_DIR, ENV_FILE, WIKI_REPO  # noqa: E402
+from common.wikigit import heal  # noqa: E402
 from common.trace import plan, replan, simulate, span, think, trace  # noqa: E402
 from common.trace import step as plan_step  # noqa: E402  (apply() 의 step 은 승인 화면 진행 표시)
 
@@ -579,6 +580,7 @@ def updated_page(text: str, wiki: list[dict], azure: list[dict], diffs: list[dic
 
 
 def write_wiki(text: str, message: str, push: bool) -> str:
+    heal(WIKI_REPO)  # 끊긴 rebase(브랜치 없음)가 남아 있으면 정리하고 쓴다(정리하면 작업 트리가 되돌려지므로 쓰기 전에)
     WIKI_PAGE.write_text(text, encoding="utf-8", newline="\n")
     back = WIKI_PAGE.read_text(encoding="utf-8")  # WIKI_DOCUMENT_RULES: 다시 읽어 깨짐 검사
     if back != text or "�" in back or "???" in back:

@@ -28,6 +28,7 @@ from urllib.parse import quote, unquote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트(common 패키지)
 from common.paths import ENV_FILE, WIKI_REPO  # noqa: E402
+from common.wikigit import heal  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -145,6 +146,7 @@ def register(title: str, markdown: str, query: str = "", model: str | None = Non
     갈라져서 실패하거나(--ff-only) 그 커밋까지 함께 올라간다. 올린 뒤 로컬은 원격 위로 다시 얹는다(rebase)."""
     if not (WIKI_REPO / ".git").exists():
         raise RuntimeError(f"wiki-repo 가 git 저장소가 아닙니다: {WIKI_REPO}")
+    healed = heal(WIKI_REPO, log=stage)  # 끊긴 rebase(브랜치 없음)가 남아 있으면 정리하고 시작
     if not push:
         stage("로컬 커밋")
         r = write_commit(WIKI_REPO, title, markdown, query, model, sources, web)
@@ -178,6 +180,8 @@ def register(title: str, markdown: str, query: str = "", model: str | None = Non
         except RuntimeError:
             pass
         r["warnings"].append(f"Wiki 에는 올렸지만 로컬 wiki-repo 반영 실패(git rebase {upstream} 필요): {str(exc)[:200]}")
+    if healed:
+        r["warnings"].append(healed)
     return {**r, "pushed": True, "url": page_url(WIKI_REPO / r["path"])}
 
 
