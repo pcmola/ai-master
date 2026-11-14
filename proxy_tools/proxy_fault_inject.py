@@ -38,7 +38,7 @@ except ImportError:
 CLIENT = os.environ.get("PROXY_ALLOWED_CLIENTS", "203.0.113.10/32").split(",")[0].strip().split("/")[0]
 
 REPO = Path(os.environ.get("PROXY_CONFIG_DIR") or PROJECT_ROOT.parent / "proxy-config")
-# 시험 접속 횟수(도메인 4개 × N회). 가상 시나리오라 3회면 충분하다: 허용 도메인 차단은 1건부터,
+# 시험 접속 횟수(도메인 4개 × N회). traffic.sh 를 직접 돌릴 때와 같은 20건으로 맞춘다. 허용 도메인 차단은 1건부터,
 # DNS 장애(upstream_error)는 도메인당 3회부터 잡힌다. denied_burst(60초 10회)는 client-acl-typo(12회 차단)에서만 난다.
 TRAFFIC_ROUNDS = int(os.environ.get("FAULT_TRAFFIC_ROUNDS", "5"))  # 도메인 4개 × 5회 = 20건(traffic.sh 기본값과 같음)
 GIT_BASH = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"

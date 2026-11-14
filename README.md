@@ -24,6 +24,7 @@
 - [4. 설정](#4-설정)
   - [4.1 주요 설정 값](#41-주요-설정-값)
   - [4.2 data 폴더](#42-data-폴더)
+  - [4.3 LLM 모델 비교 (test/model_eval.py)](#43-llm-모델-비교-testmodel_evalpy)
 - [5. 로컬 웹서버](#5-로컬-웹서버)
   - [5.1 포트 없는 주소 (hosts)](#51-포트-없는-주소-hosts)
   - [5.2 허브 (hub.py)](#52-허브-hubpy)
@@ -467,7 +468,7 @@ ai-master/
 ├─ rules/          AI 작업 규칙: Wiki 문서 작성 규칙(WIKI_DOCUMENT_RULES.md), README 작성 규칙(README_STYLE_RULES.md). 에이전트가 자동으로 읽는 AGENTS.md 는 루트에 있음
 ├─ pipelines/      Azure Pipelines: Wiki 가 바뀌면 첫 페이지 최근 수정 문서 갱신(wiki-recent.yml)
 ├─ data/           실행 중 생기는 파일 (Git 제외): 검색 캐시, 트레이스, 가상 로그, 정책 스냅샷, Teams 토큰
-├─ test/           API 테스트, 검색 정확도 벤치마크(wiki_search_benchmark.py), 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py)
+├─ test/           API 테스트, 검색 정확도 벤치마크(wiki_search_benchmark.py), 시나리오 2 테스트 환경(scenario2/), README 화면 촬영(capture_readme.py), LLM 모델 비교(model_eval.py)
 └─ wiki-repo/      Azure DevOps Wiki 저장소 (별도 Git, ai-master 에서는 추적하지 않음)
 
 ../proxy-config/   형제 폴더: Squid 설정 저장소(Azure Repos, 별도 Git). 시나리오 3·장애 모의 훈련용, proxy_tools/setup_proxy_config.py 로 만들거나 받음
@@ -564,6 +565,7 @@ flowchart LR
 | | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | <http://127.0.0.1:8771> (요청 중에만) |
 | test | `teams_test.py` | Teams 연동 테스트: 웹후크·Graph 를 차례로 시험하고 실패 원인을 안내 (`.env`의 `TEAMS_*`) | - |
 | | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
+| | `model_eval.py` | LLM 모델 비교: 시나리오 1·2·3의 LLM 함수를 모델만 바꿔 같은 입력으로 돌리고 규칙으로 채점([4.3](#43-llm-모델-비교-testmodel_evalpy)) | - |
 
 **Wiki 뷰어** (wiki-repo를 Azure DevOps Wiki처럼 읽기 전용으로 보여 줌):
 
@@ -718,7 +720,7 @@ Copy-Item .env.sample .env
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `OPENAI_MODEL` | `gpt-6.1-sol` | 시나리오 1 가이드 작성, 시나리오 2 AI 요약·비표준 Wiki 파싱, 시나리오 3 장애 원인·수정안 분석에 쓰는 LLM. 사내 게이트웨이 배포 이름이며, 사용 가능한 이름은 해당 게이트웨이에서 확인 |
+| `OPENAI_MODEL` | `gpt-6.1-sol` | 시나리오 1 가이드 작성, 시나리오 2 AI 요약·비표준 Wiki 파싱, 시나리오 3 장애 원인·수정안 분석에 쓰는 LLM. 사내 게이트웨이 배포 이름이며, 사용 가능한 이름은 해당 게이트웨이에서 확인. 다른 모델과 비교한 결과는 [4.3](#43-llm-모델-비교-testmodel_evalpy) |
 | `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. `test/wiki_search_benchmark.py`로 16개 고정 질의로 정확도를 재현합니다 |
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮습니다 |
 | `WEB_SEARCH_PROVIDER` | `auto` | 웹 검색 공급자: `auto`(Tavily 키가 있으면 Tavily, 없으면 GPT), `tavily`, `gpt`, `off` |
@@ -783,6 +785,68 @@ Copy-Item .env.sample .env
 | `health/latest.json` | proxy_health.py (시나리오 3 Health Check 마지막 결과. 허브 점검표가 읽음) |
 | `logs/scenario3.log` | incident_response.py (시나리오 3 실행 출력. 허브 화면 아래 로그에서 봄) |
 | `scenario2/` | test/scenario2/setup_env.py (Azure VM 스냅샷, '현행화 전' Wiki 표, 정답 차이 목록), proxy_status_sync.py (`latest.json`: 마지막 비교 결과·승인·Task, 허브 비교표가 읽음) |
+
+### 4.3 LLM 모델 비교 (test/model_eval.py)
+
+`OPENAI_MODEL`을 gpt-6.1-sol로 둔 근거를 확인하려고, 사내 게이트웨이에서 쓸 수 있는 모델 8개를 같은 입력으로 비교했습니다(2026-11-14).
+
+- 시나리오 1·2·3이 실제로 부르는 LLM 함수를 그대로 부르고, `OPENAI_MODEL`만 바꿉니다. 프롬프트·후처리·규칙 검증은 운영 코드와 같습니다.
+- 채점은 사람이 정한 정답과 규칙으로 합니다. LLM이 다른 LLM을 채점하지 않습니다.
+- 과제마다 3번씩 돌렸습니다. 시나리오 3은 장애 3종 × 3번입니다.
+- 외부에는 아무것도 바꾸지 않습니다. Wiki·Task·PR·Teams를 건드리지 않고, 가이드 캐시도 쓰지 않습니다.
+
+| 과제 | 부르는 함수 | 입력 | 채점 |
+|---|---|---|---|
+| 시나리오 1 가이드 생성 | `wiki_search.guide_events` | `프록시 설정 가이드 알려줘` · 포워드 | 프롬프트가 요구한 구성 4절(개요·단계별 가이드·주의사항·참고 문서), 단계마다 근거 문서, wiki-repo에 없는 문서 인용 |
+| 시나리오 2 문서 파싱 | `proxy_status_sync.llm_parse` | 형식이 다른 문서 `Proxy VM 정리 ('26.09.17 기준)` 11행 | VM 11개 × LOCATION·사설 IP·상태 33칸 정답률 |
+| 시나리오 2 AI 요약 | `proxy_status_sync.ai_summary` | 2026-11-11 실제 차이 4건 | 120자·2문장 이내, 존댓말, 바뀐 VM 3대 언급, 데이터에 없는 VM 이름 |
+| 시나리오 3 원인·수정안 | `incident_response.triage`·`propose_fix` | 장애 3종을 넣은 proxy-config와 그때의 탐지 결과 | 수정안 규칙 검증 통과, 적용하면 장애가 사라지는지, 원인 커밋 적중 |
+
+시나리오 3 입력은 이렇게 만듭니다.
+- 설정: proxy-config `origin/main`에 장애 커밋 하나를 더한 모습을 메모리에서만 만듭니다. 저장소는 바꾸지 않습니다.
+- 로그: Health Check와 같은 시험 접속 로그를 탐지기(`proxy_log_detect.detect`)에 넣어 실제와 같은 탐지 결과를 만듭니다.
+
+**결과** (2026-11-14, 모델마다 3번, 시간은 LLM 응답을 기다린 평균 초)
+
+| 모델 | 시나리오 1 시간 | 시나리오 1 구성 4절 | 시나리오 1 단계 근거 | 시나리오 1 없는 문서 인용 | 시나리오 2 파싱 | 시나리오 2 요약 길이 지킴 | 시나리오 2 요약 VM 언급 | 시나리오 3 장애 해소 | 시나리오 3 시간 |
+|---|---|---|---|---|---|---|---|---|---|
+| **gpt-6.1-sol** (지금 쓰는 모델) | 45 | 4.0 | 13/13 | 0 | 100% | 3/3 | 3.0 | 9/9 | 20 |
+| gpt-6-luna | 23 | 4.0 | 12/12 | **1** | 100% | **0/3** | 3.0 | 9/9 | 14 |
+| gpt-5.6-luna | 14 | 4.0 | 22/22 | 0 | 100% | 3/3 | 2.3 | 9/9 | 9 |
+| gpt-5.4 | 72 | 4.0 | 16/16 | 0 | 100% | 2/3 | 3.0 | 9/9 | 11 |
+| gpt-5 | 59 | **2.7** | 3/3 | 0 | 100% | 3/3 | 2.3 | 9/9 | 53 |
+| gpt-5-mini | 32 | **0.0** | - | 0 | 100% | **1/3** | 2.3 | 9/9 | 27 |
+| gpt-4.1 | 13 | 4.0 | 15/15 | 0 | 100% | **1/3** | 2.3 | 9/9 | 8 |
+| gpt-4o | 7 | 4.0 | **7/10** | 0 | **93.9%** | 3/3 | 3.0 | 9/9 | 6 |
+
+굵은 글씨는 규칙을 어긴 곳입니다. 과제별 전체 표(토큰·글자 수·요약 예시 포함)는 [docs/model-eval/20261114-1322.md](docs/model-eval/20261114-1322.md)에 있습니다.
+
+- 모든 규칙을 지킨 모델은 **gpt-6.1-sol 하나**입니다. 그래서 기본값을 그대로 둡니다.
+- gpt-5.6-luna는 규칙 점수가 거의 같고 가이드 생성이 3배쯤 빠릅니다(14초, gpt-6.1-sol은 45초). 대신 요약에서 바뀐 VM 이름을 빼먹는 때가 있습니다(3대 중 평균 2.3대). 속도가 중요해지면 먼저 시험해 볼 후보입니다.
+- 실제로 틀린 예입니다.
+  - gpt-6-luna: 가이드에 wiki-repo에 없는 경로를 인용했습니다. 폴더 이름 일부가 일본어(`ネットワーク`)로 바뀌었습니다. 요약은 3번 모두 120자를 넘었습니다.
+  - gpt-5-mini: 가이드에 `##` 절이 하나도 없어 요구한 구성을 따르지 않았습니다.
+  - gpt-5: 단계별 가이드를 단계 1개로 뭉쳤습니다.
+  - gpt-4o: 문서 파싱에서 VM 2개를 빠뜨렸고, 가이드가 가장 짧습니다(평균 3,471자, gpt-6.1-sol은 8,492자).
+- 시나리오 3은 모든 모델이 9번 모두 맞혔습니다. 장애 커밋의 diff가 입력에 그대로 들어가 쉬운 과제라서, 이 과제로는 모델 차이가 드러나지 않습니다.
+
+평가의 한계입니다.
+- 규칙으로 잴 수 있는 것만 봅니다. 가이드 문장이 얼마나 읽기 좋은지, 설명이 정확한지는 채점하지 않았습니다.
+- 과제마다 3번이라 표본이 작습니다. 숫자 하나의 차이는 우연일 수 있습니다.
+- 8개 모델을 동시에 돌려서, 시간은 게이트웨이 부하에 따라 달라질 수 있습니다.
+- 비용은 사내 게이트웨이 단가를 몰라 출력 토큰 수로만 남겼습니다(전체 표).
+
+다시 돌리는 방법입니다. 8개 모델을 동시에 돌려 15분쯤 걸립니다.
+
+```powershell
+python test\model_eval.py                                        # 기본 8개 모델, 과제마다 2번
+python test\model_eval.py --repeat 3                             # 이번 결과와 같은 조건
+python test\model_eval.py --models gpt-6.1-sol gpt-5.6-luna --tasks s2_summary s3_fix
+python test\model_eval.py --summarize data\model_eval\<시각>      # 저장한 결과로 표만 다시 만들기
+```
+
+- 결과는 `data/model_eval/<시각>/`에 남습니다. 모델별 JSON, 가이드 원문, 실행 로그, `summary.md`입니다.
+- 입력에 실제 허용 클라이언트 IP가 들어가므로 결과는 `data/`(Git 제외)에만 둡니다. README에 옮긴 표에는 식별값이 없습니다.
 
 <sub>[↑ 목차로](#목차)</sub>
 
