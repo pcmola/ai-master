@@ -9,7 +9,8 @@
 과제와 채점(정답은 사람이 정한 규칙, LLM 채점자 없음):
   s1_guide    시나리오 1 가이드 생성(guide_events, '프록시 설정 가이드 알려줘' · 포워드). 캐시는 끄고 매번 새로 생성.
               완료 여부, LLM 시간, 토큰, 프롬프트가 요구한 구성(개요·단계별 가이드·주의사항·참고 문서) 4절,
-              단계마다 근거 문서를 달았는지, 코드 블록, Wiki 의 Squid 포트 3128, wiki-repo 에 없는 문서 인용(경로를 지어냄).
+              단계마다 근거 문서를 달았는지, 코드 블록, Wiki 의 Squid 포트 3128, wiki-repo 에 없는 문서 인용(경로를 지어냄),
+              사실 대조(인라인 코드·코드 줄의 명령·경로·값이 근거 문서 원문에 글자 그대로 있는지, fact_check).
   s2_parse    시나리오 2 형식이 다른 현황 문서 파싱(llm_parse, Proxy VM 정리 ('26.09.17 기준) 11행).
               VM 11개 × (LOCATION·사설 IP·상태) 33칸 정답률, 빠진 VM(이름을 못 뽑음)·없는 VM(지어낸 이름).
   s2_summary  시나리오 2 AI 요약(ai_summary, 2026-11-11 실제 차이 4건). 120자·2문장 이내, 존댓말,
@@ -112,7 +113,47 @@ def s1_guide(out_dir: Path, model: str, i: int) -> dict:
             done = ev
     md = done.get("markdown") or ""
     (out_dir / f"s1_guide_{i}.md").write_text(md, encoding="utf-8")
-    return {"mode": done.get("mode"), "sources": sorted(r["path"] for r in meta.get("results", [])), **score_guide(md)}
+    sources = sorted(r["path"] for r in meta.get("results", []))
+    return {"mode": done.get("mode"), "sources": sources, **score_guide(md), **fact_check(md, sources)}
+
+
+def guide_sources() -> list[str]:
+    """가이드 근거 문서 15개의 경로. 검색·선별은 모델과 상관없으므로 LLM 을 부르기 전(meta 이벤트)에 멈춰 얻는다."""
+    import wiki_search as ws
+    ws.guide_cache_get = lambda *a, **k: None
+    ws.refresh_index()
+    gen = ws.guide_events("프록시 설정 가이드 알려줘", "proxy", "forward", fresh=True)
+    for ev in gen:
+        if ev["type"] == "meta":
+            gen.close()
+            return sorted(r["path"] for r in ev["results"])
+    return []
+
+
+def squash(text: str) -> str:
+    return " ".join(text.split())
+
+
+def fact_check(md: str, sources: list[str]) -> dict:
+    """가이드의 구체 값(인라인 코드·코드 블록 줄: 명령·경로·IP·포트·설정값)이 근거 문서 원문에 글자 그대로 있는지 본다.
+    프롬프트가 '위키에 없는 내용은 지어내지 마라', '명령어·값은 그대로 옮겨라'라고 지시하므로, 원문에 없는 값은 모델이
+    바꾸거나 지어낸 것이다. 근거 문서 15개 전체와 대조한다(LLM 이 받은 조각보다 넓어 너그러운 기준)."""
+    body = md.split("\n## 원문 링크", 1)[0]
+    body = re.sub(r"::: mermaid.*?:::", "", body, flags=re.S)  # 다이어그램은 코드가 원문을 그대로 붙인다
+    items = []
+    for block in re.findall(r"```[^\n]*\n(.*?)```", body, re.S):
+        for ln in block.splitlines():
+            ln = re.sub(r"\s{2,}#.*$", "", ln).strip()  # 줄 끝 설명 주석은 뺀다
+            if len(ln) >= 4 and not ln.startswith("#"):
+                items.append(ln)
+    for span_ in re.findall(r"(?<!`)`([^`\n]+)`(?!`)", re.sub(r"```.*?```", "", body, flags=re.S)):
+        if len(span_.strip()) >= 4:
+            items.append(span_.strip())
+    corpus = squash("\n".join((WIKI_REPO / f"{p}.md").read_text(encoding="utf-8-sig", errors="replace")
+                              for p in sources if (WIKI_REPO / f"{p}.md").is_file()))
+    unique = list(dict.fromkeys(squash(x) for x in items))
+    absent = [x for x in unique if x not in corpus]
+    return {"facts": len(unique), "facts_absent": absent}
 
 
 REQUIRED = ("개요", "단계별 가이드", "주의사항", "참고 문서")  # llm_guide 프롬프트가 요구하는 구성
@@ -362,14 +403,22 @@ def summarize(out: Path, models: list[str]) -> str:
 
     if any("s1_guide" in r["tasks"] for r in res.values()):
         lines += ["## s1_guide 시나리오 1 가이드 생성", "",
-                  "| 모델 | 완료 | LLM 시간(초) | 출력 토큰 | 글자 | 필수 구성(4) | 단계 | 근거 단 단계 | 코드 블록 | 3128 | 인용 문서 | 없는 문서 인용 |",
-                  "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+                  "| 모델 | 완료 | LLM 시간(초) | 출력 토큰 | 글자 | 필수 구성(4) | 단계 | 근거 단 단계 | 코드 블록 | 3128 | 인용 문서 | 없는 문서 인용 | 구체 값 | 원문에 없는 값 |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        src_file = out / "s1_sources.json"  # 근거 문서 목록을 남기지 않던 때의 결과용(검색은 모델과 무관해 한 번만 구함)
         for m, r in res.items():
             runs = r["tasks"].get("s1_guide", [])
             for i, x in enumerate(runs, 1):  # 채점 기준을 고쳐도 다시 돌리지 않게 저장한 원문으로 다시 매긴다
                 f = out / m / f"s1_guide_{i}.md"
                 if not x.get("error") and f.is_file():
-                    x.update(score_guide(f.read_text(encoding="utf-8")))
+                    if not isinstance(x.get("sources"), list):
+                        if not src_file.is_file():
+                            with contextlib.redirect_stdout(open(out / "sources.log", "w", encoding="utf-8")):
+                                src_file.write_text(json.dumps(guide_sources(), ensure_ascii=False), encoding="utf-8")
+                        x["sources"] = json.loads(src_file.read_text(encoding="utf-8"))
+                    md = f.read_text(encoding="utf-8")
+                    x.update(score_guide(md))
+                    x.update(fact_check(md, x["sources"]))
             g = ok(runs)
             if not runs:
                 continue
@@ -378,7 +427,15 @@ def summarize(out: Path, models: list[str]) -> str:
                          f"| {tok(runs) or 0:,.0f} | {mean([x['chars'] for x in g]) or 0:,.0f} | {mean([x['structure'] for x in g]) or 0:.1f} "
                          f"| {mean([x['steps'] for x in g]) or 0:.1f} | {pct(sum(x['steps_cited'] for x in g), steps)} "
                          f"| {mean([x['code_blocks'] for x in g]) or 0:.1f} | {pct(sum(x['port_3128'] for x in g), len(runs))} "
-                         f"| {mean([x['cited_docs'] for x in g]) or 0:.1f} | {sum(len(x['missing_docs']) for x in g)} |")
+                         f"| {mean([x['cited_docs'] for x in g]) or 0:.1f} | {sum(len(x['missing_docs']) for x in g)} "
+                         f"| {sum(x['facts'] for x in g)} | {sum(len(x['facts_absent']) for x in g)} |")
+        lines.append("")
+        lines += ["원문에 없는 값(근거 문서 15개 원문에 글자 그대로 없는 인라인 코드·코드 줄):", ""]
+        for m, r in res.items():
+            absent = [v for x in ok(r["tasks"].get("s1_guide", [])) for v in x.get("facts_absent", [])]
+            if absent:
+                ip = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")  # summary.md 는 docs 로 옮기므로 IP 는 가린다
+                lines.append(f"- {m}: " + " · ".join(f"`{ip.sub('<IP>', v)[:70]}`" for v in dict.fromkeys(absent)))
         lines.append("")
     if any("s2_parse" in r["tasks"] for r in res.values()):
         lines += ["## s2_parse 시나리오 2 비표준 문서 파싱 (VM 11개 × 3칸)", "",
@@ -396,7 +453,7 @@ def summarize(out: Path, models: list[str]) -> str:
         lines.append("")
     if any("s2_summary" in r["tasks"] for r in res.values()):
         lines += ["## s2_summary 시나리오 2 AI 요약", "",
-                  "| 모델 | 성공 | 120자·2문장 | 존댓말 | VM 언급(3대 중) | 없는 VM 이름 | 평균 글자 | LLM 시간(초) | 예시 |",
+                  "| 모델 | 성공 | 120자·2문장 | 존댓말 | 바뀐 VM 3대를 다 적음 | 없는 VM 이름 | 평균 글자 | LLM 시간(초) | 예시 |",
                   "|---|---|---|---|---|---|---|---|---|"]
         for m, r in res.items():
             runs = r["tasks"].get("s2_summary", [])
@@ -407,7 +464,7 @@ def summarize(out: Path, models: list[str]) -> str:
             if not runs:
                 continue
             lines.append(f"| {m} | {pct(len(g), len(runs))} | {pct(sum(x['within_limit'] for x in g), len(runs))} "
-                         f"| {pct(sum(x['polite'] for x in g), len(runs))} | {mean([x['mentioned'] for x in g]) or 0:.1f} "
+                         f"| {pct(sum(x['polite'] for x in g), len(runs))} | {pct(sum(x['mentioned'] == 3 for x in g), len(runs))} "
                          f"| {sum(len(x['invented_names']) for x in g)} | {mean([x['chars'] for x in g]) or 0:.0f} "
                          f"| {mean([x['usage']['llm_s'] for x in g]) or 0:.1f} | {(g[0]['summary'] if g else '').replace('|', '/')} |")
         lines.append("")
