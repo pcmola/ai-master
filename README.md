@@ -1443,7 +1443,7 @@ flowchart LR
     sim["simulate<br/>가상 에러 로그 생성"] --> local[("data/sim_access.log")]
     sim -- "--upload IP" --> vmsim[("VM ~/sim_access.log")]
     real[("VM Squid access.log")]
-    local -- "detect (기본)" --> det["이상 탐지<br/>차단 반복·도메인 스캔<br/>업스트림 장애<br/>미허용 클라이언트<br/>응답 지연·대용량 전송 등"]
+    local -- "detect (기본)" --> det["이상 탐지 9종<br/>차단 반복·도메인 스캔<br/>업스트림 장애<br/>미허용 클라이언트<br/>응답 지연·대용량 전송 등"]
     real -- "detect --host IP (SSH)" --> det
     vmsim -- "detect --host IP --sim" --> det
     det --> report(["콘솔 보고서 / --json"])
@@ -1460,6 +1460,24 @@ flowchart LR
     class det detect
     class report,viewer done
 ```
+
+탐지 규칙은 9종입니다(`proxy_log_detect.py`의 `detect()`, 기준값은 `RULES`). 같은 로그를 넣으면 늘 같은 결과가 나옵니다.
+
+| 규칙 | 이름 | 심각도 | 기준 |
+|---|---|---|---|
+| `denied_burst` | 차단 반복 | medium | 한 클라이언트가 60초에 10회 이상 차단됨 |
+| `domain_scan` | 도메인 스캔 의심 | high | 한 클라이언트가 5분에 서로 다른 차단 도메인 8개 이상에 접근 |
+| `upstream_error` | 업스트림 장애 | high | 한 도메인에서 5분에 5xx·000 오류 3회 이상 |
+| `whitelisted_denied` | 허용 도메인이 차단됨 | medium | 허용 클라이언트가 허용 도메인에 갔는데 차단됨 |
+| `unknown_client` | 미허용 클라이언트 접근 | high | `PROXY_ALLOWED_CLIENTS` 대역 밖 IP의 접근 |
+| `odd_port` | 비표준 포트 터널 시도 | medium | 443이 아닌 포트로 CONNECT |
+| `client_volume` | 누적 전송량 과다 | medium | 한 클라이언트가 10분에 200MB 이상 전송 |
+| `slow` | 응답 지연 | low | 요청 하나가 30초 이상 |
+| `large_transfer` | 대용량 전송 | low | 요청 하나가 50MB 이상 |
+
+- 시나리오 3은 high·medium이 하나라도 있으면 장애 대응(원인 분석·Teams 승인)으로 넘어갑니다. low는 화면과 보고서에만 남깁니다.
+- 시나리오 3과 로그 뷰어는 VM의 **실제 로그**(Squid `access.log`, NGINX journald)를 SSH로 읽어 탐지합니다. 가상 로그(`simulate`)는 규칙 시험용입니다.
+- 기준값은 1명에서 2명이 쓰는 소규모 실습 프록시에 맞춘 값입니다. 실제 운영 로그에서 오탐률(정상인데 이상으로 잡은 비율)은 아직 재지 않았습니다. 실적용 때 사용자 수에 맞춰 기준값을 다시 정하고 오탐률을 KPI로 잽니다.
 
 <sub>[↑ 목차로](#목차)</sub>
 
