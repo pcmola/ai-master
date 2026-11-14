@@ -25,6 +25,7 @@
   - [4.1 주요 설정 값](#41-주요-설정-값)
   - [4.2 data 폴더](#42-data-폴더)
   - [4.3 LLM 모델 비교 (test/model_eval.py)](#43-llm-모델-비교-testmodel_evalpy)
+  - [4.4 임베딩 모델 비교 (test/embedding_benchmark.py)](#44-임베딩-모델-비교-testembedding_benchmarkpy)
 - [5. 로컬 웹서버](#5-로컬-웹서버)
   - [5.1 포트 없는 주소 (hosts)](#51-포트-없는-주소-hosts)
   - [5.2 허브 (hub.py)](#52-허브-hubpy)
@@ -565,6 +566,7 @@ flowchart LR
 | | `approval_local.py` | Teams 승인 카드 대체: 로컬 화면에서 Yes/No 승인 | <http://127.0.0.1:8771> (요청 중에만) |
 | test | `teams_test.py` | Teams 연동 테스트: 웹후크·Graph 를 차례로 시험하고 실패 원인을 안내 (`.env`의 `TEAMS_*`) | - |
 | | `scenario2/setup_env.py` | 시나리오 2(Proxy 현황 Wiki 현행화) 테스트 환경 점검·초기화 | - |
+| | `embedding_benchmark.py` | 임베딩 모델 비교: 허용 임베딩 모델 3개로 같은 16개 질의의 검색 정확도·유사도 분포 비교([4.4](#44-임베딩-모델-비교-testembedding_benchmarkpy)) | - |
 | | `model_eval.py` | LLM 모델 비교: 시나리오 1·2·3의 LLM 함수를 모델만 바꿔 같은 입력으로 돌리고 규칙으로 채점([4.3](#43-llm-모델-비교-testmodel_evalpy)) | - |
 
 **Wiki 뷰어** (wiki-repo를 Azure DevOps Wiki처럼 읽기 전용으로 보여 줌):
@@ -721,7 +723,7 @@ Copy-Item .env.sample .env
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `OPENAI_MODEL` | `gpt-6.1-sol` | 시나리오 1 가이드 작성, 시나리오 2 AI 요약·비표준 Wiki 파싱, 시나리오 3 장애 원인·수정안 분석에 쓰는 LLM. 사내 게이트웨이 배포 이름이며, 사용 가능한 이름은 해당 게이트웨이에서 확인. 다른 모델과 비교한 결과는 [4.3](#43-llm-모델-비교-testmodel_evalpy) |
-| `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. `test/wiki_search_benchmark.py`로 16개 고정 질의로 정확도를 재현합니다 |
+| `OPENAI_EMBED_MODEL` | `text-embedding-3-large` | 검색 임베딩. `test/wiki_search_benchmark.py`로 16개 고정 질의로 정확도를 재현합니다. 다른 임베딩 모델과 비교한 결과는 [4.4](#44-임베딩-모델-비교-testembedding_benchmarkpy) |
 | `EMBED_WEIGHT` | `8` | 혼합 검색에서 임베딩 유사도 가중치. 낮으면 키워드 점수가 의미 점수를 덮습니다 |
 | `WEB_SEARCH_PROVIDER` | `auto` | 웹 검색 공급자: `auto`(Tavily 키가 있으면 Tavily, 없으면 GPT), `tavily`, `gpt`, `off` |
 | `TAVILY_API_KEY` | (비움) | 넣으면 위키 근거가 약할 때 Tavily 웹 검색 결과를 가이드 근거에 보탭니다 |
@@ -788,7 +790,7 @@ Copy-Item .env.sample .env
 
 ### 4.3 LLM 모델 비교 (test/model_eval.py)
 
-`OPENAI_MODEL`을 gpt-6.1-sol로 둔 것이 맞는지 확인하려고, 사내 게이트웨이에서 쓸 수 있는 모델 8개를 같은 입력으로 비교했습니다(2026-11-14).
+`OPENAI_MODEL`을 gpt-6.1-sol로 둔 것이 맞는지 확인하려고, 회사가 허용한 대화 모델 10개를 모두 같은 입력으로 비교했습니다(2026-11-14). 임베딩 모델 3개는 [4.4](#44-임베딩-모델-비교-testembedding_benchmarkpy)에서 따로 비교했습니다.
 
 **결론**
 
@@ -796,11 +798,11 @@ Copy-Item .env.sample .env
 - gpt-5.6-luna가 3배쯤 빠릅니다. 같은 양을 더 빨리 쓰기 때문입니다([속도 차이](#속도-차이)).
 - gpt-6.1-sol은 요약에 바뀐 VM 3대의 이름을 3번 모두 적었습니다. gpt-5.6-luna는 3번 중 1번 이름을 묶어 썼습니다. 이 차이와 운영에서 써 온 이력 때문에 기본 모델은 gpt-6.1-sol로 둡니다. 가이드 응답 시간을 줄여야 하면 gpt-5.6-luna로 바꾸는 것을 먼저 검토합니다.
 - 가이드에 원문에 없는 명령·파일 이름을 지어낸 모델은 gpt-4o입니다.
-- 시나리오 3은 8개 모델이 모두 맞혀서 차이가 없었습니다.
+- 시나리오 3은 큰 모델 8개가 모두 맞혔습니다. mini 모델 2개(gpt-4.1-mini, gpt-4o-mini)는 엉뚱한 파일을 고치는 수정안을 냈고, 그 수정안이 규칙 검증을 통과했습니다. 규칙 검증만으로는 틀린 수정안을 다 걸러내지 못한다는 뜻입니다.
 
 #### 비교 방법
 
-- 대상 모델: gpt-6.1-sol(지금 쓰는 모델), gpt-6-luna, gpt-5.6-luna, gpt-5.4, gpt-5, gpt-5-mini, gpt-4.1, gpt-4o
+- 대상 모델: 회사 허용 대화 모델 10개. gpt-6.1-sol(지금 쓰는 모델), gpt-6-luna, gpt-5.6-luna, gpt-5.4, gpt-5, gpt-5-mini, gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini
 - 시나리오 1·2·3이 실제로 부르는 LLM 함수를 그대로 부르고, 모델 이름(`OPENAI_MODEL`)만 바꿉니다. 프롬프트·후처리·규칙 검증은 운영 코드와 같습니다.
 - 채점은 사람이 정한 정답과 규칙으로 합니다. LLM이 다른 LLM을 채점하지 않습니다.
 - 같은 모델에 같은 입력을 **3번씩** 다시 넣었습니다. LLM은 같은 입력에도 답이 조금씩 달라서, 한 번만 보면 우연을 실력으로 볼 수 있기 때문입니다.
@@ -833,6 +835,8 @@ Copy-Item .env.sample .env
 | gpt-5-mini | 32 | $\color{red}{\textbf{0.0}}$ | - | 0 | 1 | 0 | 11,502 |
 | gpt-4.1 | 13 | 4.0 | 15/15 | 0 | 28 | 0 | 7,654 |
 | gpt-4o | 7 | 4.0 | $\color{red}{\textbf{7/10}}$ | 0 | 30 | $\color{red}{\textbf{6}}$ | 3,471 |
+| gpt-4.1-mini | 11 | $\color{red}{\textbf{0.0}}$ | - | 0 | 35 | 0 | 6,025 |
+| gpt-4o-mini | 9 | $\color{red}{\textbf{0.0}}$ | - | 0 | 25 | $\color{red}{\textbf{2}}$ | 3,222 |
 
 - 필수 절: 프롬프트는 `개요`, `단계별 가이드`, `주의사항`, `참고 문서` 4개 절로 쓰라고 지시합니다. 그중 `##` 제목으로 들어간 절 수의 평균입니다.
 - 근거를 단 단계: `단계별 가이드` 아래 단계(`###`) 중 근거 Wiki 문서를 단 단계 수입니다. 3번 실행한 것을 합한 값입니다.
@@ -841,12 +845,14 @@ Copy-Item .env.sample .env
 - 원문에 없는 값: 구체 값 중 근거 문서 15개 원문에 글자 그대로 없는 것의 수입니다. 프롬프트는 "위키에 없는 내용은 지어내지 마라", "명령어·값은 그대로 옮겨라"라고 지시합니다. 걸린 값을 사람이 하나씩 확인했습니다.
   - gpt-4o는 실제로 지어냈습니다. Wiki에 없는 NSG 규칙 생성 명령(`az network nsg rule create …`), 없는 파일 이름(`whitelist.acl`, Wiki는 `whitelist.txt`), 없는 키 경로(`~/.ssh/id_rsa`)를 썼습니다.
   - gpt-6.1-sol·gpt-5.6-luna·gpt-5.4는 표기만 바꿨습니다. `wjy-proxy01/02`처럼 이름을 줄이거나, Wiki에 따로 적힌 IP와 포트를 `IP:3128`로 붙여 썼습니다. 그래서 빨간 글씨로 표시하지 않았습니다.
+  - gpt-4o-mini도 지어냈습니다. Wiki에 없는 명령(`squidclient`)과 중국어가 섞인 자리표시(`<VM公用IP>`)를 썼습니다.
   - gpt-5·gpt-5-mini는 구체 값이 거의 없습니다. 명령을 옮기지 않고 말로 풀어 썼습니다.
 - 틀린 예
   - gpt-6-luna는 폴더 이름 일부를 일본어(`ネットワーク`)로 바꾼 경로를 인용했습니다.
   - gpt-5-mini는 절 제목을 하나도 쓰지 않았습니다.
   - gpt-5는 단계별 가이드를 단계 1개로 뭉쳤습니다.
   - gpt-4o는 가장 짧고, 단계 일부에 근거가 없습니다.
+  - mini 모델 2개는 gpt-5-mini처럼 절 제목을 하나도 쓰지 않았습니다.
 
 **② 시나리오 2 문서 파싱·AI 요약** (과제마다 모델마다 3번)
 
@@ -860,6 +866,8 @@ Copy-Item .env.sample .env
 | gpt-5-mini | 100% | $\color{red}{\textbf{1/3}}$ | $\color{red}{\textbf{1/3}}$ | 2/3 | 14.5 | 11.8 |
 | gpt-4.1 | 100% | $\color{red}{\textbf{1/3}}$ | 3/3 | 2/3 | 3.9 | 1.6 |
 | gpt-4o | $\color{red}{\textbf{93.9\%}}$ | 3/3 | 3/3 | 3/3 | 4.6 | 1.2 |
+| gpt-4.1-mini | 100% | $\color{red}{\textbf{2/3}}$ | 3/3 | 1/3 | 7.3 | 1.5 |
+| gpt-4o-mini | 100% | 3/3 | 3/3 | 0/3 | 9.0 | 1.7 |
 
 - 파싱 정답률: VM 11개 × LOCATION·사설 IP·상태 33칸 중 정답 칸의 비율입니다. gpt-4o는 VM 2개를 빠뜨렸습니다.
 - 요약에 바뀐 VM 3대를 다 적음: 바뀐 VM 3대(wjy-proxy01·03, wjy-prxy04)의 이름을 요약에 모두 적은 횟수입니다. 프롬프트가 요구한 규칙은 아니라 빨간 글씨로 표시하지 않았습니다. 못 적은 때는 이름 대신 "신규·삭제 VM"처럼 묶어 썼습니다.
@@ -876,9 +884,14 @@ Copy-Item .env.sample .env
 | gpt-5-mini | 9/9 | 9/9 | 27 |
 | gpt-4.1 | 9/9 | 9/9 | 8 |
 | gpt-4o | 9/9 | 9/9 | 6 |
+| gpt-4.1-mini | $\color{red}{\textbf{5/9}}$ | $\color{red}{\textbf{6/9}}$ | 7 |
+| gpt-4o-mini | $\color{red}{\textbf{3/9}}$ | $\color{red}{\textbf{3/9}}$ | 5 |
 
 - 장애 해소: 수정안을 설정 파일에 적용했을 때 장애를 만든 설정이 없어진 횟수입니다.
-- 모든 모델이 다 맞혔습니다. 원인이 된 변경 내용이 입력에 그대로 들어가는 쉬운 과제라서, 이 과제로는 모델 차이가 드러나지 않습니다.
+- 큰 모델 8개는 다 맞혔습니다. 원인이 된 변경 내용이 입력에 그대로 들어가는 쉬운 과제라서, 큰 모델 사이의 차이는 드러나지 않습니다.
+- mini 모델 2개는 허용 클라이언트 IP 오타와 잘못된 DNS 장애에서 틀렸습니다. 원인 커밋을 보지 않고, 예전 장애 이력에 자주 나온 `squid/lists/whitelist.txt`를 고치는 수정안을 냈습니다.
+- 이 틀린 수정안은 "바꿀 줄이 파일에 정확히 한 번 있는가" 규칙 검증을 통과했습니다. 그래서 운영에서는 사람이 PR을 검토한 뒤에만 병합합니다.
+- gpt-4o-mini는 요약에서도 운영 중인 wjy-proxy01을 "중지 상태"라고 거꾸로 적었습니다. 규칙으로 잡지 못한 사실 오류입니다.
 
 토큰·글자 수·요약 예시까지 담은 과제별 전체 표는 [docs/model-eval/20261114-1322.md](docs/model-eval/20261114-1322.md)에 있습니다.
 
@@ -901,15 +914,15 @@ Copy-Item .env.sample .env
 
 - 규칙으로 잴 수 있는 것만 봅니다. 가이드의 구체 값은 원문과 대조했지만, 문장이 읽기 좋은지와 설명의 논리가 맞는지는 채점하지 않았습니다.
 - 같은 입력을 3번씩만 돌려 표본이 작습니다. 3번 중 1번 차이는 우연일 수 있습니다.
-- 8개 모델을 동시에 돌려서, 시간은 게이트웨이 부하에 따라 달라질 수 있습니다.
+- 모델을 동시에 돌려서, 시간은 게이트웨이 부하에 따라 달라질 수 있습니다. mini 모델 2개는 같은 날 1시간쯤 뒤에 따로 돌렸습니다.
 - 비용은 사내 게이트웨이 단가를 몰라 출력 토큰 수로만 남겼습니다(전체 표).
 
 #### 다시 돌리기
 
-8개 모델을 동시에 돌려 15분쯤 걸립니다.
+10개 모델을 동시에 돌려 15분쯤 걸립니다.
 
 ```powershell
-python test\model_eval.py                                        # 기본 8개 모델, 같은 입력을 2번씩
+python test\model_eval.py                                        # 허용 모델 10개, 같은 입력을 2번씩
 python test\model_eval.py --repeat 3                             # 이번 결과와 같은 조건(3번씩)
 python test\model_eval.py --models gpt-6.1-sol gpt-5.6-luna --tasks s2_summary s3_fix
 python test\model_eval.py --summarize data\model_eval\<시각>      # 저장한 결과로 표만 다시 만들기
@@ -917,6 +930,63 @@ python test\model_eval.py --summarize data\model_eval\<시각>      # 저장한 
 
 - 결과는 `data/model_eval/<시각>/`에 남습니다. 모델별 JSON, 가이드 원문, 실행 로그, `summary.md`입니다.
 - 입력에 실제 허용 클라이언트 IP가 들어가므로 결과는 `data/`(Git 제외)에만 둡니다. README에 옮긴 표에는 식별값이 없습니다.
+
+### 4.4 임베딩 모델 비교 (test/embedding_benchmark.py)
+
+Wiki 검색의 임베딩 모델(`OPENAI_EMBED_MODEL`)을 회사가 허용한 3개로 바꿔 가며 같은 16개 질의로 검색 정확도를 쟀습니다(2026-11-14).
+
+**결론**
+
+- 지금 쓰는 **text-embedding-3-large**만 키워드 검색보다 낫습니다. 혼합 검색에서 16개 질의의 정답 문서가 모두 3위 안에 들었습니다.
+- text-embedding-3-small과 text-embedding-ada-002는 키워드 검색(임베딩 없이 15/16)을 넘지 못했습니다. 가중치를 모델에 맞춰도 같습니다.
+- 그래서 임베딩 모델은 바꾸지 않습니다.
+
+#### 비교 방법
+
+- 질의 16개와 정답 문서는 검색 정확도 벤치마크([4.1](#41-주요-설정-값))와 같은 `test/wiki_search_benchmark_cases.json`입니다.
+- 모델마다 Wiki 문서 1,033개를 모두 임베딩한 뒤, 운영과 같은 혼합 검색(키워드 점수 + 임베딩 유사도 × `EMBED_WEIGHT`)으로 순위를 매깁니다.
+- 임베딩 유사도의 크기는 모델마다 달라서, 가중치를 0.8부터 16까지 바꿔 모델마다 가장 좋은 값도 찾았습니다.
+- 임베딩 결과는 같은 입력에 늘 같아 한 번만 돌렸습니다.
+- 운영 캐시(`data/wiki_search_cache.json`)는 모델 하나 분량만 담습니다. 그래서 모델마다 `data/embed_bench/<모델>.json`을 따로 써서, 운영 중인 Wiki 검색 서버에는 영향이 없습니다.
+
+#### 결과
+
+| 모델 | 차원 | 혼합 검색 hit@3 (운영 가중치 8) | 가중치를 맞춘 최고 hit@3 | 임베딩만 hit@3 | 임베딩만 MRR |
+|---|---|---|---|---|---|
+| **text-embedding-3-large** | 3072 | 16/16 | 16/16 (가중치 4·8) | 14/16 | 0.767 |
+| text-embedding-3-small | 1536 | $\color{red}{\textbf{14/16}}$ | 15/16 (가중치 0.8) | 12/16 | 0.712 |
+| text-embedding-ada-002 | 1536 | $\color{red}{\textbf{13/16}}$ | 15/16 (가중치 0.8) | 12/16 | 0.704 |
+| (키워드만, 임베딩 없이) | - | 15/16 | - | - | - |
+
+- hit@3: 정답 문서가 3위 안에 든 질의 수입니다. 빨간 글씨는 키워드만 쓸 때(15/16)보다 나빠진 곳입니다.
+- 임베딩만: 키워드 점수 없이 임베딩 유사도로만 순위를 매긴 결과로, 모델 자체의 의미 검색 실력입니다.
+- MRR: 정답 순위의 역수 평균입니다. 1위면 1, 2위면 0.5이고, 1에 가까울수록 정답이 위에 있습니다.
+- small과 ada-002는 임베딩만으로 순위를 매기면 정답이 40위 밖으로 밀리는 질의가 1개에서 3개 있습니다. 혼합 검색에서 가중치를 높일수록 이 질의가 키워드 순위까지 끌어내립니다.
+
+**웹 검색 기준값에 주는 영향**
+
+시나리오 1은 위키 최고 유사도가 `WEB_SEARCH_MIN_SIM`(0.5)보다 낮으면 웹 검색을 합니다. 이 값은 text-embedding-3-large로 정했습니다.
+
+| 모델 | 위키에 있는 질의 16개 (평균 / 최저) | 위키에 없는 질의 6개 (평균 / 최고) |
+|---|---|---|
+| text-embedding-3-large | 0.586 / 0.271 | 0.264 / 0.303 |
+| text-embedding-3-small | 0.561 / 0.368 | 0.275 / 0.333 |
+| text-embedding-ada-002 | 0.859 / 0.831 | 0.770 / 0.790 |
+
+- ada-002는 유사도가 모두 0.77 이상으로 몰려 있습니다. 이 모델로 바꾸면 위키에 없는 질의(날씨·주가 등)도 0.5를 넘어 웹 검색을 하지 않게 됩니다. 기준값을 다시 정해야 합니다.
+- text-embedding-3-large도 위키 질의 중 유사도가 낮은 것(최저 0.271)이 있어, 질의 하나로는 두 무리가 완전히 갈리지 않습니다. 그래서 시나리오 1은 질의 유사도와 함께 고른 유형의 유사도(`WEB_SEARCH_MIN_VARIANT_SIM`)·핵심 개념 문서 수도 봅니다([6.1](#61-wiki-검색가이드-생성-wiki_searchpy)).
+
+#### 한계와 다시 돌리기
+
+- 질의가 16개라 표본이 작습니다. 1개 차이는 질의 하나의 차이입니다.
+- 처음 돌리면 모델마다 문서 1,033개를 새로 임베딩합니다. 다음부터는 `data/embed_bench/`의 캐시를 써서 몇 초면 끝납니다.
+
+```powershell
+python test\embedding_benchmark.py                                   # 허용 임베딩 모델 3개
+python test\embedding_benchmark.py --models text-embedding-3-small    # 일부만
+```
+
+- 결과는 `data/embed_bench/result-<시각>.json`에 남습니다.
 
 <sub>[↑ 목차로](#목차)</sub>
 

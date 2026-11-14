@@ -46,7 +46,8 @@ for p in (ROOT, ROOT / "proxy_tools", ROOT / "wiki_tools"):
 
 from common.paths import DATA_DIR, WIKI_REPO  # noqa: E402
 
-MODELS = ["gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna", "gpt-5.4", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4o"]
+MODELS = ["gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna", "gpt-5.4", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini",
+          "gpt-4o", "gpt-4o-mini"]  # 회사 허용 대화 모델 전부(2026-11-14)
 TASKS = ["s1_guide", "s2_parse", "s2_summary", "s3_fix"]
 OUT_ROOT = DATA_DIR / "model_eval"
 LLM_NODES = {"llm_generate", "wiki_parse_llm", "llm_summary", "llm_triage", "llm_fix"}
